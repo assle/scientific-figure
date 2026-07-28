@@ -24,6 +24,7 @@ def compose_assets(
     output_dir: str | Path,
     canvas_mm: tuple[float, float],
     dpi: int = 300,
+    text_placements: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, str]]:
     w_mm, h_mm = canvas_mm
     fig = plt.figure(figsize=(w_mm / 25.4, h_mm / 25.4), dpi=dpi)
@@ -39,6 +40,12 @@ def compose_assets(
         extent = [x, x + bw, 1 - (y + bh), 1 - y]
         ax.imshow(img, extent=extent, aspect="auto",
                   zorder=p.get("z_order", 0), interpolation="nearest")
+
+    for t in text_placements or []:
+        x = t["x"]
+        y = 1 - t["y"]  # top-origin -> bottom-origin
+        ax.text(x, y, t["text"], fontsize=t.get("font_size", 9),
+                ha="left", va="top", zorder=100, clip_on=False)
 
     try:
         files = save_figure(fig, output_dir, basename="figure",
