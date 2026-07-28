@@ -193,6 +193,15 @@ class Cache:
         shutil.copyfile(src_path, dst)
         return dst
 
+    def get_bytes(self, key: str) -> bytes | None:
+        path = self._path(key)
+        return path.read_bytes() if path.exists() else None
+
+    def put_bytes(self, key: str, data: bytes) -> Path:
+        dst = self._path(key)
+        dst.write_bytes(data)
+        return dst
+
 
 _RUN_SUBDIRS = (
     "inputs", "plans", "prompts", "assets", "plots", "vectors",

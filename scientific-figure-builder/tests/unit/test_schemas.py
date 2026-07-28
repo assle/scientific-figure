@@ -122,15 +122,15 @@ def test_publication_mplstyle_exists() -> None:
     assert (TEMPLATE_DIR / "publication.mplstyle").is_file()
 
 
-def test_no_model_calls_in_phase1_source() -> None:
-    """Phase 1 must not introduce any Ark/network call sites."""
+def test_network_only_via_transport_abstraction() -> None:
+    """No direct HTTP/network call sites: all model I/O goes through the
+    injectable transport (kept mock-based until Phase 7)."""
     forbidden_patterns = [
         r"volcengine",
         r"ark\.cn-",
         r"requests\.(get|post)",
         r"httpx\.(get|post|Client)",
-        r"openai\.",
-        r"api_key\s*=",
+        r"urllib\.request",
     ]
     offenders = []
     for py in (ROOT / "figure_tools").rglob("*.py"):
@@ -138,4 +138,4 @@ def test_no_model_calls_in_phase1_source() -> None:
         for pat in forbidden_patterns:
             if re.search(pat, text, re.IGNORECASE):
                 offenders.append(f"{py.relative_to(ROOT)} matches {pat}")
-    assert not offenders, "Phase 1 introduced model-call sites: " + ", ".join(offenders)
+    assert not offenders, "direct network call site found: " + ", ".join(offenders)
