@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "run_id": "2026-07-28_figure-01",
+  "parent_run_id": null,
+  "current_step": "render_plots",
+  "steps": [
+    {
+      "step": "create_plan",
+      "status": "completed",
+      "output_hashes": { "figure_plan.json": "sha256:plan" }
+    },
+    {
+      "step": "render_plots",
+      "status": "running",
+      "output_hashes": {}
+    }
+  ],
+  "calls": {
+    "counts": { "reference_analysis": 1, "generation": 0 },
+    "budget": { "reference_analysis": 1, "generation": 1, "validations": 1 }
+  },
+  "retries": {
+    "transient": { "generation": 0 },
+    "quality": { "generation": 0 }
+  },
+  "cache_hits": 0,
+  "approval_checkpoints": [
+    { "checkpoint": "plan_approval", "status": "approved" }
+  ],
+  "resume": { "from_step": "render_plots", "invalidate_downstream": false }
+}

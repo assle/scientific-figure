@@ -1,0 +1,42 @@
+# Default project configuration for scientific-figure-builder.
+# This file contains NO secrets. Read the Ark API key from the ARK_API_KEY
+# environment variable or a user-private file (see references/ark-interfaces.md).
+#
+# Configuration is merged in this order (plan section 5):
+#   Skill defaults < user-local private config < project config < per-run overrides
+
+schema_version: "1.0"
+
+# Publication canvas defaults.
+canvas:
+  width: 180
+  height: 90
+  units: mm
+
+# Export formats. PNG, SVG, and PDF are default formal outputs; PPTX is optional.
+export:
+  formats: [png, svg, pdf]
+  include_pptx: false
+  dpi: 300
+
+# Concurrency and reliability limits (plan section 12).
+limits:
+  independent_asset_concurrency: 2
+  max_quality_retries_per_asset: 2
+  default_candidate_count: 1
+
+# Fixed model roles (plan section 5). Two roles may share a model, but each role
+# is configured independently. Replace the placeholders with fixed model IDs or
+# Volcengine Ark Endpoint IDs. Do NOT use "latest" resolution.
+models:
+  image_generate:
+    model: "<fixed-model-or-endpoint-id>"
+  image_edit:
+    model: "<fixed-model-or-endpoint-id>"
+  vision_analyze:
+    model: "<fixed-model-or-endpoint-id>"
+  vision_validate:
+    model: "<fixed-model-or-endpoint-id>"
+
+# Optional domain template selection.
+domain_template: null

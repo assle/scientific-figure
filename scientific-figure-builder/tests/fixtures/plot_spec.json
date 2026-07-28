@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "chart_type": "line",
+  "recipe_version": "line-1.0",
+  "source_data": {
+    "path": "inputs/coupling.csv",
+    "content_hash": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  },
+  "column_mapping": { "x": "offset_um", "y": "efficiency" },
+  "units": { "offset_um": "um", "efficiency": "percent" },
+  "series": [
+    { "series_id": "measured", "x": "offset_um", "y": "efficiency", "label": "Measured" }
+  ],
+  "errors": [
+    { "series_id": "measured", "y_err": "efficiency_std" }
+  ],
+  "transformations": [],
+  "filters": [],
+  "axes": { "x": "offset_um", "y": "efficiency" },
+  "scales": { "x": "linear", "y": "linear" },
+  "ticks": { "x": [-2, -1, 0, 1, 2] },
+  "legends": [{ "loc": "best" }],
+  "labels": { "title": "Coupling efficiency", "x": "Lateral offset (um)", "y": "Efficiency (%)" },
+  "figure": { "dimensions": [90, 70], "style": "publication" },
+  "export": { "formats": ["png", "svg", "pdf"], "dpi": 300 },
+  "validation_expectations": { "match_source_hash": true, "min_samples": 5 }
+}

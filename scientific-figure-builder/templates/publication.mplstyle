@@ -1,0 +1,33 @@
+# Matplotlib publication style for scientific-figure-builder.
+# Optimized for legible print/PDF output at journal column widths.
+
+font.family: sans-serif
+font.sans-serif: Arial, Helvetica, DejaVu Sans
+font.size: 8
+
+axes.titlesize: 10
+axes.labelsize: 9
+axes.linewidth: 0.75
+axes.grid: False
+axes.spines.top: False
+axes.spines.right: False
+
+xtick.labelsize: 8
+ytick.labelsize: 8
+xtick.major.width: 0.75
+ytick.major.width: 0.75
+xtick.major.size: 3.0
+ytick.major.size: 3.0
+
+legend.fontsize: 8
+legend.frameon: False
+
+lines.linewidth: 1.25
+lines.markersize: 3.0
+
+savefig.dpi: 300
+savefig.bbox: tight
+savefig.pad_inches: 0.02
+
+figure.dpi: 150
+figure.figsize: 3.5, 2.6

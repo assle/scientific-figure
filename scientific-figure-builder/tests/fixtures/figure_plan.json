@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "figure_id": "figure-01",
+  "run_id": "2026-07-28_figure-01",
+  "canvas": { "aspect_ratio": 1.6, "width": 180, "height": 112.5 },
+  "units": "mm",
+  "panels": [
+    {
+      "panel_id": "a",
+      "bbox": [0.0, 0.0, 0.5, 1.0],
+      "physical_size": [90, 112.5]
+    },
+    {
+      "panel_id": "b",
+      "bbox": [0.5, 0.0, 0.5, 1.0],
+      "physical_size": [90, 112.5]
+    }
+  ],
+  "assets": [
+    {
+      "asset_id": "asset-curve-1",
+      "type": "data_plot",
+      "z_order": 1,
+      "dependencies": [],
+      "routing": "python"
+    },
+    {
+      "asset_id": "asset-fiber",
+      "type": "image_asset",
+      "z_order": 2,
+      "dependencies": [],
+      "routing": "ark_image"
+    }
+  ],
+  "style_bible_ref": "default",
+  "text_elements": [
+    {
+      "element_id": "label-a",
+      "kind": "label",
+      "content": "(a) Coupling efficiency"
+    }
+  ],
+  "assumptions": ["Gaussian beam approximation holds over the depicted range."],
+  "uncertainties": ["Fiber core diameter taken from datasheet; not measured."],
+  "user_input_requirements": ["Confirm wavelength is 1550 nm."],
+  "estimated_paid_calls": {
+    "reference_analysis": 1,
+    "generation": 1,
+    "edits": 0,
+    "validations": 1,
+    "final_validation": 1
+  },
+  "planned_uploads": [
+    { "path": "inputs/reference_fiber.png", "reason": "style/reference analysis" }
+  ],
+  "approval": { "status": "pending" }
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "assets": [
+    {
+      "asset_id": "asset-fiber",
+      "type": "image_asset",
+      "path": "assets/fiber.png",
+      "content_hash": "sha256:abc123",
+      "generation": {
+        "model": "<fixed-endpoint-id>",
+        "parameters": { "size": "1024x1024", "candidate_count": 1 }
+      },
+      "prompt_hash": "sha256:prompthash",
+      "reference_hashes": ["sha256:refhash"],
+      "pixel_dimensions": [1024, 1024],
+      "transparent": true,
+      "placement": { "panel_id": "b", "bbox": [0.1, 0.1, 0.8, 0.8] },
+      "z_order": 2,
+      "style_anchor": { "is_anchor": true, "anchor_of": ["asset-curve-1"] },
+      "validation_result": { "status": "pass", "detail": "alpha channel present" },
+      "parent_asset_id": null
+    },
+    {
+      "asset_id": "asset-curve-1",
+      "type": "data_plot",
+      "path": "plots/coupling.png",
+      "content_hash": "sha256:plot123",
+      "pixel_dimensions": [2657, 2069],
+      "transparent": false,
+      "z_order": 1,
+      "validation_result": { "status": "pass", "detail": "matches source hash" }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "run_id": "2026-07-28_figure-01",
+  "checks": [
+    {
+      "check_id": "alpha_channel",
+      "scope": "asset:asset-fiber",
+      "level": "error",
+      "status": "pass",
+      "detail": "real alpha channel present"
+    },
+    {
+      "check_id": "effective_dpi",
+      "scope": "final",
+      "level": "error",
+      "status": "pass",
+      "detail": "effective 312 dpi >= 300"
+    },
+    {
+      "check_id": "legend_obstruction",
+      "scope": "panel:a",
+      "level": "warning",
+      "status": "fail",
+      "detail": "legend slightly overlaps upper series"
+    }
+  ],
+  "summary": { "errors": 0, "warnings": 1, "passed": 2, "blocking": false }
+}

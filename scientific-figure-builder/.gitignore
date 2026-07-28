@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Local project config (created on first use, may contain local paths)
+.scientific/
+
+# Run outputs
+runs/
+
+# OS/editor
+.DS_Store

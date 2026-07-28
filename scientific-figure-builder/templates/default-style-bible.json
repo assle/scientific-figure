@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "palette": {
+    "primary": "#1f77b4",
+    "secondary": "#d62728",
+    "accent": "#2ca02c",
+    "neutral": "#333333"
+  },
+  "view": "isometric",
+  "projection": "oblique",
+  "lighting": "soft top-left key light",
+  "material": "matte with subtle specular highlights on glass",
+  "stroke_widths": { "thin": 0.75, "medium": 1.25, "thick": 2.0 },
+  "fonts": {
+    "family": "Arial",
+    "sizes": { "axis": 8, "label": 9, "title": 10 }
+  },
+  "equation_style": "latex",
+  "background": "transparent",
+  "shadow": "none",
+  "forbidden_elements": ["watermarks", "decorative scenes", "unrelated text"],
+  "style_reference_hashes": []
+}
