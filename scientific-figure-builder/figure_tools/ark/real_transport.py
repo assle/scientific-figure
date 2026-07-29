@@ -50,6 +50,17 @@ def _extract_json(text: str) -> dict:
         raise ArkError(f"could not parse JSON from model response: {text[:200]}")
 
 
+_DEFAULT_VALIDATION_INSTRUCTION = (
+    "Validate this scientific figure asset. Return ONLY JSON with keys: "
+    '"checks" (list of {check_id, status: "pass"|"fail", detail}) and '
+    '"blocking" (boolean). Check object count, structure, perspective, '
+    "forbidden text or unrelated objects, and style consistency. "
+    "Also check legend_data_overlap: whether the legend overlaps any data "
+    "elements. text_overlap: whether any text elements overlap each other. "
+    "label_readability: whether axis tick labels are readable and not crowded."
+)
+
+
 class RealArkTransport(ArkTransport):
     # Plan-routed OpenAI-compatible base URLs (plan is selected by base URL).
     AGENT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"      # image gen/edit
@@ -141,12 +152,7 @@ class RealArkTransport(ArkTransport):
                 '(list of {text, confidence}), "confidence" (0-1), "uncertainties" (list of strings).'
             )
         else:
-            instruction = (
-                "Validate this scientific figure asset. Return ONLY JSON with keys: "
-                '"checks" (list of {check_id, status: "pass"|"fail", detail}) and '
-                '"blocking" (boolean). Check object count, structure, perspective, '
-                "forbidden text or unrelated objects, and style consistency."
-            )
+            instruction = _DEFAULT_VALIDATION_INSTRUCTION
         prompt = payload.get("prompt") or instruction
         content: list[dict] = [{"type": "text", "text": prompt + "\n\n" + instruction}]
         for p in image_paths:

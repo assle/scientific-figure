@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "findings": [
+    {
+      "symptom": {
+        "check_id": "legend_data_overlap",
+        "detail": "legend overlaps data in panel a"
+      },
+      "likely_cause": "panel a width (0.35) insufficient for 5 data elements",
+      "remediation": "increase panel a width ratio from 0.4 to 1.5 and move legend to the emptiest region"
+    }
+  ],
+  "severity_ranking": [
+    "panel a width (0.35) insufficient for 5 data elements"
+  ]
+}

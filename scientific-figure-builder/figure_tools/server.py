@@ -164,6 +164,24 @@ def _h_export_figure(args):
 
     source_dir = Path(args["source_dir"])
     output_dir = Path(args["output_dir"])
+    force_export = args.get("force_export", False)
+
+    # Validation gate (spec 0001, improvement 3): refuse export if no
+    # validation report exists or if it contains blocking errors.
+    validation_report_path = source_dir.parent / "validation" / "validation_report.json"
+    if not force_export:
+        if not validation_report_path.exists():
+            return {"files": {}, "export_blocked_reason": (
+                f"no validation report found at {validation_report_path}; "
+                "run validation before export or use force_export=True")}
+        import json as _json
+
+        report = _json.loads(validation_report_path.read_text(encoding="utf-8"))
+        if report.get("summary", {}).get("blocking", False):
+            return {"files": {}, "export_blocked_reason": (
+                "validation report contains blocking errors; "
+                "use force_export=True to override")}
+
     output_dir.mkdir(parents=True, exist_ok=True)
     formats = args.get("formats", ["png", "svg", "pdf"])
     files = {}

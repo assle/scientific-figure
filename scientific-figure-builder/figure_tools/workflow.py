@@ -15,10 +15,12 @@ from typing import Any
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
+from figure_tools.planning.layout_analysis import analyze_layout
 from figure_tools.planning.planner import create_figure_plan
 from figure_tools.planning.router import classify_task
 from figure_tools.report import write_generation_report
 from figure_tools.validation.final_checks import validate_assembled_figure
+from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.wireframe import generate_wireframe
 
@@ -53,13 +55,19 @@ class FigureWorkflow:
         return float(c["width"]), float(c["height"])
 
     def run(self, approved: bool = False,
-            style_anchor_approved: bool = False) -> dict[str, Any]:
+            style_anchor_approved: bool = False,
+            force_export: bool = False) -> dict[str, Any]:
         task = classify_task(self.request)
         plan = create_figure_plan(self.request)
         self._write_json("plans/figure_plan.json", plan)
         (self.run_dir / "plans").mkdir(parents=True, exist_ok=True)
         (self.run_dir / "plans" / "layout_wireframe.svg").write_text(
             generate_wireframe(plan), encoding="utf-8")
+
+        # Pre-render layout analysis (spec 0001, improvement 2).
+        data_chars = self._collect_data_characteristics()
+        layout_report = analyze_layout(plan, data_chars)
+        self._write_json("plans/layout_analysis.json", layout_report)
 
         # Persist style bible and inputs (plan section 13).
         self._write_style_bible()
@@ -108,9 +116,21 @@ class FigureWorkflow:
                                           physical_size_mm=self._canvas_mm(),
                                           run_id=self.state.run_id)
         validation_reports.append(final)
+        self._write_json("validation/validation_report.json", final)
 
+        # Export gate (spec 0001, improvement 3).
         exported = False
-        if not final["summary"]["blocking"]:
+        export_blocked_reason: str | None = None
+        if not validation_reports:
+            export_blocked_reason = (
+                "no validation reports found; run validation before export"
+            )
+        elif not force_export and any(r["summary"]["blocking"] for r in validation_reports):
+            export_blocked_reason = (
+                "validation reports contain blocking errors; "
+                "use force_export=True to override"
+            )
+        else:
             exports = self.run_dir / "exports"
             exports.mkdir(parents=True, exist_ok=True)
             for ext in ("png", "svg", "pdf"):
@@ -119,10 +139,20 @@ class FigureWorkflow:
                     shutil.copyfile(src, exports / f"figure.{ext}")
             exported = True
 
+        # Root cause analysis (spec 0001, improvement 4).
+        has_failures = any(
+            any(c.get("status") == "fail" for c in r.get("checks", []))
+            for r in validation_reports
+        )
+        if has_failures:
+            root_cause = analyze_root_causes(validation_reports, plan, layout_report)
+            self._write_json("validation/root_cause_report.json", root_cause)
+
         self.state.save(self.run_dir / "run_state.json")
         report_path = write_generation_report(
             self.run_dir, plan, manifest, validation_reports,
-            run_state=self.state.to_dict(), exported=exported)
+            run_state=self.state.to_dict(), exported=exported,
+            force_export=force_export, export_blocked_reason=export_blocked_reason)
 
         return {
             "paused": False,
@@ -131,6 +161,7 @@ class FigureWorkflow:
             "asset_manifest": manifest,
             "validation_reports": validation_reports,
             "exported": exported,
+            "export_blocked_reason": export_blocked_reason,
             "report_path": str(report_path),
         }
 
@@ -172,6 +203,63 @@ class FigureWorkflow:
                    "level": "error", "status": "fail", "detail": detail}]
         return {"schema_version": "1.0", "run_id": asset_id,
                 "checks": checks, "summary": summarize_checks(checks)}
+
+    def _collect_data_characteristics(self) -> dict[str, Any]:
+        panels: dict[str, Any] = {}
+        labels = self.request.get("labels", [])
+        for i, panel in enumerate(self.request["panels"]):
+            pid = panel["panel_id"]
+            element_count = 0
+            label_len = 0
+            densities = {
+                "upper_left": 0.3, "upper_right": 0.3,
+                "lower_left": 0.3, "lower_right": 0.3,
+            }
+            for el in panel.get("elements", []):
+                element_count += 1
+                if el["type"] == "data_plot":
+                    try:
+                        spec = load_plot_spec(el["plot_spec"])
+                        element_count += max(len(spec.series) - 1, 0)
+                        for v in spec.labels.values():
+                            label_len = max(label_len, len(str(v)))
+                        computed = self._compute_density(spec)
+                        if computed:
+                            densities = computed
+                    except Exception:  # noqa: BLE001
+                        pass
+            if i < len(labels):
+                label_len = max(label_len, len(labels[i].get("content", "")))
+            panels[pid] = {
+                "data_element_count": element_count,
+                "label_text_length": label_len,
+                "data_density_by_region": densities,
+            }
+        return {"panels": panels}
+
+    def _compute_density(self, spec) -> dict[str, float] | None:
+        import pandas as pd
+
+        data_path = self.base_dir / spec.source_data["path"]
+        if not data_path.exists():
+            return None
+        df = pd.read_csv(data_path)
+        x_col = spec.column_mapping.get("x", "")
+        y_col = spec.column_mapping.get("y", "")
+        if x_col not in df.columns or y_col not in df.columns:
+            return None
+        x_mid = (df[x_col].min() + df[x_col].max()) / 2
+        y_mid = (df[y_col].min() + df[y_col].max()) / 2
+        total = len(df)
+        if total == 0:
+            return None
+        quadrants = {
+            "upper_left": ((df[x_col] < x_mid) & (df[y_col] >= y_mid)).sum(),
+            "upper_right": ((df[x_col] >= x_mid) & (df[y_col] >= y_mid)).sum(),
+            "lower_left": ((df[x_col] < x_mid) & (df[y_col] < y_mid)).sum(),
+            "lower_right": ((df[x_col] >= x_mid) & (df[y_col] < y_mid)).sum(),
+        }
+        return {k: round(v / total, 2) for k, v in quadrants.items()}
 
     def _render_assets(self, plan, ai_elements):
         manifest_assets: list[dict] = []

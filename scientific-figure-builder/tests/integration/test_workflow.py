@@ -189,3 +189,72 @@ def test_style_anchor_resume_does_not_regenerate(tmp_path: Path):
     # Anchor was cached -> only the 2 remaining AI assets triggered new generation.
     new_gen = sum(1 for r, _ in client.transport.calls[calls_after_pause:] if r == "generation")
     assert new_gen == 2
+
+
+# --- Spec 0001 quality improvements ---
+
+def test_layout_analysis_generated_before_render(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert result["paused"] is False
+    layout_path = run_dir / "plans" / "layout_analysis.json"
+    assert layout_path.is_file()
+    layout = json.loads(layout_path.read_text())
+    assert layout["schema_version"] == "1.0"
+    assert len(layout["panel_width_recommendations"]) == 2
+
+
+def test_validation_reports_contain_layout_checks(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    all_check_ids = {c["check_id"] for r in result["validation_reports"]
+                     for c in r.get("checks", [])}
+    assert "legend_data_overlap" in all_check_ids
+    assert "text_overlap" in all_check_ids
+    assert "label_readability" in all_check_ids
+
+
+def test_export_blocked_reason_when_validation_blocks(tmp_path: Path):
+    req = _request()
+    req["panels"][0]["elements"][0]["plot_spec"] = str(FIXTURES / "does_not_exist.json")
+    wf, client, run_dir = _workflow(tmp_path, req)
+    result = wf.run()
+    assert result["exported"] is False
+    assert result.get("export_blocked_reason") is not None
+
+
+def test_root_cause_report_generated_on_validation_failure(tmp_path: Path):
+    req = _request()
+    req["panels"][0]["elements"][0]["plot_spec"] = str(FIXTURES / "does_not_exist.json")
+    wf, client, run_dir = _workflow(tmp_path, req)
+    result = wf.run()
+    root_cause_path = run_dir / "validation" / "root_cause_report.json"
+    assert root_cause_path.is_file()
+    root_cause = json.loads(root_cause_path.read_text())
+    assert root_cause["schema_version"] == "1.0"
+    assert isinstance(root_cause["findings"], list)
+
+
+def test_force_export_bypasses_gate(tmp_path: Path):
+    req = _request()
+    req["panels"][0]["elements"][0]["plot_spec"] = str(FIXTURES / "does_not_exist.json")
+    wf, client, run_dir = _workflow(tmp_path, req)
+    result = wf.run(force_export=True)
+    assert result["exported"] is True
+    assert (run_dir / "exports" / "figure.png").is_file()
+
+
+def test_final_validation_report_written_to_disk(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert (run_dir / "validation" / "validation_report.json").is_file()
+    report = json.loads((run_dir / "validation" / "validation_report.json").read_text())
+    assert report["schema_version"] == "1.0"
+
+
+def test_no_root_cause_report_when_all_pass(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request(), compose_dpi=600)
+    result = wf.run()
+    root_cause_path = run_dir / "validation" / "root_cause_report.json"
+    assert not root_cause_path.exists()
+

@@ -67,13 +67,19 @@ class MockArkTransport(ArkTransport):
                 "uncertainties": ["core diameter read from datasheet"],
             }
         if role in ("generation", "edits"):
-            return {"image_bytes": _transparent_circle_png(1024),
+            return {"image_bytes": _transparent_circle_png(2048),
                     "model": model, "seed": 0}
         if role in ("validations", "final_validation"):
             return {
                 "checks": [
                     {"check_id": "multimodal_semantic", "status": "pass",
                      "detail": "object count and style consistent"},
+                    {"check_id": "legend_data_overlap", "status": "pass",
+                     "detail": "legend does not overlap data"},
+                    {"check_id": "text_overlap", "status": "pass",
+                     "detail": "no text elements overlap"},
+                    {"check_id": "label_readability", "status": "pass",
+                     "detail": "tick labels are readable"},
                 ],
                 "blocking": False,
             }
