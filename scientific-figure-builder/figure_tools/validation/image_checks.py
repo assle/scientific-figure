@@ -9,8 +9,6 @@ from pathlib import Path
 
 from PIL import Image
 
-from figure_tools.validation.plot_checks import _check
-
 
 def _check_id(level: str, status: str, detail: str = "") -> dict:
     return {"level": level, "status": status, "detail": detail}

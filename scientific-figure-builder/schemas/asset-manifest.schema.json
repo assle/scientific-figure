@@ -46,6 +46,16 @@
         },
         "prompt_hash": { "type": "string" },
         "reference_hashes": { "type": "array", "items": { "type": "string" } },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["endpoint_id", "timestamp"],
+          "properties": {
+            "endpoint_id": { "type": "string", "minLength": 1 },
+            "seed": { "type": ["integer", "null"] },
+            "timestamp": { "type": "string", "minLength": 1 }
+          }
+        },
         "pixel_dimensions": {
           "type": "array",
           "minItems": 2,

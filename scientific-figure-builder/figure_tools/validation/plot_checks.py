@@ -13,13 +13,7 @@ import pandas as pd
 
 from figure_tools.plotting.data import build_data_used, compute_content_hash
 from figure_tools.plotting.spec import PlotSpec
-
-
-def _check(check_id: str, scope: str, level: str, status: str, detail: str = "") -> dict:
-    c = {"check_id": check_id, "scope": scope, "level": level, "status": status}
-    if detail:
-        c["detail"] = detail
-    return c
+from figure_tools.validation.summary import make_check, summarize_checks
 
 
 def _plotted_columns(spec: PlotSpec) -> list[str]:
@@ -59,10 +53,10 @@ def validate_plot_data(
             check_like=True,
             check_dtype=False,
         )
-        checks.append(_check("rendered_data_mapping", "plot", "error", "pass",
+        checks.append(make_check("rendered_data_mapping", "plot", "error", "pass",
                              "rendered data exactly matches expected source mapping"))
     except AssertionError:
-        checks.append(_check("rendered_data_mapping", "plot", "error", "fail",
+        checks.append(make_check("rendered_data_mapping", "plot", "error", "fail",
                              "rendered data does not match expected source mapping"))
 
     # 2. Columns and units.
@@ -71,9 +65,9 @@ def validate_plot_data(
     missing_units = [c for c in unit_cols if c not in spec.units]
     if missing_cols or missing_units:
         detail = f"missing columns={missing_cols}; missing units={missing_units}"
-        checks.append(_check("columns_and_units", "plot", "error", "fail", detail))
+        checks.append(make_check("columns_and_units", "plot", "error", "fail", detail))
     else:
-        checks.append(_check("columns_and_units", "plot", "error", "pass",
+        checks.append(make_check("columns_and_units", "plot", "error", "pass",
                              "all plotted columns and axis units present"))
 
     # 3. Sample counts.
@@ -81,25 +75,25 @@ def validate_plot_data(
     if min_samples is not None:
         n = len(data_used_df)
         if n < int(min_samples):
-            checks.append(_check("sample_count", "plot", "error", "fail",
+            checks.append(make_check("sample_count", "plot", "error", "fail",
                                  f"{n} samples < required {min_samples}"))
         else:
-            checks.append(_check("sample_count", "plot", "error", "pass",
+            checks.append(make_check("sample_count", "plot", "error", "pass",
                                  f"{n} samples >= required {min_samples}"))
 
     # 4. Missing-value handling (warning, not blocking).
     plotted = [c for c in _plotted_columns(spec) if c in data_used_df.columns]
     nan_count = int(data_used_df[plotted].isna().sum().sum()) if plotted else 0
     if nan_count:
-        checks.append(_check("missing_values", "plot", "warning", "fail",
+        checks.append(make_check("missing_values", "plot", "warning", "fail",
                              f"{nan_count} missing values in plotted columns"))
     else:
-        checks.append(_check("missing_values", "plot", "warning", "pass",
+        checks.append(make_check("missing_values", "plot", "warning", "pass",
                              "no missing values in plotted columns"))
 
     # 5. Transformations recorded.
     n_tr = len(spec.transformations)
-    checks.append(_check("transformations", "plot", "warning", "pass",
+    checks.append(make_check("transformations", "plot", "warning", "pass",
                          f"{n_tr} transformation(s) applied" if n_tr else "no transformations"))
 
     # 6. Error-bar definitions.
@@ -107,10 +101,10 @@ def validate_plot_data(
                if ("y_err" in e and e["y_err"] not in data_used_df.columns)
                or ("x_err" in e and e["x_err"] not in data_used_df.columns)]
     if spec.errors and bad_err:
-        checks.append(_check("error_bar_definitions", "plot", "error", "fail",
+        checks.append(make_check("error_bar_definitions", "plot", "error", "fail",
                              "error-bar columns missing"))
     else:
-        checks.append(_check("error_bar_definitions", "plot", "error", "pass",
+        checks.append(make_check("error_bar_definitions", "plot", "error", "pass",
                              "error-bar columns present"))
 
     # 7. Source-data hash (only when the source file is available).
@@ -118,24 +112,15 @@ def validate_plot_data(
         actual = compute_content_hash(source_path)
         expected_hash = spec.source_data["content_hash"]
         if actual == expected_hash:
-            checks.append(_check("source_data_hash", "plot", "error", "pass",
+            checks.append(make_check("source_data_hash", "plot", "error", "pass",
                                  "source file hash matches spec"))
         else:
-            checks.append(_check("source_data_hash", "plot", "error", "fail",
+            checks.append(make_check("source_data_hash", "plot", "error", "fail",
                                  "source file hash does not match spec"))
-
-    errors = sum(1 for c in checks if c["level"] == "error" and c["status"] == "fail")
-    warnings = sum(1 for c in checks if c["level"] == "warning" and c["status"] == "fail")
-    passed = sum(1 for c in checks if c["status"] == "pass")
 
     return {
         "schema_version": "1.0",
         "run_id": run_id or f"plot:{spec.source_data['path']}",
         "checks": checks,
-        "summary": {
-            "errors": errors,
-            "warnings": warnings,
-            "passed": passed,
-            "blocking": errors > 0,
-        },
+        "summary": summarize_checks(checks),
     }

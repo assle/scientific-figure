@@ -7,7 +7,6 @@ other non-deterministic metadata are normalized or stripped.
 from __future__ import annotations
 
 import io
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")  # non-interactive; safe in headless/CI
 
 from PIL import Image  # noqa: E402
+from figure_tools.vector.svg_normalize import HASHSALT, normalize_svg_bytes  # noqa: E402
 
 _PDF_METADATA = {
     "Creator": "scientific-figure-builder",
@@ -23,10 +23,6 @@ _PDF_METADATA = {
     "CreationDate": datetime(2000, 1, 1),
     "ModDate": datetime(2000, 1, 1),
 }
-
-_SVG_HASHSALT = "scientific-figure-builder"
-_SVG_DATE_RE = re.compile(rb"<dc:date>.*?</dc:date>", re.DOTALL)
-_SVG_COMMENT_RE = re.compile(rb"<!--.*?-->", re.DOTALL)
 
 
 def export_png(fig, path: Path, dpi: int = 300) -> Path:
@@ -42,12 +38,9 @@ def export_png(fig, path: Path, dpi: int = 300) -> Path:
 
 def export_svg(fig, path: Path) -> Path:
     buf = io.BytesIO()
-    with matplotlib.rc_context({"svg.hashsalt": _SVG_HASHSALT}):
+    with matplotlib.rc_context({"svg.hashsalt": HASHSALT}):
         fig.savefig(buf, format="svg")
-    data = buf.getvalue()
-    data = _SVG_COMMENT_RE.sub(b"", data)
-    data = _SVG_DATE_RE.sub(b"", data)
-    path.write_bytes(data)
+    path.write_bytes(normalize_svg_bytes(buf.getvalue()))
     return path
 
 

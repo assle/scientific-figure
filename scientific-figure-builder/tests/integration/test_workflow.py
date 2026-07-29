@@ -155,3 +155,37 @@ def test_style_anchor_pauses_when_three_or_more_ai_assets(tmp_path: Path):
     # Only the single style-anchor asset was generated before pausing.
     gen_calls = sum(1 for role, _ in client.transport.calls if role == "generation")
     assert gen_calls == 1
+
+
+def test_default_approval_flow_completes(tmp_path: Path):
+    # Default (non auto_execute): plan approval pauses, then approved run proceeds.
+    req = _request(auto_execute=False)
+    wf, client, run_dir = _workflow(tmp_path, req)
+    first = wf.run()
+    assert first["paused"] is True
+    assert first["pause_reason"] == "plan_approval"
+    assert sum(1 for r, _ in client.transport.calls if r == "generation") == 0
+
+    second = wf.run(approved=True)
+    assert second["paused"] is False
+    assert second["exported"] is True
+    assert (run_dir / "exports" / "figure.png").is_file()
+
+
+def test_style_anchor_resume_does_not_regenerate(tmp_path: Path):
+    req = _request()
+    req["panels"][1]["elements"].extend([
+        {"element_id": "lens", "type": "image_asset", "prompt": "lens"},
+        {"element_id": "detector", "type": "image_asset", "prompt": "detector"},
+    ])
+    wf, client, run_dir = _workflow(tmp_path, req)
+    paused = wf.run()
+    assert paused["pause_reason"] == "style_anchor_approval"
+    calls_after_pause = len(client.transport.calls)
+
+    resumed = wf.run(approved=True, style_anchor_approved=True)
+    assert resumed["paused"] is False
+    assert resumed["exported"] is True
+    # Anchor was cached -> only the 2 remaining AI assets triggered new generation.
+    new_gen = sum(1 for r, _ in client.transport.calls[calls_after_pause:] if r == "generation")
+    assert new_gen == 2

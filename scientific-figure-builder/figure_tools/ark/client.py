@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ from figure_tools.ark.auth import redact
 from figure_tools.ark.transport import ArkError, RateLimitError, ArkTransport
 from figure_tools.state import Cache, RunState
 from figure_tools.validation.image_checks import deterministic_image_checks
+from figure_tools.validation.summary import summarize_checks
 
 
 def file_hash(path: str | Path) -> str:
@@ -55,17 +58,20 @@ class ArkClient:
         self.state = state
         self.cache = cache
         self.output_dir = Path(output_dir) if output_dir else None
+        self._lock = threading.Lock()
 
     def _role_model(self, role: str) -> str:
         return self.models[ROLE_TO_CONFIG[role]]["model"]
 
     def _record_call(self, role: str) -> None:
         if self.state is not None:
-            self.state.record_call(role)
+            with self._lock:
+                self.state.record_call(role)
 
     def _cache_hit(self) -> None:
         if self.state is not None:
-            self.state.cache_hits += 1
+            with self._lock:
+                self.state.cache_hits += 1
 
     def _log_prompt(self, role: str, prompt: str) -> None:
         if self.output_dir is None:
@@ -87,7 +93,7 @@ class ArkClient:
                     self.state.record_retry(role, "transient")
                 if attempt >= max_transient:
                     raise
-                time.sleep(min(0.001 * (2 ** attempt), 0.01))
+                time.sleep(min(0.1 * (2 ** (attempt - 1)), 5.0))
 
     # --- reference analysis ---------------------------------------------
     def analyze_reference_figure(self, image_path: str | Path,
@@ -123,6 +129,7 @@ class ArkClient:
         transparent = ensure_transparency(path)
         img = Image.open(path)
         final_bytes = path.read_bytes()
+        seed = parameters.get("seed") if isinstance(parameters, dict) else None
         meta: dict[str, Any] = {
             "path": str(path),
             "content_hash": "sha256:" + hashlib.sha256(final_bytes).hexdigest(),
@@ -132,6 +139,11 @@ class ArkClient:
             "parameters": parameters,
             "prompt_hash": prompt_hash,
             "reference_hashes": list(reference_hashes),
+            "provenance": {
+                "endpoint_id": self._role_model(role),
+                "seed": seed,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
             "cached": cached,
         }
         if parent_asset_id is not None:
@@ -226,20 +238,12 @@ class ArkClient:
             c.setdefault("level", "error")
 
         all_checks = det_checks + mm_checks
-        errors = sum(1 for c in all_checks if c["level"] == "error" and c["status"] == "fail")
-        warnings = sum(1 for c in all_checks if c["level"] == "warning" and c["status"] == "fail")
-        passed = sum(1 for c in all_checks if c["status"] == "pass")
         run_id = self.state.run_id if self.state else f"asset:{Path(image_path).name}"
         return {
             "schema_version": "1.0",
             "run_id": run_id,
             "checks": all_checks,
-            "summary": {
-                "errors": errors,
-                "warnings": warnings,
-                "passed": passed,
-                "blocking": errors > 0,
-            },
+            "summary": summarize_checks(all_checks),
         }
 
     # --- upload disclosure ----------------------------------------------

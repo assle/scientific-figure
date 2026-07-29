@@ -6,6 +6,7 @@ two-layer validation, assembly, final validation, export, and reporting.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -51,7 +52,8 @@ class FigureWorkflow:
         c = self.request["canvas"]
         return float(c["width"]), float(c["height"])
 
-    def run(self) -> dict[str, Any]:
+    def run(self, approved: bool = False,
+            style_anchor_approved: bool = False) -> dict[str, Any]:
         task = classify_task(self.request)
         plan = create_figure_plan(self.request)
         self._write_json("plans/figure_plan.json", plan)
@@ -59,13 +61,18 @@ class FigureWorkflow:
         (self.run_dir / "plans" / "layout_wireframe.svg").write_text(
             generate_wireframe(plan), encoding="utf-8")
 
-        # Approval gate: no paid generation without explicit opt-in.
-        if plan["approval"]["status"] != "auto_execute":
+        # Persist style bible and inputs (plan section 13).
+        self._write_style_bible()
+        self._copy_inputs()
+
+        # Approval gate: no paid generation without explicit opt-in (section 4).
+        if plan["approval"]["status"] != "auto_execute" and not approved:
             self.state.request_approval("plan_approval", "pending")
             return {"paused": True, "pause_reason": "plan_approval",
                     "figure_plan": plan, "task": task}
+        self.state.request_approval("plan_approval", "approved")
 
-        # Style-anchor gate: >=3 AI assets -> generate one anchor, then pause.
+        # Style-anchor gate (section 4 step 10): >=3 AI assets.
         ai_elements = [
             (panel, el)
             for panel in self.request["panels"]
@@ -73,65 +80,19 @@ class FigureWorkflow:
             if el["type"] == "image_asset"
         ]
         if len(ai_elements) >= 3:
-            panel, el = ai_elements[0]
-            self.ark.generate_image_asset(
-                el["prompt"], {}, output_path=self.run_dir / "assets" / f"{el['element_id']}.png")
-            self.state.request_approval("style_anchor_approval", "pending")
-            return {"paused": True, "pause_reason": "style_anchor_approval",
-                    "figure_plan": plan, "task": task}
+            anchor_id = ai_elements[0][1]["element_id"]
+            anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
+            if not anchor_path.exists():
+                self.ark.generate_image_asset(
+                    ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
+            if not style_anchor_approved:
+                self.state.request_approval("style_anchor_approval", "pending")
+                return {"paused": True, "pause_reason": "style_anchor_approval",
+                        "figure_plan": plan, "task": task}
+            self.state.request_approval("style_anchor_approval", "approved")
 
-        manifest_assets: list[dict] = []
-        validation_reports: list[dict] = []
-        placements: list[dict] = []
-        text_placements: list[dict] = []
-
-        for panel in self.request["panels"]:
-            for el in panel.get("elements", []):
-                asset_id = el["element_id"]
-                try:
-                    if el["type"] == "data_plot":
-                        spec = load_plot_spec(el["plot_spec"])
-                        out = self.run_dir / "plots" / asset_id
-                        render_plot(spec, output_dir=out, base_dir=self.base_dir)
-                        path = out / "plot.png"
-                        manifest_assets.append(self._raster_meta(asset_id, "data_plot",
-                                                                  path, plan, transparent=False))
-                        placements.append({"path": str(path), "bbox": panel["bbox"],
-                                           "z_order": self._zorder(asset_id, plan)})
-                    elif el["type"] == "image_asset":
-                        path = self.run_dir / "assets" / f"{asset_id}.png"
-                        meta = self.ark.generate_image_asset(
-                            el["prompt"], {}, output_path=path)
-                        report = self.ark.validate_image_asset(
-                            path, physical_size_mm=tuple(panel["physical_size"]))
-                        validation_reports.append(report)
-                        manifest_assets.append(self._raster_meta(
-                            asset_id, "image_asset", path, plan,
-                            transparent=meta["transparent"]))
-                        placements.append({"path": str(path), "bbox": panel["bbox"],
-                                           "z_order": self._zorder(asset_id, plan)})
-                except Exception as e:  # noqa: BLE001
-                    validation_reports.append({
-                        "schema_version": "1.0", "run_id": asset_id,
-                        "checks": [{"check_id": "render", "scope": f"asset:{asset_id}",
-                                    "level": "error", "status": "fail", "detail": str(e)}],
-                        "summary": {"errors": 1, "warnings": 0, "passed": 0, "blocking": True},
-                    })
-
-        # Labels as SVG vector elements.
-        for i, label in enumerate(self.request.get("labels", [])):
-            asset_id = label["element_id"]
-            svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
-            svg_path.parent.mkdir(parents=True, exist_ok=True)
-            canvas = SvgCanvas(width=200, height=40)
-            canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
-            svg_path.write_text(canvas.to_string(), encoding="utf-8")
-            manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
-            panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
-            if panel is not None:
-                text_placements.append({"x": panel["bbox"][0] + 0.02,
-                                        "y": panel["bbox"][1] + 0.02,
-                                        "text": label["content"], "font_size": 9})
+        manifest_assets, validation_reports, placements, text_placements = \
+            self._render_assets(plan, ai_elements)
 
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self._write_json("asset_manifest.json", manifest)
@@ -179,21 +140,157 @@ class FigureWorkflow:
                 return a["z_order"]
         return 0
 
-    def _raster_meta(self, asset_id, atype, path, plan, transparent):
+    def _write_style_bible(self) -> None:
+        from figure_tools._resources import template_path
+
+        src = template_path("default-style-bible.json")
+        (self.run_dir / "style_bible.json").write_text(src.read_text(encoding="utf-8"),
+                                                        encoding="utf-8")
+
+    def _copy_inputs(self) -> None:
+        inputs = self.run_dir / "inputs"
+        inputs.mkdir(parents=True, exist_ok=True)
+        for ref in self.request.get("reference_figures", []):
+            src = Path(ref)
+            if src.exists():
+                shutil.copyfile(src, inputs / src.name)
+        for panel in self.request["panels"]:
+            for el in panel.get("elements", []):
+                if el["type"] == "data_plot":
+                    try:
+                        spec = load_plot_spec(el["plot_spec"])
+                        src = self.base_dir / spec.source_data["path"]
+                        if src.exists():
+                            shutil.copyfile(src, inputs / src.name)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    def _error_report(self, asset_id: str, detail: str) -> dict:
+        from figure_tools.validation.summary import summarize_checks
+
+        checks = [{"check_id": "render", "scope": f"asset:{asset_id}",
+                   "level": "error", "status": "fail", "detail": detail}]
+        return {"schema_version": "1.0", "run_id": asset_id,
+                "checks": checks, "summary": summarize_checks(checks)}
+
+    def _render_assets(self, plan, ai_elements):
+        manifest_assets: list[dict] = []
+        validation_reports: list[dict] = []
+        placements: list[dict] = []
+
+        # Data plots: local, sequential, deterministic.
+        for panel in self.request["panels"]:
+            for el in panel.get("elements", []):
+                if el["type"] != "data_plot":
+                    continue
+                asset_id = el["element_id"]
+                try:
+                    spec = load_plot_spec(el["plot_spec"])
+                    out = self.run_dir / "plots" / asset_id
+                    render_plot(spec, output_dir=out, base_dir=self.base_dir)
+                    path = out / "plot.png"
+                    manifest_assets.append(
+                        self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
+                    placements.append({"path": str(path), "bbox": panel["bbox"],
+                                       "z_order": self._zorder(asset_id, plan)})
+                except Exception as e:  # noqa: BLE001
+                    validation_reports.append(self._error_report(asset_id, str(e)))
+
+        # AI assets: independent, concurrency 2 (plan section 12).
+        ai_results: dict[str, tuple] = {}
+        if ai_elements:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=2) as ex:
+                futs = {ex.submit(self._safe_gen_ai, panel, el): el["element_id"]
+                        for panel, el in ai_elements}
+                for fut in futs:
+                    ai_results[futs[fut]] = fut.result()
+
+        for panel, el in ai_elements:  # preserve plan order
+            asset_id = el["element_id"]
+            _aid, meta, report, err = ai_results[asset_id]
+            if err is not None:
+                validation_reports.append(self._error_report(asset_id, str(err)))
+                continue
+            if report is not None:
+                validation_reports.append(report)
+            manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
+            placements.append({"path": meta["path"], "bbox": panel["bbox"],
+                               "z_order": self._zorder(asset_id, plan)})
+
+        text_placements = self._render_labels(plan, manifest_assets)
+        return manifest_assets, validation_reports, placements, text_placements
+
+    def _safe_gen_ai(self, panel, el):
+        try:
+            path = self.run_dir / "assets" / f"{el['element_id']}.png"
+            meta = self.ark.generate_image_asset(el["prompt"], {}, output_path=path)
+            report = self.ark.validate_image_asset(
+                path, physical_size_mm=tuple(panel["physical_size"]))
+            return (el["element_id"], meta, report, None)
+        except Exception as e:  # noqa: BLE001
+            return (el["element_id"], None, None, e)
+
+    def _render_labels(self, plan, manifest_assets) -> list[dict]:
+        text_placements: list[dict] = []
+        for i, label in enumerate(self.request.get("labels", [])):
+            asset_id = label["element_id"]
+            svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
+            svg_path.parent.mkdir(parents=True, exist_ok=True)
+            canvas = SvgCanvas(width=200, height=40)
+            canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
+            svg_path.write_text(canvas.to_string(), encoding="utf-8")
+            manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
+            panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
+            if panel is not None:
+                text_placements.append({"x": panel["bbox"][0] + 0.02,
+                                        "y": panel["bbox"][1] + 0.02,
+                                        "text": label["content"], "font_size": 9})
+        return text_placements
+
+    @staticmethod
+    def _now() -> str:
+        from datetime import datetime, timezone
+
+        return datetime.now(timezone.utc).isoformat()
+
+    def _local_meta(self, asset_id, atype, path, plan, transparent):
         from PIL import Image
-        import hashlib
+
         img = Image.open(path)
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),
-            "content_hash": "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+            "content_hash": "sha256:" + hashlib.sha256(
+                Path(path).read_bytes()).hexdigest(),
             "pixel_dimensions": list(img.size), "transparent": transparent,
             "z_order": self._zorder(asset_id, plan),
             "validation_result": {"status": "pass"},
+            "provenance": {"endpoint_id": "python", "seed": None, "timestamp": self._now()},
             "parent_asset_id": None,
+        }
+
+    def _ai_manifest_entry(self, asset_id, meta, plan, report):
+        status = "pass"
+        if report is not None and report["summary"]["blocking"]:
+            status = "fail"
+        return {
+            "asset_id": asset_id, "type": "image_asset",
+            "path": meta["path"], "content_hash": meta["content_hash"],
+            "generation": {"model": meta["model"], "parameters": meta["parameters"]},
+            "prompt_hash": meta["prompt_hash"],
+            "reference_hashes": meta["reference_hashes"],
+            "pixel_dimensions": meta["pixel_dimensions"],
+            "transparent": meta["transparent"],
+            "z_order": self._zorder(asset_id, plan),
+            "validation_result": {"status": status},
+            "provenance": meta["provenance"],
+            "parent_asset_id": meta.get("parent_asset_id"),
         }
 
     def _vector_meta(self, asset_id, atype, path, plan):
         from figure_tools.ark.client import file_hash
+
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),
             "content_hash": file_hash(path),
@@ -201,5 +298,6 @@ class FigureWorkflow:
                                  int(self._canvas_mm()[1] / 25.4 * self.compose_dpi)],
             "transparent": True, "z_order": self._zorder(asset_id, plan),
             "validation_result": {"status": "pass"},
+            "provenance": {"endpoint_id": "svg", "seed": None, "timestamp": self._now()},
             "parent_asset_id": None,
         }

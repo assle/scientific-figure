@@ -83,12 +83,25 @@ def apply_merge(
 
 
 def mcp_entry_for(package_dir: str | Path) -> dict[str, Any]:
-    """Build the local MCP server entry that launches the bundled server via uv."""
+    """Build the local MCP server entry that launches the bundled server via uv.
+
+    The server reads Ark credentials/model IDs from the environment (user-local
+    private config, plan section 5); these references are expanded by OpenCode
+    from the user's shell environment. No secret values are stored in the config.
+    """
     return {
         "type": "local",
         "command": ["uv", "run", "--directory", str(package_dir),
                      "python", "-m", "figure_tools.server"],
         "enabled": True,
+        "environment": {
+            "ARK_API_KEY": "{env:ARK_API_KEY}",
+            "ARK_API_KEY_CODING": "{env:ARK_API_KEY_CODING}",
+            "ARK_IMAGE_GENERATE": "{env:ARK_IMAGE_GENERATE}",
+            "ARK_IMAGE_EDIT": "{env:ARK_IMAGE_EDIT}",
+            "ARK_VISION_ANALYZE": "{env:ARK_VISION_ANALYZE}",
+            "ARK_VISION_VALIDATE": "{env:ARK_VISION_VALIDATE}",
+        },
     }
 
 

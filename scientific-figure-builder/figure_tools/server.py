@@ -1,13 +1,15 @@
 """MCP server exposing the 14 stable capability tools (plan section 8).
 
-Tool handlers wrap the deterministic engines and the (mock) Ark client. The
-stdio JSON-RPC loop lets OpenCode discover and invoke the tools. Paid calls are
-mock-based until Phase 7.
+Tool handlers wrap the deterministic engines and the Ark client. The stdio
+JSON-RPC loop lets OpenCode discover and invoke the tools. When Ark credentials
+are present in the environment (ARK_API_KEY + role model IDs), real paid calls
+are made under a run budget; otherwise a mock transport is used (safe default).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -28,21 +30,55 @@ from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.wireframe import generate_wireframe
 
-_MODELS = {
-    "image_generate": {"model": "<fixed-endpoint-id>"},
-    "image_edit": {"model": "<fixed-endpoint-id>"},
-    "vision_analyze": {"model": "<fixed-endpoint-id>"},
-    "vision_validate": {"model": "<fixed-endpoint-id>"},
-}
 _CACHE_DIR = Path(tempfile.gettempdir()) / "scientific-figure-cache"
+# Default per-run paid-call budget (plan section 12).
+_DEFAULT_BUDGET = {
+    "reference_analysis": 1, "generation": 5, "edits": 2,
+    "validations": 5, "final_validation": 1,
+}
+
+
+def _models_from_env() -> dict[str, dict] | None:
+    """Read the four fixed model/Endpoint IDs from the environment (user-local
+    private config, plan section 5). Returns None if not all are set."""
+    roles = {
+        "image_generate": "ARK_IMAGE_GENERATE",
+        "image_edit": "ARK_IMAGE_EDIT",
+        "vision_analyze": "ARK_VISION_ANALYZE",
+        "vision_validate": "ARK_VISION_VALIDATE",
+    }
+    models = {role: {"model": os.environ[var]} for role, var in roles.items()
+              if os.environ.get(var)}
+    if len(models) != len(roles):
+        return None
+    return models
 
 
 def _client(output_dir: str | Path | None = None) -> ArkClient:
     from figure_tools.state import Cache, RunState
 
+    models = _models_from_env()
+    if models is not None and os.environ.get("ARK_API_KEY"):
+        # Real Ark (Phase 7). Plan routing is handled by RealArkTransport.
+        from figure_tools.ark.real_transport import RealArkTransport
+
+        transport = RealArkTransport()
+        api_key = os.environ["ARK_API_KEY"]
+        budget = _DEFAULT_BUDGET
+    else:
+        transport = MockArkTransport()
+        models = models or {
+            "image_generate": {"model": "mock"},
+            "image_edit": {"model": "mock"},
+            "vision_analyze": {"model": "mock"},
+            "vision_validate": {"model": "mock"},
+        }
+        api_key = None
+        budget = {}
+
     return ArkClient(
-        _MODELS, MockArkTransport(), api_key=None,
-        state=RunState("mcp", budget={}),
+        models, transport, api_key=api_key,
+        state=RunState("mcp", budget=budget),
         cache=Cache(_CACHE_DIR), output_dir=Path(output_dir) if output_dir else None,
     )
 
@@ -124,6 +160,8 @@ def _h_validate_assembled_figure(args):
 
 
 def _h_export_figure(args):
+    import shutil
+
     source_dir = Path(args["source_dir"])
     output_dir = Path(args["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -133,7 +171,7 @@ def _h_export_figure(args):
         src = source_dir / f"figure.{ext}"
         if src.exists():
             dst = output_dir / f"figure.{ext}"
-            src.replace(dst) if False else __import__("shutil").copyfile(src, dst)
+            shutil.copyfile(src, dst)
             files[ext] = str(dst)
     if args.get("include_pptx"):
         export_pptx(args.get("placements", []), output_dir / "figure.pptx",
