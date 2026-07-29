@@ -1,12 +1,33 @@
-# /scientific-figure
+---
+description: Orchestrate a scientific figure (init, plan, run, resume, validate, export)
+---
+You are invoking the scientific-figure-builder skill.
 
-> Status: implemented in Phase 6 (installation and OpenCode command).
+Load the `scientific-figure-builder` skill, then perform the requested
+subcommand from `$ARGUMENTS`:
 
-Subcommands (plan section 14):
+- `init` - initialize project configuration (`.scientific-figure/`) with no
+  secrets. Read the Ark API key from `ARK_API_KEY`; never write it anywhere.
+- `plan` - inspect the request and local inputs, classify the task, analyze
+  reference images (if any), create a versioned figure plan and a no-cost SVG
+  layout wireframe. Show the plan, upload list, model-call estimate, and
+  wireframe. **Wait for approval before any paid generation.** Keep raw data
+  local by default.
+- `run` - execute the approved plan: generate isolated transparent assets via
+  the Ark image model, render data plots and precise geometry locally with
+  Python/SVG, validate, and assemble. If there are three or more AI assets,
+  generate one style-anchor asset first and pause for approval. Retry quality
+  failures at most twice per asset.
+- `resume` - resume an interrupted run from its run directory without
+  repeating completed work; invalidate only affected downstream artifacts.
+- `validate` - run deterministic and multimodal validation; classify results as
+  `error` (blocks export) or `warning` (allows export but is recorded).
+- `export` - export final PNG, SVG, and PDF (optional PPTX) and write the asset
+  manifest, validation report, and generation report into the versioned run
+  directory.
 
-- `/scientific-figure init` - initialize project configuration.
-- `/scientific-figure plan` - create a versioned figure plan + wireframe.
-- `/scientific-figure run` - execute the approved plan.
-- `/scientific-figure resume` - resume an interrupted run.
-- `/scientific-figure validate` - run validation.
-- `/scientific-figure export` - export final formats.
+Routing rules (do not deviate): data plots, axes, exact numbers, equations, and
+periodic arrays come from Python/SVG only; the Ark image model produces only
+isolated, non-quantitative visual assets; final compound figures are assembled
+by Python, never by the image model. If the request is scientifically ambiguous,
+pause and ask the user before proceeding.
