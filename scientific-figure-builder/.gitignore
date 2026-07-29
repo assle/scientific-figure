@@ -14,3 +14,8 @@ runs/
 
 # OS/editor
 .DS_Store
+
+# Secrets / credentials (never commit)
+.ark.env
+*.env
+.env

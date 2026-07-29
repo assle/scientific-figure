@@ -115,11 +115,17 @@ class ArkClient:
                     reference_hashes: list[str], cached: bool,
                     parent_asset_id: str | None = None) -> dict[str, Any]:
         path.write_bytes(image_bytes)
-        img = Image.open(io.BytesIO(image_bytes))
-        transparent = "A" in img.getbands()
+        # Transparency workflow (plan section 9): if the model returned an
+        # opaque image, remove the background so the asset is genuinely
+        # transparent. No-op for already-transparent images (e.g. mock).
+        from figure_tools.imaging.background_removal import ensure_transparency
+
+        transparent = ensure_transparency(path)
+        img = Image.open(path)
+        final_bytes = path.read_bytes()
         meta: dict[str, Any] = {
             "path": str(path),
-            "content_hash": "sha256:" + hashlib.sha256(image_bytes).hexdigest(),
+            "content_hash": "sha256:" + hashlib.sha256(final_bytes).hexdigest(),
             "pixel_dimensions": list(img.size),
             "transparent": transparent,
             "model": self._role_model(role),
