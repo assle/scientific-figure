@@ -27,12 +27,134 @@ OpenCode 优先的科研论文配图编排技能：理解配图需求 -> 分解�
 | Python | 量化图、精确几何、拼装、导出 | 编造实验值 |
 | SVG | 箭头、标签、公式、规则几何 | 复杂写实设备 |
 
-## 安装
+## 交付包使用指南
+
+### 1. 准备环境
+
+使用前需要安装：
+
+- Python 3.11 或更高版本；
+- [`uv`](https://docs.astral.sh/uv/)；
+- [OpenCode](https://opencode.ai/)。
+
+### 2. 获取交付包
+
+下面两种方式任选一种。
+
+方式一：使用完整仓库。在仓库根目录执行：
+
+```bash
+./install.sh
+```
+
+方式二：使用发布的源码交付包
+`scientific_figure_builder-0.1.0.tar.gz`：
+
+```bash
+tar -xzf scientific_figure_builder-0.1.0.tar.gz
+cd scientific_figure_builder-0.1.0
+./install.sh
+```
+
+交付时应优先提供 `.tar.gz` 文件；`.whl` 文件主要用于 Python 包安装，
+不是给普通用户直接运行的一键交付包。
+
+### 3. 安装器会做什么
+
+安装器会自动完成：
+
+- 安装独立 Python 运行环境和火山方舟 Ark 依赖；
+- 将完整 Skill 发布到 OpenCode 全局技能目录；
+- 注册 `/scientific-figure` 命令；
+- 安全合并 `scientific-figure` MCP 配置，不覆盖其他配置；
+- 备份被修改的配置和旧版本；
+- 启动 MCP 自检，确认 14 个工具均可发现。
+
+安装过程中不会写入 API Key。安装结束后，需要完全退出并重新打开
+OpenCode，让新的 Skill、命令和 MCP 配置生效。
+
+### 4. 配置火山方舟
+
+如果需要参考图分析、AI 素材生成或多模态校验，请在启动 OpenCode 的
+终端中设置以下环境变量：
+
+```bash
+export ARK_API_KEY="<图像生成/编辑套餐 Key>"
+export ARK_API_KEY_CODING="<视觉分析/校验套餐 Key>"
+export ARK_IMAGE_GENERATE="<图像生成模型或 Endpoint ID>"
+export ARK_IMAGE_EDIT="<图像编辑模型或 Endpoint ID>"
+export ARK_VISION_ANALYZE="<视觉分析模型或 Endpoint ID>"
+export ARK_VISION_VALIDATE="<视觉校验模型或 Endpoint ID>"
+
+opencode
+```
+
+密钥只从环境变量读取，不会被写入 Skill、OpenCode 配置、运行报告或
+版本库。如果只使用本地 Python/SVG 绘图，可以跳过这些变量，并使用：
+
+```bash
+./install.sh --without-ark
+```
+
+### 5. 在 OpenCode 中使用
+
+可以直接使用自然语言：
+
+```text
+使用 scientific-figure-builder，根据 data.csv 画一张论文用折线图，
+导出 PNG、SVG 和 PDF。
+```
+
+也可以使用 `/scientific-figure` 命令：
+
+```text
+/scientific-figure init
+/scientific-figure plan 根据 data.csv 生成双面板科研图
+/scientific-figure run
+/scientific-figure resume runs/2026-07-29_figure-01
+/scientific-figure validate
+/scientific-figure export
+```
+
+默认工作流会先生成方案和免费 SVG 布局线框；涉及付费模型调用时，会先
+等待确认。最终文件保存在版本化运行目录的 `exports/` 中。
+
+### 6. 验证、限定项目和更新
+
+检查现有安装：
+
+```bash
+./install.sh --verify
+```
+
+只让指定项目发现该 Skill：
+
+```bash
+./install.sh --project /path/to/project
+```
+
+更新时获取新版本仓库或解压新的交付包，然后再次执行 `./install.sh`。
+安装器会替换自身文件和运行环境、更新 MCP 路径，并保留旧版本备份。
+
+如果安装失败，安装器会返回非零状态，并尽可能恢复原运行环境；现有
+OpenCode 配置在修改前会生成 `.bak` 备份。
+
+## 开发者安装
+
+如果只想在源码目录开发和运行测试：
 
 ```bash
 cd scientific-figure-builder
-uv sync                                     # 基础依赖
-uv pip install 'volcengine-python-sdk[ark]' # 仅真实 Ark 调用需要
+uv sync
+uv run pytest
+```
+
+重新生成可交付的源码包和 Python wheel：
+
+```bash
+cd ..
+uv build scientific-figure-builder
+# 产物位于 scientific-figure-builder/dist/
 ```
 
 ## 快速开始
@@ -73,7 +195,7 @@ r = wf.run()                       # 默认先审批后执行；非 auto_execute
 
 产出：`runs/YYYY-MM-DD_figure-XX/{plans,plots,assets,vectors,inputs,exports}/figure.{png,svg,pdf}` + `asset_manifest.json`、`style_bible.json`、`run_state.json`、`generation_report.md`。
 
-## 配置（真实 Ark 调用）
+## 源码运行时配置（真实 Ark 调用）
 
 在 `scientific-figure-builder/.ark.env`（已 gitignore）填 6 项：
 ```
@@ -92,12 +214,9 @@ set -a && . ./.ark.env && set +a   # 然后运行你的脚本/测试
 
 ## OpenCode 集成
 
-```bash
-# 注册 MCP server（备份原配置 + 显示 diff + 请求确认，不覆盖无关项）
-python install/configure_opencode.py ~/.config/opencode/opencode.json "$(pwd)/scientific-figure-builder"
-# 让 OpenCode 发现技能：把包放到 .opencode/skills/scientific-figure-builder/（或软链）
-```
-然后在 OpenCode 中：`/scientific-figure init|plan|run|resume|validate|export`，或自然语言"用 scientific-figure-builder 画一张……"。
+一键安装已经完成 Skill 发现、命令和 MCP 集成。重启 OpenCode 后可使用
+`/scientific-figure init|plan|run|resume|validate|export`，或直接说
+“使用 scientific-figure-builder 画一张……”。
 
 ## 默认安全行为
 
@@ -131,7 +250,8 @@ scientific-figure-builder/
 │   ├── assembly/            # 合成器
 │   ├── export/              # PNG/SVG/PDF/PPTX 导出
 │   ├── config.py state.py orchestrator.py workflow.py report.py server.py
-├── install/                 # 安全 OpenCode 配置合并器
+├── install.sh              # 一键安装入口
+├── install/                 # 交付安装器 + 安全 OpenCode 配置合并器
 ├── commands/                # /scientific-figure 命令定义
 └── tests/                   # unit / integration / e2e
 ```

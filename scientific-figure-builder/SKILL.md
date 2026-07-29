@@ -2,7 +2,6 @@
 name: scientific-figure-builder
 description: Orchestrate publication scientific figures. Understand a figure request, decompose it into rendering tasks, route each to the right engine (Python plots, SVG, Volcengine Ark image/vision models), validate results, and assemble final PNG/SVG/PDF. Not a single-prompt image generator. OpenCode-first; core modules are platform-independent.
 license: MIT
-compatibility: opencode
 metadata:
   version: "0.1.0"
   provider: volcengine-ark

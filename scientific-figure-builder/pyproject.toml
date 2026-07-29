@@ -35,6 +35,12 @@ packages = ["figure_tools"]
 [tool.hatch.build.targets.wheel.force-include]
 "schemas" = "scientific_figure_builder_data/schemas"
 "templates" = "scientific_figure_builder_data/templates"
+"SKILL.md" = "scientific_figure_builder_skill/SKILL.md"
+"references" = "scientific_figure_builder_skill/references"
+"commands" = "scientific_figure_builder_skill/commands"
+"install.sh" = "scientific_figure_builder_skill/install.sh"
+"install/install_delivery.py" = "scientific_figure_builder_skill/install/install_delivery.py"
+"install/configure_opencode.py" = "scientific_figure_builder_skill/install/configure_opencode.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

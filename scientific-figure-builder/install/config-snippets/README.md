@@ -1,5 +1,6 @@
-# OpenCode config snippets
+# OpenCode configuration
 
-Proposed MCP/permission snippets for the safe configuration merger are generated
-here in Phase 6. The merger inspects existing config, shows a diff, asks for
-approval, backs up the original, and preserves unrelated providers/servers.
+`install_delivery.py` generates the MCP entry from the installed private
+runtime. It validates existing configuration first, backs up the original file,
+and changes only `mcp.scientific-figure`; unrelated providers, servers,
+commands, agents, tools, and permissions are preserved.
