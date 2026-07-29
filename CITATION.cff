@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite it using the metadata below."
+title: "Scientific Figure Builder"
+type: software
+authors:
+  - family-names: "Lu"
+    given-names: "Zhendong"
+    alias: "assle"
+version: 0.1.0
+repository-code: "https://github.com/assle/scientific-figure"
+url: "https://github.com/assle/scientific-figure"
+license: MIT

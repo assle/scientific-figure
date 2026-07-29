@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -9,6 +9,7 @@ description = "OpenCode-first scientific-figure orchestration skill (v1)."
 readme = "SKILL.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "jsonschema>=4.21",
     "pyyaml>=6.0",

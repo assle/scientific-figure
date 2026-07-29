@@ -141,3 +141,18 @@ scientific-figure-builder/
 v1（Phase 1-7）已完成并通过真实模型验收。3 个真实付费用例通过：CSV->可复现出版图；参考图分解->透明资产->重构；混合多面板（AI 资产 + Python 图 + SVG 标签）。
 
 排除项（不在 v1 内）：Blender、动画、交互式 web 可视化、可旋转 3D、非火山方舟的 provider、整篇论文 PDF 解析、一次性生成正式复合图、色盲等无障碍检查。
+
+## 贡献
+
+欢迎通过 Issue 和 Pull Request 报告问题或改进项目。开始前请阅读
+[`CONTRIBUTING.md`](./CONTRIBUTING.md)；安全问题请遵循
+[`SECURITY.md`](./SECURITY.md) 中的私密报告流程。
+
+## 引用
+
+如果本项目对你的研究有帮助，请使用 [`CITATION.cff`](./CITATION.cff)
+提供的元数据进行引用。创建正式版本后，可将发布版本和 DOI 补充到引用信息中。
+
+## License
+
+本项目采用 [MIT License](./LICENSE)。
