@@ -156,7 +156,8 @@ def _h_validate_assembled_figure(args):
     return validate_assembled_figure(
         args["figure_plan"], args["asset_manifest"], args["composed_image_path"],
         physical_size_mm=tuple(args["physical_size_mm"]),
-        run_id=args.get("run_id"))
+        run_id=args.get("run_id"),
+        ark_client=_client())
 
 
 def _h_export_figure(args):

@@ -142,10 +142,24 @@ class RealArkTransport(ArkTransport):
             )
         else:
             instruction = (
-                "Validate this scientific figure asset. Return ONLY JSON with keys: "
+                "Validate this scientific figure image. Return ONLY JSON with keys: "
                 '"checks" (list of {check_id, status: "pass"|"fail", detail}) and '
-                '"blocking" (boolean). Check object count, structure, perspective, '
-                "forbidden text or unrelated objects, and style consistency."
+                '"blocking" (boolean). Check ALL of the following:\n'
+                "1. background_residues: opaque or colored background areas that "
+                "should be transparent; check corners and edges for non-transparent pixels.\n"
+                "2. text_overlap: any overlapping text, labels, axis tick labels, "
+                "colorbar labels, panel titles, or row/column labels that collide "
+                "with each other or with data.\n"
+                "3. label_axis_collision: panel labels like (a), (b) overlapping "
+                "with axis labels or tick numbers.\n"
+                "4. colorbar_collision: colorbar overlapping with plot area or "
+                "adjacent panels.\n"
+                "5. object_count: expected number of distinct objects present.\n"
+                "6. forbidden_text: any text, numbers, or letters in AI-generated "
+                "portions (AI assets must be text-free).\n"
+                "7. style_consistency: consistent visual style across panels.\n"
+                "8. scientific_errors: wrong axis direction, misleading color "
+                "scale, or inconsistent scales across panels that should match."
             )
         prompt = payload.get("prompt") or instruction
         content: list[dict] = [{"type": "text", "text": prompt + "\n\n" + instruction}]

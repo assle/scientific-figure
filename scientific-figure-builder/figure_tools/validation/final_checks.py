@@ -1,7 +1,8 @@
 """Final assembled-figure validation (plan section 11).
 
 Checks panel placement, z-order, missing assets, AI-asset transparency, labels,
-and effective resolution. Scientific errors block export; warnings do not.
+effective resolution, and multimodal visual quality (background residues, text
+overlaps, colorbar collisions). Scientific errors block export; warnings do not.
 """
 
 from __future__ import annotations
@@ -14,6 +15,56 @@ from PIL import Image
 from figure_tools.validation.summary import make_check, summarize_checks
 
 
+def _multimodal_final_checks(
+    composed_image_path: str | Path,
+    ark_client: Any | None = None,
+) -> list[dict]:
+    """Run vision-model validation on the composed figure.
+
+    Returns a list of check dicts.  If no ark_client is provided, returns a
+    single warning so that the pipeline still works in offline mode.
+    """
+    if ark_client is None:
+        return [make_check(
+            "multimodal_final", "final", "warning", "skipped",
+            "no ark_client provided; multimodal final validation skipped")]
+
+    try:
+        report = ark_client.validate_image_asset(
+            composed_image_path,
+            checks=["background_residues", "text_overlap",
+                    "label_axis_collision", "colorbar_collision",
+                    "forbidden_text", "style_consistency",
+                    "scientific_errors"],
+        )
+        mm_checks = report.get("checks", [])
+        # Keep only the multimodal ones (deterministic ones are already
+        # handled above); tag them with scope = "final".
+        result = []
+        for c in mm_checks:
+            cid = c.get("check_id", "multimodal")
+            if cid.startswith(("file_", "dimensions", "alpha_",
+                               "blank_", "effective_", "edge_")):
+                continue
+            level = c.get("level", "warning")
+            if level not in ("error", "warning"):
+                level = "warning"
+            result.append(make_check(
+                f"multimodal_{cid}", "final", level,
+                c.get("status", "pass"),
+                c.get("detail", ""),
+            ))
+        if not result:
+            result.append(make_check(
+                "multimodal_final", "final", "warning", "pass",
+                "vision model returned no additional issues"))
+        return result
+    except Exception as e:  # noqa: BLE001
+        return [make_check(
+            "multimodal_final", "final", "warning", "fail",
+            f"vision validation error: {e}")]
+
+
 def validate_assembled_figure(
     figure_plan: dict[str, Any],
     asset_manifest: dict[str, Any],
@@ -21,6 +72,7 @@ def validate_assembled_figure(
     physical_size_mm: tuple[float, float],
     min_dpi: int = 300,
     run_id: str | None = None,
+    ark_client: Any | None = None,
 ) -> dict[str, Any]:
     checks: list[dict] = []
     plan_assets = figure_plan.get("assets", [])
@@ -74,6 +126,10 @@ def validate_assembled_figure(
     checks.append(make_check("panel_label_consistency", "final", "warning",
                          "pass" if not unlabeled else "fail",
                          "no labels" if unlabeled else "labels present"))
+
+    # Multimodal visual-quality checks (background residues, text overlaps,
+    # colorbar collisions, forbidden text in AI assets, etc.).
+    checks.extend(_multimodal_final_checks(composed_image_path, ark_client))
 
     return {
         "schema_version": "1.0",
