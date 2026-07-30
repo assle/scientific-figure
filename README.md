@@ -1,31 +1,52 @@
-# Scientific Figure Builder
+<p align="center">
+  <img src="assets/banner.svg" alt="Scientific Figure Builder" width="720">
+</p>
 
-从自然语言需求到可发表的科研论文配图：自动分解任务、路由到正确引擎（Python 数据图 / SVG / Ark 图像模型）、校验、拼装最终 PNG/SVG/PDF。
+<p align="center">
+  <a href="./README.md">English</a> &nbsp;|&nbsp; <a href="./README.zh-CN.md">简体中文</a>
+</p>
 
-## 效果
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white" alt="Python"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License"></a>
+  <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Required-purple?logo=astralshuv&logoColor=white" alt="uv"></a>
+  <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/OpenCode-Ready-orange?logo=data:image/svg+xml;base64,&logoColor=white" alt="OpenCode"></a>
+  <a href="https://www.volcengine.com/product/ark"><img src="https://img.shields.io/badge/Ark-Volcengine-red" alt="Ark"></a>
+  <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible">
+</p>
 
-| 折线图 | 热图 | 多面板 |
+---
+
+## Overview
+
+Transform natural-language requests into **reproducible, publication-quality** scientific figures. Data plots are rendered deterministically by Python/SVG; AI image models only generate isolated non-quantitative assets. Every output is byte-for-byte reproducible across runs.
+
+<p align="center">
+  <img src="assets/example_compound.png" alt="Compound Figure Example" width="640">
+</p>
+
+## Features
+
+| | Feature | Description |
 |---|---|---|
-| ![line](assets/example_line_plot.png) | ![heatmap](assets/example_heatmap.png) | ![multipanel](assets/example_multipanel.png) |
+| 📊 | **Deterministic Plots** | Line / scatter / bar / heatmap / error bar / multipanel — CSV to figure, byte-reproducible |
+| 🎨 | **AI Assets** | Ark image model generates isolated visual elements (device schematics, etc.) with auto background removal |
+| 🏷️ | **SVG Labels** | Arrows, equations, annotations — all deterministic |
+| 🧩 | **Auto Assembly** | Multi-element z-order composition → PNG / SVG / PDF |
+| ✅ | **Two-Layer Validation** | Deterministic geometry rules + multimodal VLM review; blocking errors halt export |
+| 🔄 | **Reproducible Runs** | Versioned run directory, caching, checkpoint resume |
 
-## 核心能力
+## Quick Start
 
-- **数据图**：CSV -> 折线/散点/柱状/热图/误差棒/多面板，跨运行字节级可复现
-- **AI 素材**：Ark 图像模型生成隔离的非量化素材（设备示意图等），自动去背景
-- **SVG 标签**：箭头、公式、标注，确定性生成
-- **自动拼装**：多元素按 z-order 合成，导出 PNG/SVG/PDF
-- **两层校验**：确定性几何规则 + 多模态 VLM 审核，错误阻断导出
-- **可复现**：版本化 run 目录、缓存、断点恢复
-
-## 安装
+### Install
 
 ```bash
 ./install.sh
 ```
 
-需要 Python 3.11+、[uv](https://docs.astral.sh/uv/)、[OpenCode](https://opencode.ai/)。
+Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), [OpenCode](https://opencode.ai/)
 
-## 配置
+### Configure Ark (optional)
 
 ```bash
 export ARK_API_KEY="<key>"
@@ -36,30 +57,58 @@ export ARK_VISION_ANALYZE="<model id>"
 export ARK_VISION_VALIDATE="<model id>"
 ```
 
-纯本地绘图无需配置：`./install.sh --without-ark`
+> Local-only plotting? Skip this and run `./install.sh --without-ark`
 
-## 使用
+### Use in OpenCode
 
 ```text
-使用 scientific-figure-builder，根据 data.csv 画一张论文用折线图
+Use scientific-figure-builder to create a line plot from data.csv
 ```
 
-或用命令：
+Or with commands:
 
 ```bash
 /scientific-figure init
-/scientific-figure plan 根据 data.csv 生成双面板科研图
+/scientific-figure plan Create a multipanel figure from data.csv
 /scientific-figure run
 /scientific-figure validate
 /scientific-figure export
 ```
 
-## 开发
+## Examples
+
+<p align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="assets/example_line_plot.png" width="280"><br><sub>Line plot</sub></td>
+      <td align="center"><img src="assets/example_heatmap.png" width="280"><br><sub>Heatmap</sub></td>
+      <td align="center"><img src="assets/example_multipanel.png" width="280"><br><sub>Multipanel</sub></td>
+    </tr>
+  </table>
+</p>
+
+## Development
 
 ```bash
 cd scientific-figure-builder
 uv sync
 uv run pytest
+```
+
+## Project Structure
+
+```
+scientific-figure-builder/
+├── figure_tools/        # Core Python package
+│   ├── ark/             # Ark client + transport (mock/real)
+│   ├── plotting/        # Plot specs, data, recipes, renderer
+│   ├── validation/      # Geometry rules + VLM review + evidence
+│   ├── assembly/        # Figure composition
+│   └── export/          # PNG/SVG/PDF/PPTX
+├── schemas/             # 6 versioned JSON Schemas
+├── templates/           # Default config + plot recipes
+├── references/          # Routing/workflow/Ark docs
+└── tests/               # unit / integration / e2e
 ```
 
 ## License
