@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from figure_tools.validation.rules.ai_asset import unexpected_ai_text
 from figure_tools.validation.rules.colorbar import colorbar_collision
 from figure_tools.validation.rules.clipping import asset_bounds, text_clipping
 from figure_tools.validation.rules.overlap import text_text_overlap
@@ -19,4 +20,5 @@ __all__ = [
     "panel_label_consistency",
     "minimum_font_size",
     "colorbar_collision",
+    "unexpected_ai_text",
 ]

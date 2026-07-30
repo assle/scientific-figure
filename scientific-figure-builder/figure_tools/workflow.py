@@ -132,6 +132,8 @@ class FigureWorkflow:
             ark_client=self.ark,
             qa_config=self.config.get("validation", {}),
             evidence_dir=self.run_dir / "validation" / "evidence",
+            asset_placements={p["asset_id"]: p["bbox"] for p in placements
+                              if p.get("asset_id")},
         )
         validation_reports.append(final)
         self._write_json("validation/validation_report.json", final)

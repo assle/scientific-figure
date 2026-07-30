@@ -99,3 +99,46 @@ def test_engine_report_conforms_to_schema(tmp_path: Path):
                                    (180, 112.5), run_id="r1")
     schema = json.loads(schema_path("validation-report.schema.json").read_text("utf-8"))
     assert not list(Draft202012Validator(schema).iter_errors(report))
+
+
+def test_engine_skips_ocr_when_no_backend(tmp_path: Path):
+    composed = tmp_path / "figure.png"; _save_rgba(composed)
+    curve = tmp_path / "curve.png"; _save_rgba(curve)
+    engine = FigureQAEngine(config={})  # no OCR backend available in test env
+    report = engine.validate_final(_plan(), _asset_manifest(curve), composed, None,
+                                   (180, 112.5), run_id="r1")
+    ai = [c for c in report["checks"] if c["check_id"] == "unexpected_ai_text"]
+    assert ai and ai[0]["status"] == "skipped"
+
+
+def test_engine_flags_ai_text_with_ocr_backend(tmp_path: Path):
+    from figure_tools.validation.extractors.raster_ocr import OCRBackend
+    from figure_tools.validation.models import LayoutElement, PixelBBox
+
+    composed = tmp_path / "figure.png"; _save_rgba(composed)
+    fiber = tmp_path / "fiber.png"; _save_rgba(fiber)
+    manifest = {"schema_version": "1.0", "assets": [
+        {"asset_id": "fiber", "type": "image_asset", "path": str(fiber),
+         "content_hash": "sha256:f", "pixel_dimensions": [2048, 1280],
+         "transparent": True, "z_order": 2,
+         "validation_result": {"status": "pass"}},
+    ]}
+
+    class FakeOCR:
+        def detect(self, image_path):
+            return [LayoutElement("ocr_0", "text", PixelBBox(10, 10, 80, 40),
+                                  text="spurious", source="ocr",
+                                  metadata={"confidence": 0.88})]
+
+    plan = _plan()
+    plan["assets"].append({"asset_id": "fiber", "type": "image_asset",
+                           "z_order": 2, "dependencies": [], "routing": "ark_image"})
+    engine = FigureQAEngine(config={}, ocr_backend=FakeOCR())
+    report = engine.validate_final(
+        plan, manifest, composed, None, (180, 112.5), run_id="r1",
+        asset_placements={"fiber": [0.5, 0.0, 0.5, 1.0]})
+    ai = [c for c in report["checks"]
+          if c["check_id"] == "unexpected_ai_text" and c["status"] == "fail"]
+    assert ai and ai[0]["element_ids"] == ["fiber"]
+    assert ai[0]["method"] == "ocr"
+    assert report["summary"]["blocking"] is True

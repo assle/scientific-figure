@@ -13,6 +13,8 @@ from typing import Any
 from PIL import Image
 
 from figure_tools.validation.evidence import generate_evidence
+from figure_tools.validation.extractors.assembly import map_bbox
+from figure_tools.validation.extractors.raster_ocr import detect_text_elements
 from figure_tools.validation.models import read_layout_manifest
 from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
@@ -24,6 +26,7 @@ from figure_tools.validation.rules import (
     text_text_overlap,
     minimum_font_size,
 )
+from figure_tools.validation.rules.ai_asset import unexpected_ai_text
 from figure_tools.validation.summary import make_check, summarize_checks
 
 
@@ -121,7 +124,11 @@ class FigureQAEngine:
     ) -> None:
         self.config = config or {}
         self.ark_client = ark_client
-        self.ocr_backend = ocr_backend
+        if ocr_backend is not None:
+            self.ocr_backend = ocr_backend
+        else:
+            from figure_tools.validation.extractors.raster_ocr import get_ocr_backend
+            self.ocr_backend = get_ocr_backend(self.config)
         det = self.config.get("deterministic", {})
         if not isinstance(det, dict):
             det = {}
@@ -130,6 +137,37 @@ class FigureQAEngine:
 
     def _rule_enabled(self, name: str) -> bool:
         return bool(self._det.get(name, True))
+
+    def _ocr_ai_text_checks(
+        self,
+        asset_manifest: dict[str, Any],
+        manifest,
+        asset_placements: dict[str, list[float]] | None,
+    ) -> list[dict]:
+        if self.ocr_backend is None:
+            return [make_check("unexpected_ai_text", "final", "warning", "skipped",
+                               "no OCR backend; AI-asset text check skipped")]
+        detections: list[tuple[str, list]] = []
+        for a in asset_manifest.get("assets", []):
+            if a.get("type") != "image_asset":
+                continue
+            path = a.get("path")
+            if not path or not Path(path).exists():
+                continue
+            detected = detect_text_elements(path, self.ocr_backend)
+            # Map detected bboxes (asset pixels) onto the final canvas when the
+            # placement is known, so evidence crops locate the right region.
+            placement = (asset_placements or {}).get(a["asset_id"])
+            dims = a.get("pixel_dimensions")
+            if placement and dims and len(dims) == 2 and manifest is not None:
+                sw, sh = int(dims[0]), int(dims[1])
+                for el in detected:
+                    el.bbox = map_bbox(el.bbox, placement,
+                                       manifest.canvas_width_px,
+                                       manifest.canvas_height_px, sw, sh)
+                    el.panel_id = None
+            detections.append((a["asset_id"], detected))
+        return unexpected_ai_text(detections)
 
     def _layout_checks(self, manifest) -> list[dict]:
         checks: list[dict] = []
@@ -158,6 +196,7 @@ class FigureQAEngine:
         run_id: str,
         min_dpi: int = 300,
         evidence_dir: str | Path | None = None,
+        asset_placements: dict[str, list[float]] | None = None,
     ) -> dict[str, Any]:
         checks: list[dict] = []
         checks.extend(_deterministic_final_checks(
@@ -174,6 +213,10 @@ class FigureQAEngine:
             checks.extend(self._layout_checks(manifest))
         else:
             checks.extend(_legacy_panel_label_consistency(figure_plan))
+
+        # OCR fallback for raster/AI assets without layout metadata (plan 15).
+        checks.extend(self._ocr_ai_text_checks(
+            asset_manifest, manifest, asset_placements))
 
         # Evidence crops for localized layout failures (plan section 13).
         ev_cfg = self.config.get("evidence", {})
