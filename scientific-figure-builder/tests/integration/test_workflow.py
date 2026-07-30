@@ -90,8 +90,9 @@ def test_image_model_never_generates_plots_axes_or_labels(tmp_path: Path):
     wf, client, run_dir = _workflow(tmp_path, _request())
     result = wf.run()
     roles_used = {role for role, _ in client.transport.calls}
-    # Ark is used only for isolated asset generation + validation.
-    assert roles_used <= {"generation", "validations"}
+    # Ark is used only for isolated asset generation + validation (per-asset and
+    # final). It never generates plots, axes, or labels.
+    assert roles_used <= {"generation", "validations", "final_validation"}
     # The data plot is a Python-rendered artifact, not an Ark output.
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
     # The AI asset is isolated and transparent.
@@ -257,4 +258,86 @@ def test_no_root_cause_report_when_all_pass(tmp_path: Path):
     result = wf.run()
     root_cause_path = run_dir / "validation" / "root_cause_report.json"
     assert not root_cause_path.exists()
+
+
+# --- Image QA: final validation link fix (PR 1) ---
+
+def test_final_validation_uses_ark_client_not_skipped(tmp_path: Path):
+    """FigureWorkflow.run() must thread ark_client into final validation so the
+    multimodal final check actually runs instead of defaulting to skipped."""
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert result["paused"] is False
+    final = result["validation_reports"][-1]
+    # The final_validation paid role was actually invoked.
+    assert any(role == "final_validation" for role, _ in client.transport.calls)
+    # No final check is "skipped" because the ark client was provided.
+    skipped = [c for c in final["checks"] if c["status"] == "skipped"]
+    assert skipped == []
+
+
+def test_final_validation_skipped_without_ark_client(tmp_path: Path):
+    """Without an ark client the multimodal final check degrades to skipped.
+    Verified at the unit level (the workflow needs ark for AI assets)."""
+    from figure_tools.validation.final_checks import validate_assembled_figure
+    composed = tmp_path / "figure.png"; _save_rgba_img(composed)
+    curve = tmp_path / "curve.png"; _save_rgba_img(curve)
+    fiber = tmp_path / "fiber.png"; _save_rgba_img(fiber)
+    report = validate_assembled_figure(_simple_plan(), _simple_manifest(curve, fiber),
+                                       composed, physical_size_mm=(180, 112.5),
+                                       ark_client=None)
+    mm = next(c for c in report["checks"] if c["check_id"] == "multimodal_final")
+    assert mm["status"] == "skipped"
+    assert report["summary"]["blocking"] is False
+
+
+def _save_rgba_img(path: Path, size=(2048, 1280)):
+    from PIL import Image, ImageDraw
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    ImageDraw.Draw(img).ellipse((400, 400, 1600, 880), fill=(200, 40, 40, 255))
+    img.save(path)
+
+
+def _simple_plan():
+    return {
+        "schema_version": "1.0", "figure_id": "f1", "run_id": "f1",
+        "canvas": {"aspect_ratio": 1.6, "width": 180, "height": 112.5},
+        "units": "mm",
+        "panels": [{"panel_id": "a", "bbox": [0, 0, 0.5, 1], "physical_size": [90, 112.5]},
+                   {"panel_id": "b", "bbox": [0.5, 0, 0.5, 1], "physical_size": [90, 112.5]}],
+        "assets": [{"asset_id": "curve", "type": "data_plot", "z_order": 1,
+                    "dependencies": [], "routing": "python"},
+                   {"asset_id": "fiber", "type": "image_asset", "z_order": 2,
+                    "dependencies": [], "routing": "ark_image"}],
+        "style_bible_ref": "default", "text_elements": [],
+        "assumptions": [], "uncertainties": [], "user_input_requirements": [],
+        "estimated_paid_calls": {}, "planned_uploads": [],
+        "approval": {"status": "approved"},
+    }
+
+
+def _simple_manifest(curve_path, fiber_path, fiber_transparent=True):
+    return {
+        "schema_version": "1.0",
+        "assets": [
+            {"asset_id": "curve", "type": "data_plot", "path": str(curve_path),
+             "content_hash": "sha256:c", "pixel_dimensions": [1024, 800],
+             "transparent": False, "z_order": 1,
+             "validation_result": {"status": "pass"}},
+            {"asset_id": "fiber", "type": "image_asset", "path": str(fiber_path),
+             "content_hash": "sha256:f", "pixel_dimensions": [2048, 1280],
+             "transparent": fiber_transparent, "z_order": 2,
+             "validation_result": {"status": "pass"}},
+        ],
+    }
+
+
+def test_compose_return_value_used_for_composed_png(tmp_path: Path):
+    """The workflow must consume compose_assets() return value rather than
+    assuming a fixed filename (plan section 17.2)."""
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert (run_dir / "assembly" / "figure.png").is_file()
+    assert result["exported"] is True
 

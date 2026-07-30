@@ -107,14 +107,24 @@ class FigureWorkflow:
 
         # Assemble.
         assembly_dir = self.run_dir / "assembly"
-        compose_assets(placements, output_dir=assembly_dir, canvas_mm=self._canvas_mm(),
-                       dpi=self.compose_dpi, text_placements=text_placements)
-        composed_png = assembly_dir / "figure.png"
+        assembly_result = compose_assets(placements, output_dir=assembly_dir,
+                                         canvas_mm=self._canvas_mm(),
+                                         dpi=self.compose_dpi,
+                                         text_placements=text_placements)
+        composed_png = Path(assembly_result["files"]["png"])
 
-        # Final validation.
-        final = validate_assembled_figure(plan, manifest, composed_png,
-                                          physical_size_mm=self._canvas_mm(),
-                                          run_id=self.state.run_id)
+        # Final validation (plan section 17.1): thread the ark client and the
+        # assembly layout manifest so the multimodal final check actually runs.
+        final = validate_assembled_figure(
+            figure_plan=plan,
+            asset_manifest=manifest,
+            composed_image_path=composed_png,
+            physical_size_mm=self._canvas_mm(),
+            run_id=self.state.run_id,
+            layout_manifest_path=assembly_result.get("layout_manifest"),
+            ark_client=self.ark,
+            qa_config=self.config.get("validation", {}),
+        )
         validation_reports.append(final)
         self._write_json("validation/validation_report.json", final)
 
@@ -279,7 +289,8 @@ class FigureWorkflow:
                     path = out / "plot.png"
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
-                    placements.append({"path": str(path), "bbox": panel["bbox"],
+                    placements.append({"asset_id": asset_id, "path": str(path),
+                                       "bbox": panel["bbox"],
                                        "z_order": self._zorder(asset_id, plan)})
                 except Exception as e:  # noqa: BLE001
                     validation_reports.append(self._error_report(asset_id, str(e)))
@@ -304,7 +315,8 @@ class FigureWorkflow:
             if report is not None:
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
-            placements.append({"path": meta["path"], "bbox": panel["bbox"],
+            placements.append({"asset_id": asset_id, "path": meta["path"],
+                               "bbox": panel["bbox"],
                                "z_order": self._zorder(asset_id, plan)})
 
         text_placements = self._render_labels(plan, manifest_assets)

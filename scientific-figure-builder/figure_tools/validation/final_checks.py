@@ -21,6 +21,9 @@ def validate_assembled_figure(
     physical_size_mm: tuple[float, float],
     min_dpi: int = 300,
     run_id: str | None = None,
+    layout_manifest_path: str | Path | None = None,
+    ark_client: Any = None,
+    qa_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checks: list[dict] = []
     plan_assets = figure_plan.get("assets", [])
@@ -75,9 +78,43 @@ def validate_assembled_figure(
                          "pass" if not unlabeled else "fail",
                          "no labels" if unlabeled else "labels present"))
 
+    # Multimodal final validation (plan section 17.1). The deterministic final
+    # checks above always run; the multimodal pass is only performed when an ark
+    # client is provided. Without one it degrades to ``skipped`` so the offline
+    # workflow keeps working.
+    mm_checks = _multimodal_final_checks(ark_client, composed_image_path,
+                                         physical_size_mm)
+    checks.extend(mm_checks)
+
     return {
         "schema_version": "1.0",
         "run_id": run_id or figure_plan.get("run_id", "final"),
         "checks": checks,
         "summary": summarize_checks(checks),
     }
+
+
+def _multimodal_final_checks(
+    ark_client: Any,
+    composed_image_path: str | Path,
+    physical_size_mm: tuple[float, float],
+) -> list[dict]:
+    if ark_client is None:
+        return [make_check("multimodal_final", "final", "warning", "skipped",
+                       "no ark client; multimodal final check skipped")]
+    try:
+        raw = ark_client.validate_final_figure(
+            composed_image_path, physical_size_mm=physical_size_mm)
+    except Exception as e:  # noqa: BLE001
+        return [make_check("multimodal_final", "final", "warning", "skipped",
+                       f"multimodal final check unavailable: {e}")]
+    if not raw:
+        # An empty response must not be treated as an implicit pass.
+        return [make_check("multimodal_final", "final", "error", "fail",
+                       "multimodal final check returned no checks")]
+    out: list[dict] = []
+    for c in raw:
+        c.setdefault("scope", "final")
+        c.setdefault("level", "error")
+        out.append(c)
+    return out

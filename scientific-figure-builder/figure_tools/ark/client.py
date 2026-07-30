@@ -246,6 +246,40 @@ class ArkClient:
             "summary": summarize_checks(all_checks),
         }
 
+    # --- multimodal final-figure validation ----------------------------
+    def validate_final_figure(
+        self,
+        image_path: str | Path,
+        physical_size_mm: tuple[float, float] | None = None,
+        checks: list[str] | None = None,
+        force: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Run the multimodal vision check on the fully composed figure.
+
+        Returns only the multimodal checks (deterministic checks are handled by
+        the final-checks module). Uses the ``final_validation`` role so it is
+        budgeted independently from per-asset validations.
+        """
+        role = "final_validation"
+        model = self._role_model(role)
+        img_hash = file_hash(image_path)
+        key = Cache.make_key(model, img_hash, {"checks": list(checks or [])}, [])
+
+        multimodal: dict | None = None
+        if not force and self.cache is not None:
+            cached = self.cache.get_bytes(key)
+            if cached is not None:
+                self._cache_hit()
+                multimodal = json.loads(cached)
+        if multimodal is None:
+            self._record_call(role)
+            multimodal = self._post(role, {"image_hash": img_hash,
+                                           "checks": list(checks or [])},
+                                   image_paths=[str(image_path)])
+            if self.cache is not None:
+                self.cache.put_bytes(key, json.dumps(multimodal).encode("utf-8"))
+        return list(multimodal.get("checks", []))
+
     # --- upload disclosure ----------------------------------------------
     def disclose_uploads(self, paths: list[str | Path]) -> list[dict[str, Any]]:
         return [
