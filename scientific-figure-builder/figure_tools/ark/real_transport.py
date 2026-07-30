@@ -50,6 +50,22 @@ def _extract_json(text: str) -> dict:
         raise ArkError(f"could not parse JSON from model response: {text[:200]}")
 
 
+_DEFAULT_VALIDATION_INSTRUCTION = (
+    "Validate this scientific figure image. Return ONLY JSON with keys: "
+    '"checks" (list of {check_id, status, detail}) and "blocking" (boolean). '
+    "Check: background_residues (opaque bg that should be transparent), "
+    "text_overlap (colliding text/labels/ticks/titles), "
+    "label_axis_collision (panel labels (a),(b) vs axis labels/ticks), "
+    "colorbar_collision (colorbar vs plot area/panels), "
+    "legend_data_overlap (legend vs data), "
+    "label_readability (tick labels readable, not crowded), "
+    "object_count (expected objects present), "
+    "forbidden_text (text in AI-generated portions, must be text-free), "
+    "style_consistency (consistent style across panels), "
+    "scientific_errors (wrong axis direction or misleading color scale)."
+)
+
+
 class RealArkTransport(ArkTransport):
     # Plan-routed OpenAI-compatible base URLs (plan is selected by base URL).
     AGENT_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3"      # image gen/edit
@@ -141,26 +157,7 @@ class RealArkTransport(ArkTransport):
                 '(list of {text, confidence}), "confidence" (0-1), "uncertainties" (list of strings).'
             )
         else:
-            instruction = (
-                "Validate this scientific figure image. Return ONLY JSON with keys: "
-                '"checks" (list of {check_id, status: "pass"|"fail", detail}) and '
-                '"blocking" (boolean). Check ALL of the following:\n'
-                "1. background_residues: opaque or colored background areas that "
-                "should be transparent; check corners and edges for non-transparent pixels.\n"
-                "2. text_overlap: any overlapping text, labels, axis tick labels, "
-                "colorbar labels, panel titles, or row/column labels that collide "
-                "with each other or with data.\n"
-                "3. label_axis_collision: panel labels like (a), (b) overlapping "
-                "with axis labels or tick numbers.\n"
-                "4. colorbar_collision: colorbar overlapping with plot area or "
-                "adjacent panels.\n"
-                "5. object_count: expected number of distinct objects present.\n"
-                "6. forbidden_text: any text, numbers, or letters in AI-generated "
-                "portions (AI assets must be text-free).\n"
-                "7. style_consistency: consistent visual style across panels.\n"
-                "8. scientific_errors: wrong axis direction, misleading color "
-                "scale, or inconsistent scales across panels that should match."
-            )
+            instruction = _DEFAULT_VALIDATION_INSTRUCTION
         prompt = payload.get("prompt") or instruction
         content: list[dict] = [{"type": "text", "text": prompt + "\n\n" + instruction}]
         for p in image_paths:

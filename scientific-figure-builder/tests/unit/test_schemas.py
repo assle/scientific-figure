@@ -30,6 +30,8 @@ SCHEMA_DOCUMENTS = {
     "style-bible.schema.json": ["style_bible.json", "default-style-bible.json"],
     "run-state.schema.json": ["run_state.json"],
     "validation-report.schema.json": ["validation_report.json"],
+    "layout-analysis.schema.json": ["layout_analysis.json"],
+    "root-cause-report.schema.json": ["root_cause_report.json"],
 }
 
 EXPECTED_SCHEMAS = sorted(SCHEMA_DOCUMENTS.keys())

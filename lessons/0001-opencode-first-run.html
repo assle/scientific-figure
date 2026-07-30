@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第一次在 OpenCode 使用 Scientific Figure Builder</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <h1>第一次在 OpenCode 使用 Scientific Figure Builder</h1>
+  <p class="lede">目标：正确接入三个部件，并完成一次“计划 → 审批 → 执行 → 导出”。</p>
+
+  <div class="card status">
+    <strong>当前状态：</strong>代码和 Ark 配置已存在；OpenCode 中的 Skill、命令和 MCP 尚未安装。
+  </div>
+
+  <h2>先理解三个部件</h2>
+  <ul>
+    <li><strong>Skill：</strong>告诉 OpenCode 如何拆分和编排科研图。</li>
+    <li><strong>Command：</strong>提供 <code>/scientific-figure</code> 入口。</li>
+    <li><strong>MCP：</strong>真正执行 Python、SVG 和火山方舟调用。</li>
+  </ul>
+  <p>只复制 Skill 不够；缺少 MCP 时，OpenCode 知道流程却没有执行工具。</p>
+
+  <h2>第一步：一次性安装</h2>
+  <pre><code>PACKAGE=/path/to/scientific-figure/scientific-figure-builder
+CONFIG="$HOME/.config/opencode/opencode.json"
+
+cd "$PACKAGE"
+uv sync --extra ark
+
+mkdir -p "$HOME/.config/opencode/skills" "$HOME/.config/opencode/commands"
+ln -sfn "$PACKAGE" \
+  "$HOME/.config/opencode/skills/scientific-figure-builder"
+ln -sfn "$PACKAGE/commands/scientific-figure.md" \
+  "$HOME/.config/opencode/commands/scientific-figure.md"
+
+uv run python install/configure_opencode.py \
+  "$CONFIG" "$PACKAGE"</code></pre>
+  <p>最后一条命令会展示配置差异并询问是否应用。确认后，它会备份原配置，只增加
+  <code>scientific-figure</code> MCP。</p>
+
+  <h2>第二步：带 Ark 环境启动 OpenCode</h2>
+  <pre><code>set -a
+. "$PACKAGE/.ark.env"
+set +a
+
+cd /path/to/your-paper-project
+opencode</code></pre>
+  <p><code>.ark.env</code> 不会被 OpenCode 自动读取。必须先加载环境变量，再从同一终端启动
+  OpenCode。修改模型 ID 或 Key 后也要重启。</p>
+
+  <h2>第三步：确认接入成功</h2>
+  <pre><code>opencode mcp list</code></pre>
+  <p>应看到 <code>scientific-figure</code> 已连接。在 OpenCode 输入
+  <code>/scientific-figure</code> 时，也应出现自定义命令。</p>
+
+  <h2>第四步：初始化论文项目</h2>
+  <p>在论文项目目录启动 OpenCode，然后输入：</p>
+  <pre><code>/scientific-figure init</code></pre>
+  <p>成功后应生成：</p>
+  <pre><code>.scientific-figure/
+├── project.yaml
+├── style_bible.json
+└── .gitignore</code></pre>
+
+  <h2>第五步：先做一个低风险数据图</h2>
+  <pre><code>/scientific-figure plan 使用 @data/coupling.csv 绘制耦合效率折线图。
+横轴为 wavelength_nm，纵轴为 efficiency。
+先生成计划和线框图，不执行付费图片生成。</code></pre>
+  <p>检查数据列、单位、画布和输出格式。确认无误后回复：</p>
+  <pre><code>我批准这个计划，请执行 run。</code></pre>
+
+  <h2>第六步：运行混合科研图</h2>
+  <pre><code>/scientific-figure plan 制作双面板论文图：
+(a) 根据 @references/setup.png 重绘实验装置；
+(b) 使用 @data/coupling.csv 绘制耦合效率曲线。
+文字和箭头用 SVG，数据图用 Python，AI 只生成独立器件素材。</code></pre>
+  <p>运行前必须检查四件事：</p>
+  <ul class="check">
+    <li>将上传哪些参考图</li>
+    <li>预计调用哪些模型以及次数</li>
+    <li>线框布局是否正确</li>
+    <li>是否存在科学结构或单位不确定项</li>
+  </ul>
+  <p>批准计划后执行。若 AI 素材达到三个，流程会先给出风格锚点，需再次确认。</p>
+
+  <h2>第七步：查看结果</h2>
+  <p>结果位于项目的版本化 <code>runs/</code> 目录。正式输出通常包括：</p>
+  <pre><code>exports/figure.png
+exports/figure.svg
+exports/figure.pdf
+asset_manifest.json
+validation_report.json
+generation_report.md</code></pre>
+
+  <h2>最常见的三个问题</h2>
+  <div class="card">
+    <p><strong>命令不存在：</strong>检查全局 command 软链，然后重启 OpenCode。</p>
+    <p><strong>MCP disconnected：</strong>运行 <code>opencode mcp list</code>；确认
+    <code>uv</code> 可执行且配置中的 package 路径存在。</p>
+    <p><strong>意外使用 mock：</strong>六个 Ark 环境变量必须在启动 OpenCode 前全部加载。</p>
+  </div>
+
+  <h2>一次小测</h2>
+  <p>如果你只是要根据 CSV 画折线图，应该让 Ark 生图模型生成曲线吗？</p>
+  <ol>
+    <li>应该，因为图片模型更快</li>
+    <li>不应该，应由 Python 按数据精确绘制</li>
+    <li>都可以，只要最后看起来相似</li>
+  </ol>
+  <details><summary>查看答案</summary><p>答案是 2。数据、坐标轴、数值和误差棒必须走 Python。</p></details>
+
+  <p>速查表：<a href="../reference/opencode-quickstart.html">OpenCode 使用速查</a></p>
+  <p>主要资料：<a href="https://opencode.ai/docs/skills/">OpenCode Skills</a>、
+  <a href="https://opencode.ai/docs/commands/">Commands</a>、
+  <a href="https://opencode.ai/docs/mcp-servers/">MCP Servers</a>。</p>
+  <p>任何一步不清楚，都可以把终端输出发给 agent 继续排查。</p>
+</main>
+</body>
+</html>

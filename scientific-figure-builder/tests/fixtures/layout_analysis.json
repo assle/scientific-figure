@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "panel_width_recommendations": [
+    {
+      "panel_id": "a",
+      "data_element_count": 3,
+      "recommended_ratio": 1.5,
+      "reasoning": "3 data elements; proportional allocation favors wider panel"
+    },
+    {
+      "panel_id": "b",
+      "data_element_count": 1,
+      "recommended_ratio": 1.0,
+      "reasoning": "1 data element; standard width"
+    }
+  ],
+  "legend_placement_recommendations": [
+    {
+      "panel_id": "a",
+      "candidates": [
+        { "position": "upper_right", "density_score": 0.08, "is_recommended": true },
+        { "position": "lower_left", "density_score": 0.42, "is_recommended": false },
+        { "position": "lower_right", "density_score": 0.55, "is_recommended": false }
+      ]
+    }
+  ],
+  "warnings": []
+}

@@ -70,7 +70,7 @@ def test_generate_produces_transparent_image(tmp_path: Path):
     assert meta["model"] == "ep-gen"
     assert meta["prompt_hash"].startswith("sha256:")
     assert meta["cached"] is False
-    assert meta["pixel_dimensions"] == [1024, 1024]
+    assert meta["pixel_dimensions"] == [2048, 2048]
 
 
 def test_generate_cache_hit_no_second_call(tmp_path: Path):

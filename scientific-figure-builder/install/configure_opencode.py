@@ -16,12 +16,14 @@ from __future__ import annotations
 import copy
 import difflib
 import json
+import os
 import re
 import shutil
 from pathlib import Path
 from typing import Any, Callable
 
 DEFAULT_MCP_NAME = "scientific-figure"
+OPENCODE_SCHEMA = "https://opencode.ai/config.json"
 
 
 def _strip_comments(text: str) -> str:
@@ -47,6 +49,7 @@ def dump_config(data: dict[str, Any]) -> str:
 def propose_merge(existing: dict[str, Any], mcp_name: str,
                   mcp_entry: dict[str, Any]) -> dict[str, Any]:
     proposed = copy.deepcopy(existing)
+    proposed.setdefault("$schema", OPENCODE_SCHEMA)
     proposed.setdefault("mcp", {})
     proposed["mcp"][mcp_name] = copy.deepcopy(mcp_entry)
     return proposed
@@ -74,12 +77,37 @@ def apply_merge(
         return {"applied": False, "diff": diff, "backup": None}
 
     backup_path = None
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     if backup and config_path.exists():
         backup_path = config_path.with_suffix(config_path.suffix + ".bak")
         shutil.copyfile(config_path, backup_path)
 
     config_path.write_text(dump_config(proposed), encoding="utf-8")
     return {"applied": True, "diff": diff, "backup": str(backup_path) if backup_path else None}
+
+
+def _mcp_environment() -> dict[str, str]:
+    return {
+        "ARK_API_KEY": "{env:ARK_API_KEY}",
+        "ARK_API_KEY_CODING": "{env:ARK_API_KEY_CODING}",
+        "ARK_IMAGE_GENERATE": "{env:ARK_IMAGE_GENERATE}",
+        "ARK_IMAGE_EDIT": "{env:ARK_IMAGE_EDIT}",
+        "ARK_VISION_ANALYZE": "{env:ARK_VISION_ANALYZE}",
+        "ARK_VISION_VALIDATE": "{env:ARK_VISION_VALIDATE}",
+    }
+
+
+def mcp_entry_for_python(runtime_python: str | Path) -> dict[str, Any]:
+    """Build an MCP entry backed by an installed, self-contained runtime."""
+    # Preserve the virtual-environment launcher instead of resolving its symlink
+    # to the bare base interpreter, which would lose installed dependencies.
+    python_path = os.path.abspath(os.fspath(runtime_python))
+    return {
+        "type": "local",
+        "command": [python_path, "-m", "figure_tools.server"],
+        "enabled": True,
+        "environment": _mcp_environment(),
+    }
 
 
 def mcp_entry_for(package_dir: str | Path) -> dict[str, Any]:
@@ -94,14 +122,7 @@ def mcp_entry_for(package_dir: str | Path) -> dict[str, Any]:
         "command": ["uv", "run", "--directory", str(package_dir),
                      "python", "-m", "figure_tools.server"],
         "enabled": True,
-        "environment": {
-            "ARK_API_KEY": "{env:ARK_API_KEY}",
-            "ARK_API_KEY_CODING": "{env:ARK_API_KEY_CODING}",
-            "ARK_IMAGE_GENERATE": "{env:ARK_IMAGE_GENERATE}",
-            "ARK_IMAGE_EDIT": "{env:ARK_IMAGE_EDIT}",
-            "ARK_VISION_ANALYZE": "{env:ARK_VISION_ANALYZE}",
-            "ARK_VISION_VALIDATE": "{env:ARK_VISION_VALIDATE}",
-        },
+        "environment": _mcp_environment(),
     }
 
 

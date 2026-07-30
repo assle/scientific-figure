@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from figure_tools.ark.real_transport import _extract_json
+from figure_tools.ark.real_transport import _DEFAULT_VALIDATION_INSTRUCTION, _extract_json
 from figure_tools.ark.transport import ArkError
 
 
@@ -28,3 +28,13 @@ def test_real_transport_requires_api_key(monkeypatch):
     monkeypatch.delenv("ARK_API_KEY", raising=False)
     with pytest.raises(ArkError):
         RealArkTransport()
+
+
+def test_validation_instruction_includes_layout_checks():
+    assert "legend_data_overlap" in _DEFAULT_VALIDATION_INSTRUCTION
+    assert "text_overlap" in _DEFAULT_VALIDATION_INSTRUCTION
+    assert "label_readability" in _DEFAULT_VALIDATION_INSTRUCTION
+
+
+def test_validation_instruction_remains_concise():
+    assert len(_DEFAULT_VALIDATION_INSTRUCTION) < 800
