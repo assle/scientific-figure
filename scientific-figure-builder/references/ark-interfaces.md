@@ -45,8 +45,30 @@ Volcengine Ark provider integration notes (plan sections 5, 8, 12, 17).
 | `generation` | `image_generate` | agent | isolated asset generation |
 | `edits` | `image_edit` | agent | reference-image editing |
 | `reference_analysis` | `vision_analyze` | coding | reference figure analysis |
-| `validations` | `vision_validate` | coding | per-asset multimodal validation |
-| `final_validation` | `vision_validate` | coding | assembled-figure validation |
+| `validations` | `vision_validate` | coding | per-asset multimodal validation + local-region review |
+| `final_validation` | `vision_validate` | coding | assembled-figure whole-image validation |
+
+### Local-region verification (image QA)
+
+`ArkClient.verify_local_region(crop_path, issue_type, context)` sends only the
+enlarged evidence crop (plus geometry context) to the vision model under the
+`validations` role. The model returns strict JSON:
+
+```json
+{
+  "confirmed": true,
+  "confidence": 0.94,
+  "severity": "error",
+  "detail": "Panel label overlaps the y-axis title.",
+  "move_element_id": "panel_a_label",
+  "direction": "right",
+  "minimum_shift_px": 12
+}
+```
+
+Merge policy: a geometry-confirmed error is never downgraded to pass; the VLM
+only adds visibility judgment and a repair hint. Empty or failed responses
+keep the deterministic result.
 
 ### Environment (Phase 7)
 

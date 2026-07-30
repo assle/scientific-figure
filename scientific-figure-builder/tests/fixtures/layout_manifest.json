@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "artifact_id": "plot:line",
+  "coordinate_system": "pixel_top_left",
+  "canvas": { "width_px": 1200, "height_px": 750 },
+  "elements": [
+    {
+      "element_id": "axes_0",
+      "element_type": "data_region",
+      "bbox": [99, 72, 1140, 690],
+      "panel_id": "a",
+      "text": null,
+      "font_size_pt": null,
+      "rotation_deg": 0.0,
+      "z_order": 0,
+      "source": "matplotlib",
+      "metadata": {}
+    },
+    {
+      "element_id": "title_0",
+      "element_type": "title",
+      "bbox": [430, 18, 770, 54],
+      "panel_id": "a",
+      "text": "Coupling efficiency",
+      "font_size_pt": 12.0,
+      "rotation_deg": 0.0,
+      "z_order": 5,
+      "source": "matplotlib",
+      "metadata": {}
+    },
+    {
+      "element_id": "ylabel_0",
+      "element_type": "axis_label",
+      "bbox": [18, 320, 90, 410],
+      "panel_id": "a",
+      "text": "Efficiency (%)",
+      "font_size_pt": 11.0,
+      "rotation_deg": 90.0,
+      "z_order": 5,
+      "source": "matplotlib",
+      "metadata": {}
+    }
+  ]
+}

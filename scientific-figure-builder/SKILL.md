@@ -78,6 +78,23 @@ Capability-oriented MCP tools (plan section 8): `initialize_figure_project`,
 `assemble_figure`, `validate_assembled_figure`, `export_figure`,
 `resume_figure_run`. Ark model names are never exposed in these instructions.
 
+## Validation
+
+Two layers, in priority order **source geometry > pixel rules > OCR > VLM**:
+
+- **Deterministic geometry**: formal text, axes, ticks, legends, colorbars and
+  panel labels are located from real source-object bounding boxes
+  (`layout_manifest.json`), not by guessing. Overlap, clipping, panel-label
+  consistency, typography and colorbar collisions are checked deterministically.
+- **Local VLM review**: only enlarged crops of *suspect* regions are sent to the
+  vision model. It enriches (confidence, repair hint) but **never downgrades a
+  geometry-confirmed error to a pass**.
+- **OCR fallback**: optional (PaddleOCR), only for raster/AI assets without
+  layout metadata — never for Python data-plot numerics.
+
+The vision model never judges numerical accuracy from pixels; that stays with
+`validate_plot_data`. Blocking errors halt export; warnings do not.
+
 ## References (load on demand)
 
 - `references/routing-rules.md` - full element-to-engine routing table.

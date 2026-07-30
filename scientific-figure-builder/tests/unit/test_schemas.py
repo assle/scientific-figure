@@ -32,6 +32,7 @@ SCHEMA_DOCUMENTS = {
     "validation-report.schema.json": ["validation_report.json"],
     "layout-analysis.schema.json": ["layout_analysis.json"],
     "root-cause-report.schema.json": ["root_cause_report.json"],
+    "layout-manifest.schema.json": ["layout_manifest.json"],
 }
 
 EXPECTED_SCHEMAS = sorted(SCHEMA_DOCUMENTS.keys())

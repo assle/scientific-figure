@@ -23,6 +23,12 @@ dependencies = [
 ark = [
     "volcengine-python-sdk[ark]>=5.0",
 ]
+qa = [
+    "opencv-python-headless",
+]
+qa-ocr = [
+    "paddleocr",
+]
 
 [dependency-groups]
 dev = [

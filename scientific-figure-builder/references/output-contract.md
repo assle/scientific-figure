@@ -14,8 +14,23 @@ runs/2026-07-28_figure-01/
 ├── prompts/
 ├── assets/
 ├── plots/
+│   └── <asset_id>/
+│       ├── plot.png
+│       ├── plot.svg
+│       ├── plot.pdf
+│       ├── data_used.csv
+│       └── layout_manifest.json      # source-level layout (plan section 8)
 ├── vectors/
 ├── validation/
+│   ├── validation_report.json        # final report (back-compat name)
+│   ├── final.json                    # final report (canonical)
+│   ├── root_cause_report.json        # only when blocking errors occur
+│   └── evidence/                     # localised failure crops (plan section 13)
+├── assembly/
+│   ├── figure.png
+│   ├── figure.svg
+│   ├── figure.pdf
+│   └── layout_manifest.json          # assembly-level layout (plan section 9)
 ├── exports/
 │   ├── figure.png
 │   ├── figure.svg
@@ -28,6 +43,18 @@ runs/2026-07-28_figure-01/
 ```
 
 PPTX is optional. PNG, SVG, and PDF are default formal outputs.
+
+## Image QA outputs
+
+- **Layout manifests** (`layout_manifest.json`) record real element bounding
+  boxes in the top-left pixel convention. A plot-level manifest is emitted by
+  `render_plot`; an assembly-level manifest is emitted by `compose_assets`.
+- **Validation report** (`validation/final.json`) carries deterministic +
+  geometry + multimodal checks. Failing layout checks include `bbox`,
+  `element_ids`, `confidence`, `method`, `evidence_path`, and `repair_action`.
+- **Evidence crops** (`validation/evidence/<check_id>_<n>.png`) are enlarged,
+  annotated regions for each localised failure; they are audit aids, not formal
+  exports.
 
 ## Reproducibility
 

@@ -107,16 +107,37 @@ class FigureWorkflow:
 
         # Assemble.
         assembly_dir = self.run_dir / "assembly"
-        compose_assets(placements, output_dir=assembly_dir, canvas_mm=self._canvas_mm(),
-                       dpi=self.compose_dpi, text_placements=text_placements)
-        composed_png = assembly_dir / "figure.png"
+        source_layouts = {
+            p["asset_id"]: p["layout_manifest"]
+            for p in placements
+            if p.get("asset_id") and p.get("layout_manifest")
+            and Path(p["layout_manifest"]).exists()
+        }
+        assembly_result = compose_assets(placements, output_dir=assembly_dir,
+                                         canvas_mm=self._canvas_mm(),
+                                         dpi=self.compose_dpi,
+                                         text_placements=text_placements,
+                                         source_layouts=source_layouts)
+        composed_png = Path(assembly_result["files"]["png"])
 
-        # Final validation.
-        final = validate_assembled_figure(plan, manifest, composed_png,
-                                          physical_size_mm=self._canvas_mm(),
-                                          run_id=self.state.run_id)
+        # Final validation (plan section 17.1): thread the ark client and the
+        # assembly layout manifest so the multimodal final check actually runs.
+        final = validate_assembled_figure(
+            figure_plan=plan,
+            asset_manifest=manifest,
+            composed_image_path=composed_png,
+            physical_size_mm=self._canvas_mm(),
+            run_id=self.state.run_id,
+            layout_manifest_path=assembly_result.get("layout_manifest"),
+            ark_client=self.ark,
+            qa_config=self.config.get("validation", {}),
+            evidence_dir=self.run_dir / "validation" / "evidence",
+            asset_placements={p["asset_id"]: p["bbox"] for p in placements
+                              if p.get("asset_id")},
+        )
         validation_reports.append(final)
         self._write_json("validation/validation_report.json", final)
+        self._write_json("validation/final.json", final)
 
         # Export gate (spec 0001, improvement 3).
         exported = False
@@ -139,12 +160,15 @@ class FigureWorkflow:
                     shutil.copyfile(src, exports / f"figure.{ext}")
             exported = True
 
-        # Root cause analysis (spec 0001, improvement 4).
-        has_failures = any(
-            any(c.get("status") == "fail" for c in r.get("checks", []))
+        # Root cause analysis (spec 0001, improvement 4): triggered by blocking
+        # (error-level) failures. Warning-level failures are recorded but do not
+        # by themselves warrant a root-cause report.
+        has_blocking_failures = any(
+            any(c.get("status") == "fail" and c.get("level") == "error"
+                for c in r.get("checks", []))
             for r in validation_reports
         )
-        if has_failures:
+        if has_blocking_failures:
             root_cause = analyze_root_causes(validation_reports, plan, layout_report)
             self._write_json("validation/root_cause_report.json", root_cause)
 
@@ -279,8 +303,10 @@ class FigureWorkflow:
                     path = out / "plot.png"
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
-                    placements.append({"path": str(path), "bbox": panel["bbox"],
-                                       "z_order": self._zorder(asset_id, plan)})
+                    placements.append({"asset_id": asset_id, "path": str(path),
+                                       "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                                       "z_order": self._zorder(asset_id, plan),
+                                       "layout_manifest": str(out / "layout_manifest.json")})
                 except Exception as e:  # noqa: BLE001
                     validation_reports.append(self._error_report(asset_id, str(e)))
 
@@ -304,7 +330,8 @@ class FigureWorkflow:
             if report is not None:
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
-            placements.append({"path": meta["path"], "bbox": panel["bbox"],
+            placements.append({"asset_id": asset_id, "path": meta["path"],
+                               "bbox": panel["bbox"], "panel_id": panel["panel_id"],
                                "z_order": self._zorder(asset_id, plan)})
 
         text_placements = self._render_labels(plan, manifest_assets)
@@ -332,9 +359,15 @@ class FigureWorkflow:
             manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
             panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
             if panel is not None:
-                text_placements.append({"x": panel["bbox"][0] + 0.02,
-                                        "y": panel["bbox"][1] + 0.02,
-                                        "text": label["content"], "font_size": 9})
+                text_placements.append({
+                    "x": panel["bbox"][0] + 0.02,
+                    "y": panel["bbox"][1] + 0.02,
+                    "text": label["content"],
+                    "font_size": 9,
+                    "element_id": asset_id,
+                    "kind": label.get("kind", "label"),
+                    "panel_id": panel["panel_id"],
+                })
         return text_placements
 
     @staticmethod
