@@ -1,0 +1,186 @@
+"""Figure QA engine (plan section 10).
+
+Orchestrates deterministic final checks, source-aware geometry rules, and the
+multimodal final check. ``final_checks.validate_assembled_figure`` delegates
+here so external callers keep their existing interface.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from PIL import Image
+
+from figure_tools.validation.models import read_layout_manifest
+from figure_tools.validation.rules import (
+    asset_bounds,
+    colorbar_collision,
+    panel_label_collision,
+    panel_label_consistency,
+    text_clipping,
+    text_text_overlap,
+    minimum_font_size,
+)
+from figure_tools.validation.summary import make_check, summarize_checks
+
+
+def _deterministic_final_checks(
+    figure_plan: dict[str, Any],
+    asset_manifest: dict[str, Any],
+    composed_image_path: str | Path,
+    physical_size_mm: tuple[float, float],
+    min_dpi: int,
+) -> list[dict]:
+    checks: list[dict] = []
+    plan_assets = figure_plan.get("assets", [])
+    manifest_by_id = {a["asset_id"]: a for a in asset_manifest.get("assets", [])}
+
+    missing = []
+    for a in plan_assets:
+        m = manifest_by_id.get(a["asset_id"])
+        if m is None or not Path(m["path"]).exists():
+            missing.append(a["asset_id"])
+    checks.append(make_check("missing_assets", "final", "error",
+                         "fail" if missing else "pass",
+                         "missing: " + ",".join(missing) if missing else "all assets present"))
+
+    bad_alpha = [
+        a["asset_id"] for a in plan_assets
+        if a["type"] == "image_asset"
+        and not manifest_by_id.get(a["asset_id"], {}).get("transparent", False)
+    ]
+    checks.append(make_check("alpha_for_ai_assets", "final", "error",
+                         "fail" if bad_alpha else "pass",
+                         "non-transparent AI assets: " + ",".join(bad_alpha) if bad_alpha
+                         else "AI assets transparent"))
+
+    zorders = [a["z_order"] for a in plan_assets]
+    dup = sorted({z for z in zorders if zorders.count(z) > 1})
+    checks.append(make_check("z_order_unique", "final", "error",
+                         "fail" if dup else "pass",
+                         "duplicate z_order: " + ",".join(map(str, dup)) if dup
+                         else "z_order unique"))
+
+    try:
+        img = Image.open(composed_image_path)
+        w, h = img.size
+        w_mm, h_mm = physical_size_mm
+        dpi = min(w / (w_mm / 25.4), h / (h_mm / 25.4))
+        checks.append(make_check("effective_resolution", "final", "warning",
+                             "pass" if dpi >= min_dpi else "fail",
+                             f"effective {dpi:.0f} dpi (min {min_dpi})"))
+    except Exception as e:  # noqa: BLE001
+        checks.append(make_check("effective_resolution", "final", "error", "fail", str(e)))
+
+    return checks
+
+
+def _legacy_panel_label_consistency(figure_plan: dict[str, Any]) -> list[dict]:
+    """Simplified label check used when no layout manifest is available."""
+    text_ids = {t["element_id"] for t in figure_plan.get("text_elements", [])}
+    unlabeled = [p["panel_id"] for p in figure_plan.get("panels", []) if not text_ids]
+    return [make_check("panel_label_consistency", "final", "warning",
+                       "pass" if not unlabeled else "fail",
+                       "no labels" if unlabeled else "labels present")]
+
+
+def _multimodal_final_checks(
+    ark_client: Any,
+    composed_image_path: str | Path,
+    physical_size_mm: tuple[float, float],
+) -> list[dict]:
+    if ark_client is None:
+        return [make_check("multimodal_final", "final", "warning", "skipped",
+                       "no ark client; multimodal final check skipped")]
+    try:
+        raw = ark_client.validate_final_figure(
+            composed_image_path, physical_size_mm=physical_size_mm)
+    except Exception as e:  # noqa: BLE001
+        return [make_check("multimodal_final", "final", "warning", "skipped",
+                       f"multimodal final check unavailable: {e}")]
+    if not raw:
+        return [make_check("multimodal_final", "final", "error", "fail",
+                       "multimodal final check returned no checks")]
+    out: list[dict] = []
+    for c in raw:
+        c.setdefault("scope", "final")
+        c.setdefault("level", "error")
+        out.append(c)
+    return out
+
+
+class FigureQAEngine:
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        ark_client: Any = None,
+        ocr_backend: Any = None,
+    ) -> None:
+        self.config = config or {}
+        self.ark_client = ark_client
+        self.ocr_backend = ocr_backend
+        det = self.config.get("deterministic", {})
+        if not isinstance(det, dict):
+            det = {}
+        self._det = det
+        self.thresholds = self.config.get("thresholds", {}) or {}
+
+    def _rule_enabled(self, name: str) -> bool:
+        return bool(self._det.get(name, True))
+
+    def _layout_checks(self, manifest) -> list[dict]:
+        checks: list[dict] = []
+        th = self.thresholds
+        if self._rule_enabled("text_overlap"):
+            checks.extend(text_text_overlap(manifest, th))
+        if self._rule_enabled("clipping"):
+            checks.extend(text_clipping(manifest, th))
+            checks.extend(asset_bounds(manifest, th))
+        if self._rule_enabled("panel_labels"):
+            checks.extend(panel_label_collision(manifest, th))
+            checks.extend(panel_label_consistency(manifest, th))
+        if self._rule_enabled("typography"):
+            checks.extend(minimum_font_size(manifest, th))
+        if self._rule_enabled("colorbar_collision"):
+            checks.extend(colorbar_collision(manifest, th))
+        return checks
+
+    def validate_final(
+        self,
+        figure_plan: dict[str, Any],
+        asset_manifest: dict[str, Any],
+        image_path: str | Path,
+        layout_manifest_path: str | Path | None,
+        physical_size_mm: tuple[float, float],
+        run_id: str,
+        min_dpi: int = 300,
+    ) -> dict[str, Any]:
+        checks: list[dict] = []
+        checks.extend(_deterministic_final_checks(
+            figure_plan, asset_manifest, image_path, physical_size_mm, min_dpi))
+
+        manifest = None
+        if layout_manifest_path and Path(layout_manifest_path).exists():
+            try:
+                manifest = read_layout_manifest(layout_manifest_path)
+            except Exception:  # noqa: BLE001
+                manifest = None
+
+        if manifest is not None:
+            checks.extend(self._layout_checks(manifest))
+        else:
+            checks.extend(_legacy_panel_label_consistency(figure_plan))
+
+        checks.extend(_multimodal_final_checks(
+            self.ark_client, image_path, physical_size_mm))
+
+        return {
+            "schema_version": "1.0",
+            "run_id": run_id or figure_plan.get("run_id", "final"),
+            "checks": checks,
+            "summary": summarize_checks(checks),
+        }
+
+
+__all__ = ["FigureQAEngine"]

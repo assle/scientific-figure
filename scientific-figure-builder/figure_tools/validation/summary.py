@@ -6,10 +6,13 @@ from typing import Any
 
 
 def make_check(check_id: str, scope: str, level: str, status: str,
-               detail: str = "") -> dict[str, Any]:
+               detail: str = "", **extra: Any) -> dict[str, Any]:
     c: dict[str, Any] = {"check_id": check_id, "scope": scope, "level": level, "status": status}
     if detail:
         c["detail"] = detail
+    for key, value in extra.items():
+        if value is not None:
+            c[key] = value
     return c
 
 

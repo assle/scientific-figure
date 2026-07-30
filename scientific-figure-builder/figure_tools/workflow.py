@@ -156,12 +156,15 @@ class FigureWorkflow:
                     shutil.copyfile(src, exports / f"figure.{ext}")
             exported = True
 
-        # Root cause analysis (spec 0001, improvement 4).
-        has_failures = any(
-            any(c.get("status") == "fail" for c in r.get("checks", []))
+        # Root cause analysis (spec 0001, improvement 4): triggered by blocking
+        # (error-level) failures. Warning-level failures are recorded but do not
+        # by themselves warrant a root-cause report.
+        has_blocking_failures = any(
+            any(c.get("status") == "fail" and c.get("level") == "error"
+                for c in r.get("checks", []))
             for r in validation_reports
         )
-        if has_failures:
+        if has_blocking_failures:
             root_cause = analyze_root_causes(validation_reports, plan, layout_report)
             self._write_json("validation/root_cause_report.json", root_cause)
 

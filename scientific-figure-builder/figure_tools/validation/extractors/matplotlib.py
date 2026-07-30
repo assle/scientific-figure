@@ -105,6 +105,31 @@ def _colorbar_axes(fig) -> dict[int, Any]:
     return found
 
 
+def _in_range_tick_labels(ax, axis: str):
+    """Tick labels whose tick value lies within the axes view limits.
+
+    matplotlib emits Text objects for ticks outside the view interval (e.g. a
+    "120" tick when the y-axis tops out at ~104); their bboxes overflow the
+    canvas and would create false clipping/overlap reports, so they are skipped.
+    """
+    if axis == "x":
+        labels = ax.get_xticklabels()
+        ticks = ax.get_xticks()
+        lo, hi = ax.get_xlim()
+    else:
+        labels = ax.get_yticklabels()
+        ticks = ax.get_yticks()
+        lo, hi = ax.get_ylim()
+    out = []
+    for i, label in enumerate(labels):
+        if i < len(ticks):
+            loc = float(ticks[i])
+            if loc < float(lo) or loc > float(hi):
+                continue
+        out.append(label)
+    return out
+
+
 def extract_matplotlib_layout(fig, artifact_id: str) -> LayoutManifest:
     """Extract a LayoutManifest from a drawn matplotlib Figure."""
     fig.canvas.draw()
@@ -147,12 +172,12 @@ def extract_matplotlib_layout(fig, artifact_id: str) -> LayoutManifest:
             elements.append(el)
 
         # Tick labels.
-        for i, label in enumerate(ax.get_xticklabels()):
+        for i, label in enumerate(_in_range_tick_labels(ax, "x")):
             el = _element_from_text(f"xtick_{ax_idx}_{i}", "tick_label",
                                     label, renderer, canvas_h, None)
             if el is not None:
                 elements.append(el)
-        for i, label in enumerate(ax.get_yticklabels()):
+        for i, label in enumerate(_in_range_tick_labels(ax, "y")):
             el = _element_from_text(f"ytick_{ax_idx}_{i}", "tick_label",
                                     label, renderer, canvas_h, None)
             if el is not None:

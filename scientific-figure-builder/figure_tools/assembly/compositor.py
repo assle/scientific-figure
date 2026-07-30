@@ -27,6 +27,7 @@ from figure_tools.validation.extractors.assembly import (  # noqa: E402
 from figure_tools.validation.models import (  # noqa: E402
     LayoutElement,
     LayoutManifest,
+    PixelBBox,
     write_layout_manifest,
 )
 
@@ -72,6 +73,21 @@ def compose_assets(
         renderer = None
 
     elements: list[LayoutElement] = []
+
+    # Record each panel's allocated region on the final canvas (plan section 9).
+    for p in placements:
+        if not p.get("asset_id"):
+            continue
+        px, py, pw, ph = p["bbox"]
+        elements.append(LayoutElement(
+            element_id=f"panel:{p['asset_id']}",
+            element_type="panel",
+            bbox=PixelBBox(px * canvas_w, py * canvas_h,
+                           (px + pw) * canvas_w, (py + ph) * canvas_h),
+            panel_id=p.get("panel_id"),
+            source="assembly",
+            z_order=int(p.get("z_order", 0)),
+        ))
 
     # Project source layout elements onto the final canvas.
     source_manifests = load_source_manifests(source_layouts)
