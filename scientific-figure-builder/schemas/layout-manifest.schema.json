@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/layout-manifest.schema.json",
+  "title": "Layout Manifest",
+  "description": "Source-level layout geometry for a rendered plot or assembled figure (image QA plan section 7). Coordinates use the pixel_top-left origin.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_id", "coordinate_system", "canvas", "elements"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "coordinate_system": {
+      "type": "string",
+      "enum": ["pixel_top_left", "pixel_bottom_left"]
+    },
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width_px", "height_px"],
+      "properties": {
+        "width_px": { "type": "integer", "minimum": 1 },
+        "height_px": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["element_id", "element_type", "bbox"],
+        "properties": {
+          "element_id": { "type": "string", "minLength": 1 },
+          "element_type": {
+            "type": "string",
+            "enum": [
+              "panel",
+              "image_asset",
+              "data_region",
+              "text",
+              "panel_label",
+              "axis_label",
+              "tick_label",
+              "title",
+              "legend",
+              "colorbar",
+              "equation"
+            ]
+          },
+          "bbox": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "panel_id": { "type": ["string", "null"] },
+          "text": { "type": ["string", "null"] },
+          "font_size_pt": { "type": ["number", "null"] },
+          "rotation_deg": { "type": "number" },
+          "z_order": { "type": "integer" },
+          "source": { "type": "string" },
+          "metadata": { "type": "object" }
+        }
+      }
+    }
+  }
+}
