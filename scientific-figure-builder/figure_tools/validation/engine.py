@@ -12,6 +12,7 @@ from typing import Any
 
 from PIL import Image
 
+from figure_tools.validation.evidence import generate_evidence
 from figure_tools.validation.models import read_layout_manifest
 from figure_tools.validation.rules import (
     asset_bounds,
@@ -155,6 +156,7 @@ class FigureQAEngine:
         physical_size_mm: tuple[float, float],
         run_id: str,
         min_dpi: int = 300,
+        evidence_dir: str | Path | None = None,
     ) -> dict[str, Any]:
         checks: list[dict] = []
         checks.extend(_deterministic_final_checks(
@@ -171,6 +173,13 @@ class FigureQAEngine:
             checks.extend(self._layout_checks(manifest))
         else:
             checks.extend(_legacy_panel_label_consistency(figure_plan))
+
+        # Evidence crops for localized layout failures (plan section 13).
+        ev_cfg = self.config.get("evidence", {})
+        if not isinstance(ev_cfg, dict):
+            ev_cfg = {}
+        if evidence_dir is not None and ev_cfg.get("enabled", True):
+            generate_evidence(image_path, checks, evidence_dir, ev_cfg)
 
         checks.extend(_multimodal_final_checks(
             self.ark_client, image_path, physical_size_mm))

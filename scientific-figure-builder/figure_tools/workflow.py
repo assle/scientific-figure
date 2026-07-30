@@ -131,9 +131,11 @@ class FigureWorkflow:
             layout_manifest_path=assembly_result.get("layout_manifest"),
             ark_client=self.ark,
             qa_config=self.config.get("validation", {}),
+            evidence_dir=self.run_dir / "validation" / "evidence",
         )
         validation_reports.append(final)
         self._write_json("validation/validation_report.json", final)
+        self._write_json("validation/final.json", final)
 
         # Export gate (spec 0001, improvement 3).
         exported = False

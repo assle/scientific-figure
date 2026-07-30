@@ -56,6 +56,25 @@ def write_generation_report(
                      f"warnings={s.get('warnings',0)} blocking={s.get('blocking',False)}")
     lines.append("")
 
+    # Issue summary with localized evidence (plan section 17.4).
+    issues = []
+    for rep in validation_reports:
+        for c in rep.get("checks", []):
+            if c.get("status") == "fail":
+                issues.append(c)
+    if issues:
+        lines.append("## Validation issues")
+        lines.append("| check_id | level | detail | evidence |")
+        lines.append("|---|---|---|---|")
+        for c in issues:
+            ev = c.get("evidence_path", "-")
+            if ev:
+                ev = ev.replace(str(run_dir) + "/", "")
+            detail = (c.get("detail") or "").replace("|", "/")
+            lines.append(f"| {c.get('check_id','')} | {c.get('level','')} | "
+                         f"{detail} | {ev} |")
+        lines.append("")
+
     if validation_reports:
         worst = max(r.get("summary", {}).get("errors", 0) for r in validation_reports)
         if worst > 0 and exported and force_export:

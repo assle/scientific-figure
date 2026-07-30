@@ -23,6 +23,7 @@ def validate_assembled_figure(
     layout_manifest_path: str | Path | None = None,
     ark_client: Any = None,
     qa_config: dict[str, Any] | None = None,
+    evidence_dir: str | Path | None = None,
 ) -> dict[str, Any]:
     engine = FigureQAEngine(config=qa_config, ark_client=ark_client)
     return engine.validate_final(
@@ -33,4 +34,5 @@ def validate_assembled_figure(
         physical_size_mm=physical_size_mm,
         run_id=run_id or figure_plan.get("run_id", "final"),
         min_dpi=min_dpi,
+        evidence_dir=evidence_dir,
     )
