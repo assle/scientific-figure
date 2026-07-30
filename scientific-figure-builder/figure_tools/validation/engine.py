@@ -14,6 +14,7 @@ from PIL import Image
 
 from figure_tools.validation.evidence import generate_evidence
 from figure_tools.validation.models import read_layout_manifest
+from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
     asset_bounds,
     colorbar_collision,
@@ -180,6 +181,9 @@ class FigureQAEngine:
             ev_cfg = {}
         if evidence_dir is not None and ev_cfg.get("enabled", True):
             generate_evidence(image_path, checks, evidence_dir, ev_cfg)
+
+        # Local VLM review of suspicious regions (plan section 14).
+        VLMVerifier(self.ark_client, self.config).review(checks)
 
         checks.extend(_multimodal_final_checks(
             self.ark_client, image_path, physical_size_mm))

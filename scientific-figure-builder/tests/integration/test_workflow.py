@@ -269,11 +269,11 @@ def test_final_validation_uses_ark_client_not_skipped(tmp_path: Path):
     result = wf.run()
     assert result["paused"] is False
     final = result["validation_reports"][-1]
-    # The final_validation paid role was actually invoked.
+    # The final_validation paid role was actually invoked, proving the ark
+    # client was threaded into the final check (PR1 fix).
     assert any(role == "final_validation" for role, _ in client.transport.calls)
-    # No final check is "skipped" because the ark client was provided.
-    skipped = [c for c in final["checks"] if c["status"] == "skipped"]
-    assert skipped == []
+    # The model's multimodal checks are present in the final report.
+    assert any(c["check_id"] == "multimodal_semantic" for c in final["checks"])
 
 
 def test_final_validation_skipped_without_ark_client(tmp_path: Path):
@@ -340,4 +340,24 @@ def test_compose_return_value_used_for_composed_png(tmp_path: Path):
     result = wf.run()
     assert (run_dir / "assembly" / "figure.png").is_file()
     assert result["exported"] is True
+
+
+# --- Image QA: local VLM review (PR 6) ---
+
+def test_no_local_vlm_calls_when_no_layout_issues(tmp_path: Path):
+    """A clean figure produces no local-region VLM calls (plan section 20.3)."""
+    wf, client, run_dir = _workflow(tmp_path, _request(), compose_dpi=600)
+    result = wf.run()
+    assert result["exported"] is True
+    assert client.transport.local_region_calls == 0
+    # The whole-image final validation still ran.
+    assert any(role == "final_validation" for role, _ in client.transport.calls)
+
+
+def test_final_report_written_to_validation_final_json(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert (run_dir / "validation" / "final.json").is_file()
+    final = json.loads((run_dir / "validation" / "final.json").read_text())
+    assert final["schema_version"] == "1.0"
 

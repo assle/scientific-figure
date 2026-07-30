@@ -280,6 +280,37 @@ class ArkClient:
                 self.cache.put_bytes(key, json.dumps(multimodal).encode("utf-8"))
         return list(multimodal.get("checks", []))
 
+    # --- local-region VLM verification ---------------------------------
+    def verify_local_region(
+        self,
+        crop_path: str | Path,
+        issue_type: str,
+        context: dict[str, Any],
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Ask the vision model to confirm a localized suspected issue.
+
+        Uses the ``validations`` role (same model as final validation). The
+        caller passes the enlarged evidence crop plus geometry context. Returns
+        the model's strict-JSON verdict (confirmed/confidence/...).
+        """
+        role = "validations"
+        model = self._role_model(role)
+        img_hash = file_hash(crop_path)
+        payload = {"mode": "local_region", "issue_type": issue_type,
+                   "context": context}
+        key = Cache.make_key(model, img_hash, payload, [])
+        if not force and self.cache is not None:
+            cached = self.cache.get_bytes(key)
+            if cached is not None:
+                self._cache_hit()
+                return json.loads(cached)
+        self._record_call(role)
+        resp = self._post(role, payload, image_paths=[str(crop_path)])
+        if self.cache is not None:
+            self.cache.put_bytes(key, json.dumps(resp).encode("utf-8"))
+        return resp
+
     # --- upload disclosure ----------------------------------------------
     def disclose_uploads(self, paths: list[str | Path]) -> list[dict[str, Any]]:
         return [
