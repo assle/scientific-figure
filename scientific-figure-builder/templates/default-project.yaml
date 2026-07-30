@@ -40,3 +40,46 @@ models:
 
 # Optional domain template selection.
 domain_template: null
+
+# Image QA / layout validation (source-aware). All fields optional; omitted
+# fields fall back to code defaults so older project configs keep working.
+validation:
+  enabled: true
+  mode: source_aware
+
+  deterministic:
+    enabled: true
+    text_overlap: true
+    clipping: true
+    panel_labels: true
+    colorbar_collision: true
+    typography: true
+
+  thresholds:
+    minimum_overlap_pixels: 2
+    overlap_warning_ratio: 0.01
+    overlap_error_ratio: 0.03
+    minimum_gap_pixels: 4
+    panel_padding_pixels: 2
+    minimum_font_size_pt: 7
+    critical_font_size_pt: 6
+    font_size_tolerance_pt: 1
+
+  evidence:
+    enabled: true
+    crop_padding_pixels: 30
+    crop_scale: 4
+    draw_boxes: true
+
+  ocr:
+    enabled: auto
+    backend: paddleocr
+    only_for:
+      - raster_without_layout
+      - image_asset
+
+  multimodal:
+    enabled: true
+    mode: suspicious_regions
+    max_regions: 12
+    minimum_issue_confidence: 0.50
