@@ -107,10 +107,17 @@ class FigureWorkflow:
 
         # Assemble.
         assembly_dir = self.run_dir / "assembly"
+        source_layouts = {
+            p["asset_id"]: p["layout_manifest"]
+            for p in placements
+            if p.get("asset_id") and p.get("layout_manifest")
+            and Path(p["layout_manifest"]).exists()
+        }
         assembly_result = compose_assets(placements, output_dir=assembly_dir,
                                          canvas_mm=self._canvas_mm(),
                                          dpi=self.compose_dpi,
-                                         text_placements=text_placements)
+                                         text_placements=text_placements,
+                                         source_layouts=source_layouts)
         composed_png = Path(assembly_result["files"]["png"])
 
         # Final validation (plan section 17.1): thread the ark client and the
@@ -290,8 +297,9 @@ class FigureWorkflow:
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
-                                       "bbox": panel["bbox"],
-                                       "z_order": self._zorder(asset_id, plan)})
+                                       "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                                       "z_order": self._zorder(asset_id, plan),
+                                       "layout_manifest": str(out / "layout_manifest.json")})
                 except Exception as e:  # noqa: BLE001
                     validation_reports.append(self._error_report(asset_id, str(e)))
 
@@ -316,7 +324,7 @@ class FigureWorkflow:
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
             placements.append({"asset_id": asset_id, "path": meta["path"],
-                               "bbox": panel["bbox"],
+                               "bbox": panel["bbox"], "panel_id": panel["panel_id"],
                                "z_order": self._zorder(asset_id, plan)})
 
         text_placements = self._render_labels(plan, manifest_assets)
@@ -344,9 +352,15 @@ class FigureWorkflow:
             manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
             panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
             if panel is not None:
-                text_placements.append({"x": panel["bbox"][0] + 0.02,
-                                        "y": panel["bbox"][1] + 0.02,
-                                        "text": label["content"], "font_size": 9})
+                text_placements.append({
+                    "x": panel["bbox"][0] + 0.02,
+                    "y": panel["bbox"][1] + 0.02,
+                    "text": label["content"],
+                    "font_size": 9,
+                    "element_id": asset_id,
+                    "kind": label.get("kind", "label"),
+                    "panel_id": panel["panel_id"],
+                })
         return text_placements
 
     @staticmethod

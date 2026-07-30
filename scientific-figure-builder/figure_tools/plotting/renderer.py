@@ -25,6 +25,18 @@ def render_plot(
 
     fig = render(spec, data_used)
     try:
+        # Source-level layout extraction (plan section 8): draw first so every
+        # artist has a real pixel bounding box, then write the manifest.
+        fig.canvas.draw()
+        from figure_tools.validation.extractors.matplotlib import (
+            extract_matplotlib_layout,
+        )
+        from figure_tools.validation.models import write_layout_manifest
+
+        layout = extract_matplotlib_layout(fig=fig, artifact_id=f"plot:{basename}")
+        out_dir = Path(output_dir)
+        layout_path = write_layout_manifest(out_dir / "layout_manifest.json", layout)
+
         files = save_figure(
             fig,
             output_dir,
@@ -32,11 +44,11 @@ def render_plot(
             formats=tuple(spec.export["formats"]),
             dpi=spec.export.get("dpi", 300),
         )
-        out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         data_used_path = out_dir / "data_used.csv"
         data_used.to_csv(data_used_path, index=False)
         files["data_used.csv"] = data_used_path
+        files["layout_manifest.json"] = layout_path
     finally:
         plt.close(fig)
 
