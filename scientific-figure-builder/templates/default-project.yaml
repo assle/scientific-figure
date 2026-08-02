@@ -82,4 +82,3 @@ validation:
     enabled: true
     mode: suspicious_regions
     max_regions: 12
-    minimum_issue_confidence: 0.50

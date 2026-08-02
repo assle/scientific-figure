@@ -2,7 +2,8 @@
 
 Only a curated set of issue types are sent to the vision model, and only the
 enlarged evidence crop is uploaded. The model's verdict *enriches* the
-deterministic check but never downgrades a geometry-confirmed error to a pass.
+deterministic check but never downgrades any deterministic check to a pass
+(ADR-0002).
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ class VLMVerifier:
         self.enabled = bool(mm.get("enabled", True))
         self.mode = mm.get("mode", "suspicious_regions")
         self.max_regions = int(mm.get("max_regions", 12))
-        self.min_confidence = float(mm.get("minimum_issue_confidence", 0.50))
 
     def review(self, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Enrich failing reviewable checks with a VLM verdict (in place)."""
@@ -78,16 +78,6 @@ class VLMVerifier:
                 f"move {verdict['move_element_id']} {verdict.get('direction', '')} "
                 f"by >= {verdict['minimum_shift_px']} px"
             )
-
-        # Merge policy (plan section 14.4): geometry-confirmed errors are never
-        # downgraded to pass by the VLM.
-        if check.get("method") == "geometry":
-            return
-        # For non-geometry (e.g. OCR) suspects, the VLM may reject the issue.
-        if not check["vlm_confirmed"] and check.get("vlm_confidence", 0) >= self.min_confidence:
-            check["status"] = "pass"
-            check["detail"] = (check.get("detail", "") +
-                               f" [VLM rejected: {verdict.get('detail', '')}]").strip()
 
 
 __all__ = ["VLMVerifier", "REVIEWABLE_ISSUES"]

@@ -50,12 +50,14 @@ def test_vlm_cannot_downgrade_geometry_error_to_pass(tmp_path: Path):
     assert checks[0]["status"] == "fail"  # stays fail
 
 
-def test_vlm_can_reject_non_geometry_suspect(tmp_path: Path):
+def test_vlm_cannot_downgrade_ocr_suspect(tmp_path: Path):
+    """ADR-0002: all deterministic checks are protected, not just geometry."""
     ark = _MockArk(verdict={"confirmed": False, "confidence": 0.8,
                             "detail": "no text here"})
-    v = VLMVerifier(ark, {"multimodal": {"minimum_issue_confidence": 0.5}})
+    v = VLMVerifier(ark, {})
     checks = v.review([_check(cid="unexpected_ai_text", method="ocr")])
-    assert checks[0]["status"] == "pass"
+    assert checks[0]["status"] == "fail"  # stays fail — VLM cannot downgrade
+    assert checks[0]["vlm_confirmed"] is False  # but enrichment is recorded
 
 
 def test_vlm_empty_verdict_not_pass(tmp_path: Path):
