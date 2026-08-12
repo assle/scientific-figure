@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="assets/banner.svg" alt="Scientific Figure Builder" width="720">
 </p>
@@ -41,6 +43,9 @@ Transform natural-language requests into **reproducible, publication-quality** s
 ### Install
 
 ```bash
+cd scientific-figure-builder
+uv sync
+cd ..
 ./install.sh
 ```
 
