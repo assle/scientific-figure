@@ -61,3 +61,33 @@ def test_content_hash_matches_fixture_file() -> None:
     spec = load_plot_spec(FIXTURES / "plot_spec_line.json")
     raw = (FIXTURES / "coupling.csv").read_bytes()
     assert spec.source_data["content_hash"] == "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def test_export_target_defaults_to_general_when_absent() -> None:
+    spec = load_plot_spec(FIXTURES / "plot_spec_line.json")
+    assert spec.export.get("export_target", "general") == "general"
+
+
+def test_export_target_accepts_ppt() -> None:
+    data = {
+        "schema_version": "1.0",
+        "chart_type": "line",
+        "recipe_version": "line-1.0",
+        "source_data": {"path": "p", "content_hash": "sha256:x"},
+        "column_mapping": {},
+        "units": {},
+        "series": [],
+        "errors": [],
+        "transformations": [],
+        "filters": [],
+        "axes": {"x": "x", "y": "y"},
+        "scales": {},
+        "ticks": {},
+        "legends": [],
+        "labels": {"title": "t", "x": "x", "y": "y"},
+        "figure": {"dimensions": [1, 1], "style": "s"},
+        "export": {"formats": ["svg"], "dpi": 300, "export_target": "ppt"},
+        "validation_expectations": {},
+    }
+    spec = PlotSpec.from_dict(data)
+    assert spec.export["export_target"] == "ppt"

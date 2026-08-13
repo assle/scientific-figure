@@ -15,7 +15,11 @@ import matplotlib
 matplotlib.use("Agg")  # non-interactive; safe in headless/CI
 
 from PIL import Image  # noqa: E402
-from figure_tools.vector.svg_normalize import HASHSALT, normalize_svg_bytes  # noqa: E402
+from figure_tools.vector.svg_normalize import (  # noqa: E402
+    HASHSALT,
+    normalize_svg_bytes,
+    resolve_export_target,
+)
 
 _PDF_METADATA = {
     "Creator": "scientific-figure-builder",
@@ -36,11 +40,15 @@ def export_png(fig, path: Path, dpi: int = 300) -> Path:
     return path
 
 
-def export_svg(fig, path: Path) -> Path:
+def export_svg(fig, path: Path, export_target: str = "general") -> Path:
+    export_target = resolve_export_target(export_target)
     buf = io.BytesIO()
-    with matplotlib.rc_context({"svg.hashsalt": HASHSALT}):
+    rc = {"svg.hashsalt": HASHSALT}
+    if export_target == "ppt":
+        rc["svg.fonttype"] = "none"
+    with matplotlib.rc_context(rc):
         fig.savefig(buf, format="svg")
-    path.write_bytes(normalize_svg_bytes(buf.getvalue()))
+    path.write_bytes(normalize_svg_bytes(buf.getvalue(), export_target=export_target))
     return path
 
 
@@ -50,14 +58,17 @@ def export_pdf(fig, path: Path) -> Path:
 
 
 def save_figure(fig, out_dir: Path, basename: str = "plot",
-                formats=("png", "svg", "pdf"), dpi: int = 300) -> dict[str, Path]:
+                formats=("png", "svg", "pdf"), dpi: int = 300,
+                export_target: str = "general") -> dict[str, Path]:
+    export_target = resolve_export_target(export_target)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     produced: dict[str, Path] = {}
     if "png" in formats:
         produced["png"] = export_png(fig, out_dir / f"{basename}.png", dpi=dpi)
     if "svg" in formats:
-        produced["svg"] = export_svg(fig, out_dir / f"{basename}.svg")
+        produced["svg"] = export_svg(fig, out_dir / f"{basename}.svg",
+                                     export_target=export_target)
     if "pdf" in formats:
         produced["pdf"] = export_pdf(fig, out_dir / f"{basename}.pdf")
     return produced

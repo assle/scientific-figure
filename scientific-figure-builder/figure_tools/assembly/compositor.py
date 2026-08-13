@@ -30,6 +30,7 @@ from figure_tools.validation.models import (  # noqa: E402
     PixelBBox,
     write_layout_manifest,
 )
+from figure_tools.vector.svg_normalize import resolve_export_target  # noqa: E402
 
 
 def compose_assets(
@@ -39,7 +40,9 @@ def compose_assets(
     dpi: int = 300,
     text_placements: list[dict[str, Any]] | None = None,
     source_layouts: dict[str, str | Path] | None = None,
+    export_target: str | None = None,
 ) -> dict[str, Any]:
+    export_target = resolve_export_target(export_target or "general")
     w_mm, h_mm = canvas_mm
     fig = plt.figure(figsize=(w_mm / 25.4, h_mm / 25.4), dpi=dpi)
     ax = fig.add_axes([0, 0, 1, 1])
@@ -121,7 +124,8 @@ def compose_assets(
 
     try:
         files = save_figure(fig, output_dir, basename="figure",
-                            formats=("png", "svg", "pdf"), dpi=dpi)
+                            formats=("png", "svg", "pdf"), dpi=dpi,
+                            export_target=export_target)
     finally:
         plt.close(fig)
 

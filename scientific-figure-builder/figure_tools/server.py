@@ -28,6 +28,7 @@ from figure_tools.validation.final_checks import validate_assembled_figure
 from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
+from figure_tools.vector.svg_normalize import normalize_svg_bytes
 from figure_tools.vector.wireframe import generate_wireframe
 
 _CACHE_DIR = Path(tempfile.gettempdir()) / "scientific-figure-cache"
@@ -114,18 +115,22 @@ def _h_edit_image_asset(args):
 
 def _h_render_scientific_plot(args):
     spec = load_plot_spec(args["plot_spec_path"])
-    out = render_plot(spec, output_dir=args["output_dir"], base_dir=args.get("base_dir", "."))
+    out = render_plot(spec, output_dir=args["output_dir"], base_dir=args.get("base_dir", "."),
+                      export_target=args.get("export_target"))
     return {"files": out["files"]}
 
 
 def _h_render_vector_element(args):
     kind = args.get("kind", "label")
     content = args["content"]
+    export_target = args.get("export_target", "general")
     if kind == "equation":
-        return {"svg": latex_to_svg(content)}
+        return {"svg": latex_to_svg(content, export_target=export_target)}
     canvas = SvgCanvas(width=200, height=40)
     canvas.text(2, 16, content, font_size=12, fill="#000000")
-    return {"svg": canvas.to_string()}
+    svg = normalize_svg_bytes(canvas.to_string().encode("utf-8"),
+                              export_target=export_target).decode("utf-8")
+    return {"svg": svg}
 
 
 def _h_validate_image_asset(args):
@@ -148,7 +153,8 @@ def _h_assemble_figure(args):
     out = compose_assets(args["placements"], output_dir=args["output_dir"],
                          canvas_mm=tuple(args["canvas_mm"]),
                          dpi=args.get("dpi", 300),
-                         text_placements=args.get("text_placements"))
+                         text_placements=args.get("text_placements"),
+                         export_target=args.get("export_target"))
     return {"files": out["files"]}
 
 

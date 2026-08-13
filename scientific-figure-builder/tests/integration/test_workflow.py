@@ -342,6 +342,41 @@ def test_compose_return_value_used_for_composed_png(tmp_path: Path):
     assert result["exported"] is True
 
 
+# --- Export target (issue #3) ---
+
+def test_export_target_general_is_backward_compatible(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request())
+    result = wf.run()
+    assert result["exported"] is True
+    plot_svg = (run_dir / "plots" / "curve" / "plot.svg").read_text(encoding="utf-8")
+    figure_svg = (run_dir / "assembly" / "figure.svg").read_text(encoding="utf-8")
+    assert "<use" in plot_svg
+    assert "<text" not in plot_svg
+    assert "<use" in figure_svg
+    assert "<text" not in figure_svg
+
+
+def test_export_target_ppt_flows_to_plot_and_figure(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request(export_target="ppt"))
+    result = wf.run()
+    assert result["exported"] is True
+    plot_svg = (run_dir / "plots" / "curve" / "plot.svg").read_text(encoding="utf-8")
+    figure_svg = (run_dir / "exports" / "figure.svg").read_text(encoding="utf-8")
+    assert "<text" in plot_svg
+    assert "text-anchor" in plot_svg
+    assert "<text" in figure_svg
+    # PNG/PDF remain available and non-empty.
+    assert (run_dir / "exports" / "figure.png").stat().st_size > 0
+    assert (run_dir / "exports" / "figure.pdf").stat().st_size > 0
+
+
+def test_export_target_recorded_in_generation_report(tmp_path: Path):
+    wf, client, run_dir = _workflow(tmp_path, _request(export_target="ppt"))
+    wf.run()
+    report = (run_dir / "generation_report.md").read_text(encoding="utf-8")
+    assert "Export target: ppt" in report
+
+
 # --- Image QA: local VLM review (PR 6) ---
 
 def test_no_local_vlm_calls_when_no_layout_issues(tmp_path: Path):
@@ -360,4 +395,3 @@ def test_final_report_written_to_validation_final_json(tmp_path: Path):
     assert (run_dir / "validation" / "final.json").is_file()
     final = json.loads((run_dir / "validation" / "final.json").read_text())
     assert final["schema_version"] == "1.0"
-

@@ -79,3 +79,16 @@ def test_load_config_skill_defaults_provide_limits(tmp_path: Path) -> None:
     cfg = load_config(tmp_path)
     assert cfg["limits"]["max_quality_retries_per_asset"] == 2
     assert cfg["limits"]["independent_asset_concurrency"] == 2
+
+
+def test_load_config_default_export_target_is_general(tmp_path: Path) -> None:
+    cfg = load_config(tmp_path)
+    assert cfg["export"]["export_target"] == "general"
+
+
+def test_run_overrides_can_select_ppt_export_target(tmp_path: Path) -> None:
+    cfg = load_config(
+        tmp_path,
+        run_overrides={"export": {"export_target": "ppt"}},
+    )
+    assert cfg["export"]["export_target"] == "ppt"

@@ -16,6 +16,7 @@ def write_generation_report(
     exported: bool = False,
     force_export: bool = False,
     export_blocked_reason: str | None = None,
+    export_target: str = "general",
 ) -> Path:
     run_dir = Path(run_dir)
     lines: list[str] = []
@@ -24,6 +25,7 @@ def write_generation_report(
     lines.append(f"- Run ID: {figure_plan.get('run_id', '')}")
     lines.append(f"- Task: classified by router; approval: "
                  f"{figure_plan.get('approval', {}).get('status', '')}")
+    lines.append(f"- Export target: {export_target}")
     lines.append(f"- Exported: {exported}")
     lines.append("")
 

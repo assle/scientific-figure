@@ -18,6 +18,7 @@ export:
   formats: [png, svg, pdf]
   include_pptx: false
   dpi: 300
+  export_target: general
 
 # Concurrency and reliability limits (plan section 12).
 limits:

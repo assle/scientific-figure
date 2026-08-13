@@ -118,7 +118,8 @@
           "items": { "type": "string", "enum": ["png", "svg", "pdf"] },
           "minItems": 1
         },
-        "dpi": { "type": "integer", "minimum": 72 }
+        "dpi": { "type": "integer", "minimum": 72 },
+        "export_target": { "type": "string", "enum": ["general", "ppt"] }
       }
     },
     "validation_expectations": {

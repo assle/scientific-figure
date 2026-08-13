@@ -10,6 +10,7 @@ from figure_tools.export.exporters import save_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.recipes import render
 from figure_tools.plotting.spec import PlotSpec
+from figure_tools.vector.svg_normalize import resolve_export_target
 
 
 def render_plot(
@@ -17,11 +18,15 @@ def render_plot(
     output_dir: str | Path,
     base_dir: str | Path | None = None,
     basename: str = "plot",
+    export_target: str | None = None,
 ) -> dict[str, dict[str, str]]:
     base = Path(base_dir) if base_dir else Path.cwd()
     src_path = base / spec.source_data["path"]
     source = load_source_data(src_path)
     data_used = build_data_used(spec, source)
+    export_target = resolve_export_target(
+        export_target or spec.export.get("export_target", "general")
+    )
 
     fig = render(spec, data_used)
     try:
@@ -43,6 +48,7 @@ def render_plot(
             basename=basename,
             formats=tuple(spec.export["formats"]),
             dpi=spec.export.get("dpi", 300),
+            export_target=export_target,
         )
         out_dir.mkdir(parents=True, exist_ok=True)
         data_used_path = out_dir / "data_used.csv"

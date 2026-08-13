@@ -22,6 +22,7 @@ from figure_tools.report import write_generation_report
 from figure_tools.validation.final_checks import validate_assembled_figure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
+from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
 from figure_tools.vector.wireframe import generate_wireframe
 
 
@@ -57,6 +58,7 @@ class FigureWorkflow:
     def run(self, approved: bool = False,
             style_anchor_approved: bool = False,
             force_export: bool = False) -> dict[str, Any]:
+        export_target = self._export_target()
         task = classify_task(self.request)
         plan = create_figure_plan(self.request)
         self._write_json("plans/figure_plan.json", plan)
@@ -100,7 +102,7 @@ class FigureWorkflow:
             self.state.request_approval("style_anchor_approval", "approved")
 
         manifest_assets, validation_reports, placements, text_placements = \
-            self._render_assets(plan, ai_elements)
+            self._render_assets(plan, ai_elements, export_target)
 
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self._write_json("asset_manifest.json", manifest)
@@ -117,7 +119,8 @@ class FigureWorkflow:
                                          canvas_mm=self._canvas_mm(),
                                          dpi=self.compose_dpi,
                                          text_placements=text_placements,
-                                         source_layouts=source_layouts)
+                                         source_layouts=source_layouts,
+                                         export_target=export_target)
         composed_png = Path(assembly_result["files"]["png"])
 
         # Final validation (plan section 17.1): thread the ark client and the
@@ -176,7 +179,8 @@ class FigureWorkflow:
         report_path = write_generation_report(
             self.run_dir, plan, manifest, validation_reports,
             run_state=self.state.to_dict(), exported=exported,
-            force_export=force_export, export_blocked_reason=export_blocked_reason)
+            force_export=force_export, export_blocked_reason=export_blocked_reason,
+            export_target=export_target)
 
         return {
             "paused": False,
@@ -194,6 +198,12 @@ class FigureWorkflow:
             if a["asset_id"] == asset_id:
                 return a["z_order"]
         return 0
+
+    def _export_target(self) -> str:
+        value = self.request.get("export_target")
+        if not value:
+            value = (self.config.get("export") or {}).get("export_target")
+        return resolve_export_target(value)
 
     def _write_style_bible(self) -> None:
         from figure_tools._resources import template_path
@@ -285,7 +295,7 @@ class FigureWorkflow:
         }
         return {k: round(v / total, 2) for k, v in quadrants.items()}
 
-    def _render_assets(self, plan, ai_elements):
+    def _render_assets(self, plan, ai_elements, export_target: str):
         manifest_assets: list[dict] = []
         validation_reports: list[dict] = []
         placements: list[dict] = []
@@ -299,7 +309,8 @@ class FigureWorkflow:
                 try:
                     spec = load_plot_spec(el["plot_spec"])
                     out = self.run_dir / "plots" / asset_id
-                    render_plot(spec, output_dir=out, base_dir=self.base_dir)
+                    render_plot(spec, output_dir=out, base_dir=self.base_dir,
+                                export_target=export_target)
                     path = out / "plot.png"
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
@@ -334,7 +345,7 @@ class FigureWorkflow:
                                "bbox": panel["bbox"], "panel_id": panel["panel_id"],
                                "z_order": self._zorder(asset_id, plan)})
 
-        text_placements = self._render_labels(plan, manifest_assets)
+        text_placements = self._render_labels(plan, manifest_assets, export_target)
         return manifest_assets, validation_reports, placements, text_placements
 
     def _safe_gen_ai(self, panel, el):
@@ -347,7 +358,7 @@ class FigureWorkflow:
         except Exception as e:  # noqa: BLE001
             return (el["element_id"], None, None, e)
 
-    def _render_labels(self, plan, manifest_assets) -> list[dict]:
+    def _render_labels(self, plan, manifest_assets, export_target: str) -> list[dict]:
         text_placements: list[dict] = []
         for i, label in enumerate(self.request.get("labels", [])):
             asset_id = label["element_id"]
@@ -355,7 +366,10 @@ class FigureWorkflow:
             svg_path.parent.mkdir(parents=True, exist_ok=True)
             canvas = SvgCanvas(width=200, height=40)
             canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
-            svg_path.write_text(canvas.to_string(), encoding="utf-8")
+            svg = normalize_svg_bytes(
+                canvas.to_string().encode("utf-8"), export_target=export_target
+            ).decode("utf-8")
+            svg_path.write_text(svg, encoding="utf-8")
             manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
             panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
             if panel is not None:
