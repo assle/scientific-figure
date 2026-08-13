@@ -43,6 +43,19 @@ Explicit user instruction > supplied style-reference image > project
   approval before continuing.
 - Require fresh approval before exceeding the configured paid-call budget.
 
+## Output target clarification
+
+The output target is required before a plan is created or any paid generation
+begins. If the user has not explicitly selected one, ask:
+
+- `general`: portable scientific figure exports (PNG, SVG, PDF); SVG text is
+  normalized as paths for broad compatibility.
+- `ppt`: PowerPoint-friendly output; SVG text remains editable and is
+  normalized for Office import. Usually combined with optional PPTX export.
+
+Record the answer in the structured request as `export_target` and, when the
+user asks for an editable deck, `include_pptx: true`. Do not default silently.
+
 ## Default paid-call budget
 
 - 1 reference-analysis call.

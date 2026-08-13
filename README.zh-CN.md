@@ -57,11 +57,39 @@ export:
 
 ### 安装
 
+一次安装，**OpenCode 和 Codex 全局可用**：
+
 ```bash
 ./install.sh
 ```
 
-需要：Python 3.11+、[uv](https://docs.astral.sh/uv/)、[OpenCode](https://opencode.ai/)
+这会把你电脑用户级目录中的 skill、命令和私有运行时安装好。你**不需要**把
+仓库复制到每个项目里。安装器默认同时写入 OpenCode 和 Codex 的配置。
+
+如果只想安装到某一个项目：
+
+```bash
+./install.sh --project /path/to/your-project
+```
+
+只想安装其中一种 agent：
+
+```bash
+./install.sh --opencode-only
+./install.sh --codex-only
+```
+
+全局安装位置：
+
+- Skill：`~/.config/opencode/skills/scientific-figure-builder`
+- Command：`~/.config/opencode/commands/scientific-figure.md`
+- Codex Skill：`~/.codex/skills/scientific-figure-builder`
+- Codex 配置：`~/.codex/config.toml`
+- Runtime：`~/.local/share/scientific-figure-builder`
+
+需要：Python 3.11+、[uv](https://docs.astral.sh/uv/)，以及你实际使用的
+[OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
+仓库本身不会变成你项目的一部分。
 
 ### 配置 Ark（可选）
 

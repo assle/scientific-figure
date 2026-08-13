@@ -69,6 +69,21 @@ def _approval_status(request: dict[str, Any]) -> str:
     return "auto_execute" if request.get("auto_execute") else "pending"
 
 
+def _output_target_requirements(request: dict[str, Any]) -> list[str]:
+    """Ask for the output target when the request does not specify it.
+
+    ``export_target`` is intentionally a required clarification, not a silent
+    default, so the planning model must surface the question to the user before
+    generating a plan that triggers paid work.
+    """
+    if request.get("export_target"):
+        return []
+    return [
+        "Confirm the output target: general (PNG/SVG/PDF) or ppt "
+        "(editable PowerPoint-friendly SVG, usually with optional PPTX)."
+    ]
+
+
 def create_figure_plan(
     request: dict[str, Any],
     style_bible_ref: str = "default",
@@ -99,7 +114,10 @@ def create_figure_plan(
         ],
         "assumptions": list(request.get("assumptions", [])),
         "uncertainties": list(request.get("uncertainties", [])),
-        "user_input_requirements": list(request.get("user_input_requirements", [])),
+        "user_input_requirements": [
+            *list(request.get("user_input_requirements", [])),
+            *_output_target_requirements(request),
+        ],
         "estimated_paid_calls": _estimated_paid_calls(request, assets),
         "planned_uploads": _planned_uploads(request),
         "approval": {"status": _approval_status(request)},
