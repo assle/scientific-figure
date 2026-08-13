@@ -1,6 +1,6 @@
 ---
 name: scientific-figure-builder
-description: Orchestrate publication scientific figures. Understand a figure request, decompose it into rendering tasks, route each to the right engine (Python plots, SVG, Volcengine Ark image/vision models), validate results, and assemble final PNG/SVG/PDF. Not a single-prompt image generator. OpenCode-first; core modules are platform-independent.
+description: Orchestrate publication scientific figures. Understand a figure request, decompose it into rendering tasks, route each to the right engine (Python plots, SVG, Volcengine Ark image/vision models), validate results, and assemble final PNG/SVG/PDF. Not a single-prompt image generator. Works with OpenCode and Codex; core modules are platform-independent.
 license: MIT
 metadata:
   version: "0.1.0"
@@ -46,19 +46,26 @@ interpretation, or one-shot formal figure generation.
 
 1. Initialize project config on first use.
 2. Inspect request + local inputs; keep raw data local by default.
-3. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
-4. Analyze reference images with the configured Ark vision model (if any).
-5. Create a versioned figure plan + no-cost SVG layout wireframe.
-6. Show plan, upload list, model-call estimate, and wireframe. **Wait for
+3. Resolve the output target before planning paid work. If the user has not
+   already specified it, **ask**: "Do you want a general scientific figure
+   (PNG/SVG/PDF) or an editable PowerPoint-friendly figure
+   (`export_target: ppt`, usually with optional PPTX)?" Record the answer as
+   `export_target` and `include_pptx`; do not proceed until it is provided.
+4. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
+5. Analyze reference images with the configured Ark vision model (if any).
+6. Create a versioned figure plan + no-cost SVG layout wireframe.
+7. Show plan, upload list, model-call estimate, and wireframe. **Wait for
    approval before any paid generation.**
-7. If >=3 AI assets, generate one style-anchor asset and pause for approval.
-8. Generate isolated assets; render plots and precise geometry locally.
-9. Deterministic + multimodal validation; retry quality failures at most twice.
-10. Assemble the figure automatically; validate the complete figure.
-11. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
+8. If >=3 AI assets, generate one style-anchor asset and pause for approval.
+9. Generate isolated assets; render plots and precise geometry locally.
+10. Deterministic + multimodal validation; retry quality failures at most twice.
+11. Assemble the figure automatically; validate the complete figure.
+12. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
     and generation report into a versioned run directory.
 
 `auto_execute: true` is an explicit opt-in. Default = plan approval then execute.
+Asking for the output target is still required when it is not already stated,
+even with `auto_execute: true`.
 
 ## Configuration
 

@@ -59,14 +59,40 @@ Or override it for a single tool call or run with `export_target: "ppt"`.
 
 ### Install
 
+Install once for **both OpenCode and Codex** (global):
+
 ```bash
-cd scientific-figure-builder
-uv sync
-cd ..
 ./install.sh
 ```
 
-Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), [OpenCode](https://opencode.ai/)
+This copies the skill, command, and private runtime into your user-level
+OpenCode and Codex directories. You do **not** need to copy the repository into
+each project. The installer writes both integrations by default.
+
+To install only for one project instead:
+
+```bash
+./install.sh --project /path/to/your-project
+```
+
+Install only one agent:
+
+```bash
+./install.sh --opencode-only
+./install.sh --codex-only
+```
+
+Global install paths are:
+
+- Skill: `~/.config/opencode/skills/scientific-figure-builder`
+- Command: `~/.config/opencode/commands/scientific-figure.md`
+- Codex skill: `~/.codex/skills/scientific-figure-builder`
+- Codex config: `~/.codex/config.toml`
+- Runtime: `~/.local/share/scientific-figure-builder`
+
+Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), and whichever of
+[OpenCode](https://opencode.ai/) or Codex you use. Run the installer once from a
+checkout of this repository; the checkout does not become part of your project.
 
 ### Configure Ark (optional)
 

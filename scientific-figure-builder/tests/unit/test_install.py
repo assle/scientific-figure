@@ -123,7 +123,11 @@ def test_apply_merge_handles_jsonc_comments(tmp_path: Path):
 def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     config_home = tmp_path / "config"
     data_home = tmp_path / "data"
-    global_paths = delivery_paths(config_home=config_home, data_home=data_home)
+    global_paths = delivery_paths(
+        config_home=config_home,
+        data_home=data_home,
+        codex_home=tmp_path / "codex",
+    )
     assert global_paths.skill_dir == (
         config_home / "opencode" / "skills" / "scientific-figure-builder"
     )
@@ -135,6 +139,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         config_home=config_home,
         data_home=data_home,
         project_dir=project,
+        codex_home=project / ".codex",
     )
     assert project_paths.skill_dir == (
         project / ".opencode" / "skills" / "scientific-figure-builder"
@@ -148,7 +153,11 @@ def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
     opencode_home.mkdir(parents=True)
     jsonc = opencode_home / "opencode.jsonc"
     jsonc.write_text("{}\n", encoding="utf-8")
-    paths = delivery_paths(config_home=config_home, data_home=tmp_path / "data")
+    paths = delivery_paths(
+        config_home=config_home,
+        data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex",
+    )
     assert paths.config_file == jsonc
 
 
@@ -161,6 +170,7 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         project_dir=project,
+        codex_home=project / ".codex",
     )
     assert paths.config_file == nested_config
 
@@ -170,6 +180,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex",
     )
     paths.config_file.parent.mkdir(parents=True)
     paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
@@ -206,6 +217,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex",
     )
 
     def _use_test_python(_runtime_dir: Path, *, with_ark: bool) -> Path:

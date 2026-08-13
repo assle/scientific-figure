@@ -91,7 +91,18 @@ def test_plan_approval_pending_by_default():
 def test_plan_records_user_input_requirements():
     req = _request(user_input_requirements=["Confirm wavelength 1550 nm."])
     plan = create_figure_plan(req)
-    assert plan["user_input_requirements"] == ["Confirm wavelength 1550 nm."]
+    assert plan["user_input_requirements"][0] == "Confirm wavelength 1550 nm."
+    assert any("output target" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_asks_for_output_target_when_missing():
+    plan = create_figure_plan(_request())
+    assert any("output target" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_skips_output_target_question_when_provided():
+    plan = create_figure_plan(_request(export_target="ppt"))
+    assert not any("output target" in item for item in plan["user_input_requirements"])
 
 
 def test_plan_style_bible_ref_defaults():
