@@ -49,6 +49,10 @@ def _request(auto_execute=True, **over):
         "assumptions": ["Gaussian beam approximation."],
         "uncertainties": [],
         "user_input_requirements": [],
+        "export_target": "general",
+        "figure_width_cm": 14.0,
+        "language": "en",
+        "style": "default",
         "auto_execute": auto_execute,
     }
     base.update(over)
@@ -113,6 +117,21 @@ def test_scientific_ambiguity_pauses_before_generation(tmp_path: Path):
     result = wf.run()
     assert result["paused"] is True
     # No paid generation happened.
+    roles_used = {role for role, _ in client.transport.calls}
+    assert "generation" not in roles_used
+    assert not (run_dir / "exports" / "figure.png").exists()
+
+
+def test_missing_required_clarifications_pause_before_generation(tmp_path: Path):
+    req = _request(auto_execute=True, export_target=None, figure_width_cm=None,
+                   language=None, style=None)
+    wf, client, run_dir = _workflow(tmp_path, req)
+    result = wf.run()
+    assert result["paused"] is True
+    assert result["pause_reason"] == "clarification_required"
+    assert {c["field"] for c in result["clarifications"]} == {
+        "export_target", "figure_width_cm", "language", "style",
+    }
     roles_used = {role for role, _ in client.transport.calls}
     assert "generation" not in roles_used
     assert not (run_dir / "exports" / "figure.png").exists()

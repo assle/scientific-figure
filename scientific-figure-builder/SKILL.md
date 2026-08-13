@@ -46,30 +46,28 @@ interpretation, or one-shot formal figure generation.
 
 1. Initialize project config on first use.
 2. Inspect request + local inputs; keep raw data local by default.
-3. Resolve the output target before planning paid work. If the user has not
-   already specified it, **ask**: "Do you want a general scientific figure
-   (PNG/SVG/PDF) or an editable PowerPoint-friendly figure
-   (`export_target: ppt`, usually with optional PPTX)?" Record the answer as
-   `export_target` and `include_pptx`; do not proceed until it is provided.
-4. Resolve the figure width before planning paid work. If the user has not
-   already specified it, **ask**: "Half-column 6.5 cm or full-column 14 cm?"
-   Record the answer as `figure_width_cm`; derive the canvas height from the
-   default canvas aspect ratio unless the user gives a custom height.
-5. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
-6. Analyze reference images with the configured Ark vision model (if any).
-7. Create a versioned figure plan + no-cost SVG layout wireframe.
-8. Show plan, upload list, model-call estimate, and wireframe. **Wait for
+3. Call `check_figure_requirements` and ask the user every unresolved required
+   question one at a time: output target (`general` vs `ppt`), figure width
+   (half-column 6.5 cm vs full-column 14 cm), figure text language (`zh` vs
+   `en`), and figure style (`default` vs a custom style reference). If the
+   user does not specify, use the default, but still ask first. Do not proceed
+   until every question is resolved.
+4. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
+5. Analyze reference images with the configured Ark vision model (if any).
+6. Create a versioned figure plan + no-cost SVG layout wireframe.
+7. Show plan, upload list, model-call estimate, and wireframe. **Wait for
    approval before any paid generation.**
-9. If >=3 AI assets, generate one style-anchor asset and pause for approval.
-10. Generate isolated assets; render plots and precise geometry locally.
-11. Deterministic + multimodal validation; retry quality failures at most twice.
-12. Assemble the figure automatically; validate the complete figure.
-13. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
+8. If >=3 AI assets, generate one style-anchor asset and pause for approval.
+9. Generate isolated assets; render plots and precise geometry locally.
+10. Deterministic + multimodal validation; retry quality failures at most twice.
+11. Assemble the figure automatically; validate the complete figure.
+12. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
     and generation report into a versioned run directory.
 
 `auto_execute: true` is an explicit opt-in. Default = plan approval then execute.
-Asking for the output target and figure width is still required when they are
-not already stated, even with `auto_execute: true`.
+Required clarifications are always asked first, even with `auto_execute: true`.
+Before writing any script, rendering any plot, generating any asset,
+assembling, or exporting, resolve every requirement above with the user.
 
 ## Configuration
 
@@ -83,11 +81,12 @@ resolution or silent upgrades. See `references/workflow-details.md`.
 ## Tools
 
 Capability-oriented MCP tools (plan section 8): `initialize_figure_project`,
-`analyze_reference_figure`, `create_figure_plan`, `create_layout_wireframe`,
-`generate_image_asset`, `edit_image_asset`, `render_scientific_plot`,
-`render_vector_element`, `validate_image_asset`, `validate_plot_data`,
-`assemble_figure`, `validate_assembled_figure`, `export_figure`,
-`resume_figure_run`. Ark model names are never exposed in these instructions.
+`analyze_reference_figure`, `check_figure_requirements`, `create_figure_plan`,
+`create_layout_wireframe`, `generate_image_asset`, `edit_image_asset`,
+`render_scientific_plot`, `render_vector_element`, `validate_image_asset`,
+`validate_plot_data`, `assemble_figure`, `validate_assembled_figure`,
+`export_figure`, `resume_figure_run`. Ark model names are never exposed in
+these instructions.
 
 ## Validation
 

@@ -42,6 +42,9 @@ Explicit user instruction > supplied style-reference image > project
 - If a task has >=3 AI assets, generate one style-anchor asset and pause for
   approval before continuing.
 - Require fresh approval before exceeding the configured paid-call budget.
+- Required clarifications are a hard gate before any rendering, generation,
+  assembly, or export. They are always asked first, even with
+  `auto_execute: true`.
 
 ## Output target clarification
 
@@ -66,6 +69,23 @@ begins. If the user has not explicitly selected one, ask:
 
 Record the answer as `figure_width_cm`. Derive the canvas height from the
 default canvas aspect ratio unless the user supplies a custom height.
+
+## Language clarification
+
+The figure text language is required before a plan is created. If the user has
+not explicitly selected one, ask:
+
+- Chinese (`zh`).
+- English (`en`).
+
+Record the answer as `language`. Do not silently infer it from the input data.
+
+## Style clarification
+
+The figure style is required before a plan is created. If the user has not
+explicitly selected one, ask whether to use the default publication style or a
+custom style reference. Record the answer as `style`; the default is
+`"default"`, which resolves to `style_bible.json` / `publication.mplstyle`.
 
 ## Default paid-call budget
 

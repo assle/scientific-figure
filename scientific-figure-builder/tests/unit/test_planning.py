@@ -8,7 +8,10 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 
 from figure_tools._resources import schema_path
-from figure_tools.planning.planner import create_figure_plan
+from figure_tools.planning.planner import (
+    collect_required_clarifications,
+    create_figure_plan,
+)
 from figure_tools.planning.router import classify_task, route_element
 
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
@@ -114,6 +117,36 @@ def test_plan_asks_for_figure_width_when_missing():
 def test_plan_skips_figure_width_question_when_provided():
     plan = create_figure_plan(_request(figure_width_cm=6.5))
     assert not any("figure width" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_asks_for_language_when_missing():
+    plan = create_figure_plan(_request())
+    assert any("language" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_asks_for_style_when_missing():
+    plan = create_figure_plan(_request())
+    assert any("style" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_skips_language_and_style_questions_when_provided():
+    plan = create_figure_plan(_request(language="en", style="default"))
+    assert not any("language" in item for item in plan["user_input_requirements"])
+    assert not any("style" in item for item in plan["user_input_requirements"])
+
+
+def test_collect_required_clarifications_returns_all_unresolved():
+    clarifications = collect_required_clarifications(_request())
+    fields = {c["field"] for c in clarifications}
+    assert {"export_target", "figure_width_cm", "language", "style"} <= fields
+
+
+def test_collect_required_clarifications_empty_when_resolved():
+    clarifications = collect_required_clarifications(
+        _request(export_target="general", figure_width_cm=14.0,
+                 language="en", style="default")
+    )
+    assert clarifications == []
 
 
 def test_figure_width_overrides_canvas_dimensions():

@@ -74,6 +74,20 @@ figure_width_cm: 6.5
 Height is derived from the default canvas aspect ratio unless a custom height
 is supplied.
 
+### Choose language and style
+
+When not specified, the skill asks before planning:
+
+- Text language: Chinese (`zh`) or English (`en`)
+- Figure style: `default` publication style or a custom style reference
+
+Set them in the structured request when you already know them:
+
+```yaml
+language: zh
+style: default
+```
+
 ### Install
 
 Install once for **both OpenCode and Codex** (global):

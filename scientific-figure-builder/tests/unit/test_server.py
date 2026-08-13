@@ -13,6 +13,7 @@ FIXTURES = ROOT / "tests" / "fixtures"
 REQUIRED = {
     "initialize_figure_project",
     "analyze_reference_figure",
+    "check_figure_requirements",
     "create_figure_plan",
     "create_layout_wireframe",
     "generate_image_asset",
@@ -53,6 +54,40 @@ def test_dispatch_create_figure_plan():
     plan = result["figure_plan"]
     assert plan["figure_id"] == "f1"
     assert plan["assets"][0]["routing"] == "python"
+
+
+def test_dispatch_check_figure_requirements():
+    request = {
+        "figure_id": "f1", "canvas": {"aspect_ratio": 1.0, "width": 90, "height": 90},
+        "units": "mm",
+        "panels": [{"panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [90, 90],
+                    "elements": [{"element_id": "c", "type": "data_plot"}]}],
+        "labels": [], "assumptions": [], "uncertainties": [],
+        "user_input_requirements": [],
+    }
+    result = dispatch("check_figure_requirements", {"request": request})
+    assert result["blocked"] is True
+    assert {r["field"] for r in result["requirements"]} == {
+        "export_target", "figure_width_cm", "language", "style",
+    }
+
+
+def test_dispatch_check_figure_requirements_unblocked():
+    request = {
+        "figure_id": "f1", "canvas": {"aspect_ratio": 1.0, "width": 90, "height": 90},
+        "units": "mm",
+        "panels": [{"panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [90, 90],
+                    "elements": [{"element_id": "c", "type": "data_plot"}]}],
+        "labels": [], "assumptions": [], "uncertainties": [],
+        "user_input_requirements": [],
+        "export_target": "general",
+        "figure_width_cm": 14.0,
+        "language": "en",
+        "style": "default",
+    }
+    result = dispatch("check_figure_requirements", {"request": request})
+    assert result["blocked"] is False
+    assert result["requirements"] == []
 
 
 def test_dispatch_render_scientific_plot(tmp_path: Path):

@@ -199,7 +199,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert (paths.skill_dir / "SKILL.md").is_file()
     assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
     assert paths.command_file.is_file()
-    assert result["mcp_tools"] == 14
+    assert result["mcp_tools"] == 15
 
     merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
     assert merged["provider"] == _existing_config()["provider"]
@@ -209,7 +209,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     )
 
     verified = verify_delivery(paths)
-    assert verified["mcp_tools"] == 14
+    assert verified["mcp_tools"] == 15
 
 
 def test_install_delivery_can_be_repeated_safely(tmp_path: Path):

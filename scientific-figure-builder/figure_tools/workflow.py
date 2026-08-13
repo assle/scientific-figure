@@ -16,7 +16,11 @@ from figure_tools.assembly.compositor import compose_assets
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.layout_analysis import analyze_layout
-from figure_tools.planning.planner import create_figure_plan, resolve_figure_canvas
+from figure_tools.planning.planner import (
+    collect_required_clarifications,
+    create_figure_plan,
+    resolve_figure_canvas,
+)
 from figure_tools.planning.router import classify_task
 from figure_tools.report import write_generation_report
 from figure_tools.validation.final_checks import validate_assembled_figure
@@ -58,6 +62,24 @@ class FigureWorkflow:
     def run(self, approved: bool = False,
             style_anchor_approved: bool = False,
             force_export: bool = False) -> dict[str, Any]:
+        # Hard clarification gate: do not render, generate, assemble, or export
+        # until every required question has been resolved by the user.
+        clarifications = collect_required_clarifications(self.request)
+        if clarifications:
+            try:
+                plan = create_figure_plan(self.request)
+            except Exception:  # noqa: BLE001
+                plan = None
+            if plan is not None:
+                self._write_json("plans/figure_plan.json", plan)
+            self.state.request_approval("clarification", "pending")
+            return {
+                "paused": True,
+                "pause_reason": "clarification_required",
+                "clarifications": clarifications,
+                "figure_plan": plan or {},
+            }
+
         self.request["canvas"] = resolve_figure_canvas(
             self.request,
             default_canvas=(self.config.get("canvas") or {}),

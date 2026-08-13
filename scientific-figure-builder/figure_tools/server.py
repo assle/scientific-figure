@@ -23,7 +23,7 @@ from figure_tools.export.exporters import export_pptx
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
-from figure_tools.planning.planner import create_figure_plan
+from figure_tools.planning.planner import collect_required_clarifications, create_figure_plan
 from figure_tools.validation.final_checks import validate_assembled_figure
 from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.vector.latex import latex_to_svg
@@ -96,6 +96,11 @@ def _h_analyze_reference_figure(args):
 
 def _h_create_figure_plan(args):
     return {"figure_plan": create_figure_plan(args["request"])}
+
+
+def _h_check_figure_requirements(args):
+    clarifications = collect_required_clarifications(args["request"])
+    return {"blocked": bool(clarifications), "requirements": clarifications}
 
 
 def _h_create_layout_wireframe(args):
@@ -217,6 +222,7 @@ def _h_resume_figure_run(args):
 REQUIRED_TOOLS = [
     "initialize_figure_project",
     "analyze_reference_figure",
+    "check_figure_requirements",
     "create_figure_plan",
     "create_layout_wireframe",
     "generate_image_asset",
@@ -234,6 +240,7 @@ REQUIRED_TOOLS = [
 _HANDLERS: dict[str, Callable[[dict], Any]] = {
     "initialize_figure_project": _h_initialize_figure_project,
     "analyze_reference_figure": _h_analyze_reference_figure,
+    "check_figure_requirements": _h_check_figure_requirements,
     "create_figure_plan": _h_create_figure_plan,
     "create_layout_wireframe": _h_create_layout_wireframe,
     "generate_image_asset": _h_generate_image_asset,
@@ -251,6 +258,7 @@ _HANDLERS: dict[str, Callable[[dict], Any]] = {
 _DESCRIPTIONS = {
     "initialize_figure_project": "Create non-secret project config (.scientific-figure/).",
     "analyze_reference_figure": "Analyze a reference figure via the Ark vision model.",
+    "check_figure_requirements": "Return unresolved required questions that must be answered before any generation.",
     "create_figure_plan": "Build a versioned figure plan from a structured request.",
     "create_layout_wireframe": "Render a no-cost SVG layout wireframe from a plan.",
     "generate_image_asset": "Generate one isolated transparent asset via the Ark image model.",
