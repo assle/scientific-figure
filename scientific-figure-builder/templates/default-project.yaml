@@ -13,6 +13,12 @@ canvas:
   height: 90
   units: mm
 
+# Common publication figure widths used when the user has not selected a
+# custom width. Heights are derived from the canvas aspect ratio above.
+figure_widths:
+  half_column_cm: 6.5
+  full_column_cm: 14.0
+
 # Export formats. PNG, SVG, and PDF are default formal outputs; PPTX is optional.
 export:
   formats: [png, svg, pdf]

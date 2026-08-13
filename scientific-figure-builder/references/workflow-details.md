@@ -56,6 +56,17 @@ begins. If the user has not explicitly selected one, ask:
 Record the answer in the structured request as `export_target` and, when the
 user asks for an editable deck, `include_pptx: true`. Do not default silently.
 
+## Figure width clarification
+
+The figure width is also required before a plan is created or paid generation
+begins. If the user has not explicitly selected one, ask:
+
+- Half-column: 6.5 cm.
+- Full-column: 14 cm.
+
+Record the answer as `figure_width_cm`. Derive the canvas height from the
+default canvas aspect ratio unless the user supplies a custom height.
+
 ## Default paid-call budget
 
 - 1 reference-analysis call.

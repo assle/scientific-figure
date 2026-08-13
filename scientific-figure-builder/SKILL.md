@@ -51,21 +51,25 @@ interpretation, or one-shot formal figure generation.
    (PNG/SVG/PDF) or an editable PowerPoint-friendly figure
    (`export_target: ppt`, usually with optional PPTX)?" Record the answer as
    `export_target` and `include_pptx`; do not proceed until it is provided.
-4. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
-5. Analyze reference images with the configured Ark vision model (if any).
-6. Create a versioned figure plan + no-cost SVG layout wireframe.
-7. Show plan, upload list, model-call estimate, and wireframe. **Wait for
+4. Resolve the figure width before planning paid work. If the user has not
+   already specified it, **ask**: "Half-column 6.5 cm or full-column 14 cm?"
+   Record the answer as `figure_width_cm`; derive the canvas height from the
+   default canvas aspect ratio unless the user gives a custom height.
+5. Classify task: `data_plot`, `schematic`, `hybrid`, or `figure_decomposition`.
+6. Analyze reference images with the configured Ark vision model (if any).
+7. Create a versioned figure plan + no-cost SVG layout wireframe.
+8. Show plan, upload list, model-call estimate, and wireframe. **Wait for
    approval before any paid generation.**
-8. If >=3 AI assets, generate one style-anchor asset and pause for approval.
-9. Generate isolated assets; render plots and precise geometry locally.
-10. Deterministic + multimodal validation; retry quality failures at most twice.
-11. Assemble the figure automatically; validate the complete figure.
-12. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
+9. If >=3 AI assets, generate one style-anchor asset and pause for approval.
+10. Generate isolated assets; render plots and precise geometry locally.
+11. Deterministic + multimodal validation; retry quality failures at most twice.
+12. Assemble the figure automatically; validate the complete figure.
+13. Export PNG/SVG/PDF (optional PPTX); write asset manifest, validation report,
     and generation report into a versioned run directory.
 
 `auto_execute: true` is an explicit opt-in. Default = plan approval then execute.
-Asking for the output target is still required when it is not already stated,
-even with `auto_execute: true`.
+Asking for the output target and figure width is still required when they are
+not already stated, even with `auto_execute: true`.
 
 ## Configuration
 

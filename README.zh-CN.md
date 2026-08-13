@@ -55,6 +55,21 @@ export:
 
 也可以在单次工具调用或运行时通过 `export_target: "ppt"` 覆盖。
 
+### 选择图宽
+
+未指定图宽时，skill 会询问使用哪个常见出版图宽：
+
+- 半栏图：6.5 cm
+- 通栏图：14 cm
+
+也可以在结构化请求中设置：
+
+```yaml
+figure_width_cm: 6.5
+```
+
+高度会沿用默认画布比例自动计算，除非你另外指定自定义高度。
+
 ### 安装
 
 一次安装，**OpenCode 和 Codex 全局可用**：
@@ -139,6 +154,15 @@ cd scientific-figure-builder
 uv sync
 uv run pytest
 ```
+
+可选的 PowerPoint 端到端测试会打开本机 Microsoft PowerPoint，验证
+`export_target=ppt` 的 SVG 能插入、转换并取消组合：
+
+```bash
+RUN_POWERPOINT_E2E=1 uv run pytest tests/e2e/test_powerpoint_import.py -q
+```
+
+首次运行可能需要在 macOS 提示中授予 PowerPoint 访问测试临时目录的权限。
 
 ## 项目结构
 
