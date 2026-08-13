@@ -57,6 +57,23 @@ export:
 
 Or override it for a single tool call or run with `export_target: "ppt"`.
 
+### Choose a figure width
+
+When no width is specified, the skill asks which common publication width to
+use:
+
+- Half-column: 6.5 cm
+- Full-column: 14 cm
+
+You can also set it in the structured request:
+
+```yaml
+figure_width_cm: 6.5
+```
+
+Height is derived from the default canvas aspect ratio unless a custom height
+is supplied.
+
 ### Install
 
 Install once for **both OpenCode and Codex** (global):
@@ -142,6 +159,17 @@ cd scientific-figure-builder
 uv sync
 uv run pytest
 ```
+
+The optional PowerPoint end-to-end test opens the local Microsoft PowerPoint
+application and verifies that an `export_target=ppt` SVG can be inserted,
+converted, and ungrouped:
+
+```bash
+RUN_POWERPOINT_E2E=1 uv run pytest tests/e2e/test_powerpoint_import.py -q
+```
+
+The first run may require granting PowerPoint access to the test directory in
+the macOS permission prompt.
 
 ## Project Structure
 

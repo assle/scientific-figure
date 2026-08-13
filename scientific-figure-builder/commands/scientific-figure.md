@@ -10,11 +10,12 @@ subcommand from `$ARGUMENTS`:
   secrets. Read the Ark API key from `ARK_API_KEY`; never write it anywhere.
 - `plan` - inspect the request and local inputs, **ask for the output target if
   it is not already stated** (`general` for PNG/SVG/PDF vs `ppt` for an editable
-  PowerPoint-friendly figure, and whether PPTX is needed), then classify the
-  task, analyze reference images (if any), create a versioned figure plan and a
-  no-cost SVG layout wireframe. Show the plan, upload list, model-call estimate,
-  and wireframe. **Wait for approval before any paid generation.** Keep raw data
-  local by default.
+  PowerPoint-friendly figure, and whether PPTX is needed), **also ask for the
+  figure width if not stated** (half-column 6.5 cm or full-column 14 cm), then
+  classify the task, analyze reference images (if any), create a versioned
+  figure plan and a no-cost SVG layout wireframe. Show the plan, upload list,
+  model-call estimate, and wireframe. **Wait for approval before any paid
+  generation.** Keep raw data local by default.
 - `run` - execute the approved plan: generate isolated transparent assets via
   the Ark image model, render data plots and precise geometry locally with
   Python/SVG, validate, and assemble. If there are three or more AI assets,
@@ -33,4 +34,6 @@ periodic arrays come from Python/SVG only; the Ark image model produces only
 isolated, non-quantitative visual assets; final compound figures are assembled
 by Python, never by the image model. If the request is scientifically ambiguous,
 pause and ask the user before proceeding. If the output target
-(`general` vs `ppt`) is not specified, ask for it before creating the plan.
+(`general` vs `ppt`) is not specified, ask for it before creating the plan. If
+the figure width is not specified, ask whether the user needs half-column
+6.5 cm or full-column 14 cm.

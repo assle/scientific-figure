@@ -105,6 +105,24 @@ def test_plan_skips_output_target_question_when_provided():
     assert not any("output target" in item for item in plan["user_input_requirements"])
 
 
+def test_plan_asks_for_figure_width_when_missing():
+    plan = create_figure_plan(_request())
+    assert any("figure width" in item for item in plan["user_input_requirements"])
+    assert any("6.5" in item and "14" in item for item in plan["user_input_requirements"])
+
+
+def test_plan_skips_figure_width_question_when_provided():
+    plan = create_figure_plan(_request(figure_width_cm=6.5))
+    assert not any("figure width" in item for item in plan["user_input_requirements"])
+
+
+def test_figure_width_overrides_canvas_dimensions():
+    plan = create_figure_plan(_request(figure_width_cm=6.5))
+    assert plan["canvas"]["width"] == 65.0
+    assert plan["canvas"]["height"] == 32.5
+    assert plan["canvas"]["aspect_ratio"] == 2.0
+
+
 def test_plan_style_bible_ref_defaults():
     plan = create_figure_plan(_request())
     assert plan["style_bible_ref"] == "default"

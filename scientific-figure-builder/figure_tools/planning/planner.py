@@ -21,6 +21,12 @@ _ELEMENT_TYPE_TO_ASSET_TYPE = {
     "vector_element": "vector_element",
 }
 
+DEFAULT_FIGURE_WIDTHS_CM = {
+    "half_column": 6.5,
+    "full_column": 14.0,
+}
+DEFAULT_CANVAS_MM = {"width": 180.0, "height": 90.0}
+
 
 def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
     assets: list[dict[str, Any]] = []
@@ -84,6 +90,49 @@ def _output_target_requirements(request: dict[str, Any]) -> list[str]:
     ]
 
 
+def _figure_width_requirements(request: dict[str, Any]) -> list[str]:
+    """Ask for the figure width when it is not explicitly selected.
+
+    The default widths follow common journal column sizes: half-column 6.5 cm
+    and full-column 14 cm. The height should be derived from the configured
+    canvas aspect ratio after the user selects the width.
+    """
+    if request.get("figure_width_cm") is not None:
+        return []
+    half = DEFAULT_FIGURE_WIDTHS_CM["half_column"]
+    full = DEFAULT_FIGURE_WIDTHS_CM["full_column"]
+    return [
+        f"Confirm figure width: half-column {half} cm or full-column {full} cm "
+        "(半栏图 6.5 cm / 通栏图 14 cm)."
+    ]
+
+
+def resolve_figure_canvas(
+    request: dict[str, Any],
+    default_canvas: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve canvas dimensions from an explicit width or the request canvas.
+
+    If ``figure_width_cm`` is present it wins over ``request["canvas"]``, and
+    the height is derived from the default canvas aspect ratio.
+    """
+    defaults = default_canvas or DEFAULT_CANVAS_MM
+    width_cm = request.get("figure_width_cm")
+    if width_cm is None:
+        if not request.get("canvas"):
+            raise ValueError("request must include canvas or figure_width_cm")
+        return request["canvas"]
+
+    aspect_ratio = float(defaults["width"]) / float(defaults["height"])
+    width_mm = float(width_cm) * 10.0
+    height_mm = width_mm / aspect_ratio
+    return {
+        "aspect_ratio": aspect_ratio,
+        "width": width_mm,
+        "height": height_mm,
+    }
+
+
 def create_figure_plan(
     request: dict[str, Any],
     style_bible_ref: str = "default",
@@ -95,7 +144,7 @@ def create_figure_plan(
         "schema_version": "1.0",
         "figure_id": figure_id,
         "run_id": run_id,
-        "canvas": request["canvas"],
+        "canvas": resolve_figure_canvas(request),
         "units": request.get("units", "mm"),
         "panels": [
             {
@@ -117,6 +166,7 @@ def create_figure_plan(
         "user_input_requirements": [
             *list(request.get("user_input_requirements", [])),
             *_output_target_requirements(request),
+            *_figure_width_requirements(request),
         ],
         "estimated_paid_calls": _estimated_paid_calls(request, assets),
         "planned_uploads": _planned_uploads(request),
