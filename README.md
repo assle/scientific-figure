@@ -35,10 +35,27 @@ Transform natural-language requests into **reproducible, publication-quality** s
 | 🎨 | **AI Assets** | Ark image model generates isolated visual elements (device schematics, etc.) with auto background removal |
 | 🏷️ | **SVG Labels** | Arrows, equations, annotations — all deterministic |
 | 🧩 | **Auto Assembly** | Multi-element z-order composition → PNG / SVG / PDF |
+| 🎯 | **Export Targets** | `general` for portable path-based text, `ppt` for editable PowerPoint-friendly SVG |
 | ✅ | **Two-Layer Validation** | Deterministic geometry rules + multimodal VLM review; blocking errors halt export |
 | 🔄 | **Reproducible Runs** | Versioned run directory, caching, checkpoint resume |
 
 ## Quick Start
+
+### Choose an export target
+
+SVG output supports two targets:
+
+- `general` (default): text is rendered as paths for maximum cross-tool compatibility.
+- `ppt`: text stays editable as `<text>` and is normalized for PowerPoint ungrouping/convert-to-shape.
+
+Set it in the project configuration:
+
+```yaml
+export:
+  export_target: ppt
+```
+
+Or override it for a single tool call or run with `export_target: "ppt"`.
 
 ### Install
 
