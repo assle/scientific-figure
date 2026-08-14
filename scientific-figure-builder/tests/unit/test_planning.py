@@ -149,6 +149,20 @@ def test_collect_required_clarifications_empty_when_resolved():
     assert clarifications == []
 
 
+def test_clarification_questions_match_between_output_paths():
+    """create_figure_plan and collect_required_clarifications must derive the
+    same questions from REQUIRED_CLARIFICATIONS — no drift between the two
+    output shapes."""
+    req = _request()
+    plan = create_figure_plan(req)
+    from_plan = {q for q in plan["user_input_requirements"]
+                 if q.startswith("Confirm")}
+    from_collect = {c["question"]
+                    for c in collect_required_clarifications(req)}
+    assert from_plan == from_collect
+    assert len(from_plan) == 4
+
+
 def test_figure_width_overrides_canvas_dimensions():
     plan = create_figure_plan(_request(figure_width_cm=6.5))
     assert plan["canvas"]["width"] == 65.0

@@ -21,13 +21,49 @@ _ELEMENT_TYPE_TO_ASSET_TYPE = {
     "vector_element": "vector_element",
 }
 
-DEFAULT_FIGURE_WIDTHS_CM = {
-    "half_column": 6.5,
-    "full_column": 14.0,
-}
 DEFAULT_CANVAS_MM = {"width": 180.0, "height": 90.0}
 DEFAULT_LANGUAGE = "zh"
 DEFAULT_STYLE = "default"
+
+# Required clarifications: questions the user must answer before any
+# rendering, generation, assembly, or export. They are intentionally
+# required — not silent defaults — so the planning model must surface them.
+# A field counts as answered when the request carries a non-None value
+# (figure_width_cm=0 is a legal width, so None is the only "missing" state).
+REQUIRED_CLARIFICATIONS = [
+    {
+        "field": "export_target",
+        "default": "general",
+        "question": (
+            "Confirm the output target: general (PNG/SVG/PDF) or ppt "
+            "(PowerPoint-ready SVG)."
+        ),
+    },
+    {
+        "field": "figure_width_cm",
+        "default": 6.5,
+        "question": (
+            "Confirm figure width: half-column 6.5 cm or full-column 14 cm "
+            "(半栏图 6.5 cm / 通栏图 14 cm)."
+        ),
+    },
+    {
+        "field": "language",
+        "default": DEFAULT_LANGUAGE,
+        "question": (
+            "Confirm the figure text language: Chinese (zh) or English (en) "
+            "(图内文字用中文还是英文？)."
+        ),
+    },
+    {
+        "field": "style",
+        "default": DEFAULT_STYLE,
+        "question": (
+            "Confirm the figure style: default publication style or a custom "
+            "style reference (默认出版风还是自定义参考风格？)."
+        ),
+    },
+]
 
 
 def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
@@ -77,55 +113,18 @@ def _approval_status(request: dict[str, Any]) -> str:
     return "auto_execute" if request.get("auto_execute") else "pending"
 
 
-def _output_target_requirements(request: dict[str, Any]) -> list[str]:
-    """Ask for the output target when the request does not specify it.
+def _unresolved_clarifications(
+    request: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Required clarifications whose field is not answered yet.
 
-    ``export_target`` is intentionally a required clarification, not a silent
-    default, so the planning model must surface the question to the user before
-    generating a plan that triggers paid work.
+    A field counts as answered when the request carries a non-None value.
     """
-    if request.get("export_target"):
-        return []
     return [
-        "Confirm the output target: general (PNG/SVG/PDF) or ppt "
-        "(editable PowerPoint-friendly SVG, usually with optional PPTX)."
-    ]
-
-
-def _figure_width_requirements(request: dict[str, Any]) -> list[str]:
-    """Ask for the figure width when it is not explicitly selected.
-
-    The default widths follow common journal column sizes: half-column 6.5 cm
-    and full-column 14 cm. The height should be derived from the configured
-    canvas aspect ratio after the user selects the width.
-    """
-    if request.get("figure_width_cm") is not None:
-        return []
-    half = DEFAULT_FIGURE_WIDTHS_CM["half_column"]
-    full = DEFAULT_FIGURE_WIDTHS_CM["full_column"]
-    return [
-        f"Confirm figure width: half-column {half} cm or full-column {full} cm "
-        "(半栏图 6.5 cm / 通栏图 14 cm)."
-    ]
-
-
-def _language_requirements(request: dict[str, Any]) -> list[str]:
-    """Ask for the figure text language when it is not explicitly selected."""
-    if request.get("language"):
-        return []
-    return [
-        "Confirm the figure text language: Chinese (zh) or English (en) "
-        "(图内文字用中文还是英文？)."
-    ]
-
-
-def _style_requirements(request: dict[str, Any]) -> list[str]:
-    """Ask for the visual style when it is not explicitly selected."""
-    if request.get("style"):
-        return []
-    return [
-        "Confirm the figure style: default publication style or a custom "
-        "style reference (默认出版风还是自定义参考风格？)."
+        {"field": item["field"], "question": item["question"],
+         "default": item["default"]}
+        for item in REQUIRED_CLARIFICATIONS
+        if request.get(item["field"]) is None
     ]
 
 
@@ -134,26 +133,12 @@ def collect_required_clarifications(
 ) -> list[dict[str, Any]]:
     """Return unresolved required questions that must be answered by the user.
 
-    Unlike ``create_figure_plan`` (which only records questions as strings),
-    this is the hard gate: no rendering, generation, assembly, or export may
+    This is the hard gate: no rendering, generation, assembly, or export may
     happen while this list is non-empty. Defaults are advisory only; the agent
-    must still ask first.
+    must still ask first. ``create_figure_plan`` records the same questions as
+    strings; both derive from ``REQUIRED_CLARIFICATIONS``.
     """
-    checks = (
-        ("export_target", _output_target_requirements(request), "general"),
-        ("figure_width_cm", _figure_width_requirements(request), 6.5),
-        ("language", _language_requirements(request), DEFAULT_LANGUAGE),
-        ("style", _style_requirements(request), DEFAULT_STYLE),
-    )
-    clarifications: list[dict[str, Any]] = []
-    for field, questions, default in checks:
-        if questions:
-            clarifications.append({
-                "field": field,
-                "question": questions[0],
-                "default": default,
-            })
-    return clarifications
+    return _unresolved_clarifications(request)
 
 
 def resolve_figure_canvas(
@@ -214,10 +199,7 @@ def create_figure_plan(
         "uncertainties": list(request.get("uncertainties", [])),
         "user_input_requirements": [
             *list(request.get("user_input_requirements", [])),
-            *_output_target_requirements(request),
-            *_figure_width_requirements(request),
-            *_language_requirements(request),
-            *_style_requirements(request),
+            *[c["question"] for c in _unresolved_clarifications(request)],
         ],
         "estimated_paid_calls": _estimated_paid_calls(request, assets),
         "planned_uploads": _planned_uploads(request),
