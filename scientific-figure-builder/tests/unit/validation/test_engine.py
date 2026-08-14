@@ -79,7 +79,7 @@ def test_engine_runs_layout_rules_when_manifest_present(tmp_path: Path):
     assert report["summary"]["blocking"] is True
 
 
-def test_engine_falls_back_without_manifest(tmp_path: Path):
+def test_engine_marks_geometry_skipped_without_manifest(tmp_path: Path):
     composed = tmp_path / "figure.png"; _save_rgba(composed)
     curve = tmp_path / "curve.png"; _save_rgba(curve)
     engine = FigureQAEngine(config={})
@@ -88,9 +88,14 @@ def test_engine_falls_back_without_manifest(tmp_path: Path):
         image_path=composed, layout_manifest_path=None,
         physical_size_mm=(180, 112.5)), run_id="r1")
     ids = {c["check_id"] for c in report["checks"]}
-    # No geometry rules run; legacy panel-label consistency is used.
+    skipped = [c for c in report["checks"]
+               if c["check_id"] == "geometry_checks_skipped"]
+    # No geometry rules run; the report says so explicitly instead of
+    # pretending a weak legacy check is a pass.
+    assert skipped and skipped[0]["status"] == "skipped"
+    assert skipped[0]["level"] == "warning"
     assert "text_text_overlap" not in ids
-    assert "panel_label_consistency" in ids
+    assert "panel_label_consistency" not in ids
     assert report["summary"]["blocking"] is False
 
 

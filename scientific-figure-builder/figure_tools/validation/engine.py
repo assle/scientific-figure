@@ -81,15 +81,6 @@ def _deterministic_final_checks(
     return checks
 
 
-def _legacy_panel_label_consistency(figure_plan: dict[str, Any]) -> list[dict]:
-    """Simplified label check used when no layout manifest is available."""
-    text_ids = {t["element_id"] for t in figure_plan.get("text_elements", [])}
-    unlabeled = [p["panel_id"] for p in figure_plan.get("panels", []) if not text_ids]
-    return [make_check("panel_label_consistency", "final", "warning",
-                       "pass" if not unlabeled else "fail",
-                       "no labels" if unlabeled else "labels present")]
-
-
 def _multimodal_final_checks(
     ark_client: Any,
     composed_image_path: str | Path,
@@ -208,7 +199,12 @@ class FigureQAEngine:
         if manifest is not None:
             checks.extend(self._layout_checks(manifest))
         else:
-            checks.extend(_legacy_panel_label_consistency(figure.figure_plan))
+            # Degraded validation: geometry rules cannot run without source
+            # metadata. Report it explicitly so a missing manifest is never
+            # mistaken for a pass.
+            checks.append(make_check(
+                "geometry_checks_skipped", "final", "warning", "skipped",
+                "no layout manifest; geometry rules skipped"))
 
         # OCR fallback for raster/AI assets without layout metadata (plan 15).
         checks.extend(self._ocr_ai_text_checks(
