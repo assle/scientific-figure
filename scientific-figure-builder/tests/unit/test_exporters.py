@@ -1,46 +1,15 @@
-"""Optional PPTX exporter tests."""
+"""Exporter tests: deterministic output and PowerPoint-ready SVG."""
 
 from __future__ import annotations
 
 import filecmp
-import zipfile
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pytest
 
-from figure_tools.export.exporters import export_pptx, export_svg
-from figure_tools.plotting.renderer import render_plot
-from figure_tools.plotting.spec import load_plot_spec
-
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def _make_plot(tmp_path: Path) -> Path:
-    spec = load_plot_spec(ROOT / "tests" / "fixtures" / "plot_spec_line.json")
-    d = tmp_path / "src"; d.mkdir()
-    out = render_plot(spec, output_dir=d, base_dir=ROOT)
-    return Path(out["files"]["png"])
-
-
-def test_export_pptx_produces_valid_file(tmp_path: Path) -> None:
-    img = _make_plot(tmp_path)
-    out = tmp_path / "figure.pptx"
-    export_pptx(
-        [{"path": str(img), "bbox": [0.0, 0.0, 1.0, 1.0], "z_order": 1}],
-        out, canvas_mm=(180, 90), title="Coupling efficiency",
-    )
-    assert out.is_file() and out.stat().st_size > 0
-    assert zipfile.is_zipfile(out)
-
-
-def test_export_pptx_is_reproducible(tmp_path: Path) -> None:
-    img = _make_plot(tmp_path)
-    placements = [{"path": str(img), "bbox": [0.0, 0.0, 1.0, 1.0], "z_order": 1}]
-    a = tmp_path / "a.pptx"; b = tmp_path / "b.pptx"
-    export_pptx(placements, a, canvas_mm=(180, 90))
-    export_pptx(placements, b, canvas_mm=(180, 90))
-    assert filecmp.cmp(a, b, shallow=False), "pptx not byte-identical across runs"
+from figure_tools.export.exporters import export_svg
+from figure_tools.vector.svg_normalize import normalize_ppt_svg_bytes
 
 
 def _text_figure():
@@ -72,6 +41,26 @@ def test_export_svg_ppt_uses_editable_text(tmp_path: Path) -> None:
         assert "text-anchor" in svg
     finally:
         plt.close(fig)
+
+
+def test_export_svg_ppt_declares_office_font_family(tmp_path: Path) -> None:
+    fig = _text_figure()
+    try:
+        path = export_svg(fig, tmp_path / "ppt.svg", export_target="ppt")
+        svg = path.read_text(encoding="utf-8")
+        assert "<text" in svg
+        assert "Arial, SimSun, sans-serif" in svg
+    finally:
+        plt.close(fig)
+
+
+def test_ppt_normalize_defaults_missing_font_size() -> None:
+    svg = normalize_ppt_svg_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg">'
+        b'<text x="1" y="2">hi</text></svg>'
+    ).decode("utf-8")
+    assert 'font-family="Arial, SimSun, sans-serif"' in svg
+    assert 'font-size="7.5"' in svg
 
 
 def test_export_svg_ppt_is_deterministic(tmp_path: Path) -> None:

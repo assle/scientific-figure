@@ -154,6 +154,23 @@ class LayoutManifest:
         )
 
 
+@dataclass
+class AssembledFigure:
+    """The assembled figure under final validation.
+
+    Bundles everything that describes the composed figure so the validation
+    engine interface stays narrow: callers construct one object instead of
+    threading a dozen parameters through ``validate_final``.
+    """
+
+    figure_plan: dict[str, Any]
+    asset_manifest: dict[str, Any]
+    image_path: str | Path
+    layout_manifest_path: str | Path | None
+    physical_size_mm: tuple[float, float]
+    asset_placements: dict[str, list[float]] | None = None
+
+
 def write_layout_manifest(path: str | Path, manifest: LayoutManifest) -> Path:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -176,6 +193,7 @@ __all__ = [
     "PixelBBox",
     "LayoutElement",
     "LayoutManifest",
+    "AssembledFigure",
     "write_layout_manifest",
     "read_layout_manifest",
 ]

@@ -11,6 +11,8 @@ _COMMENT_RE = re.compile(rb"<!--.*?-->", re.DOTALL)
 _SVG_NS = "http://www.w3.org/2000/svg"
 _XLINK_NS = "http://www.w3.org/1999/xlink"
 _EXPORT_TARGETS = {"general", "ppt"}
+_PPT_FONT_FAMILY = "Arial, SimSun, sans-serif"
+_PPT_DEFAULT_FONT_SIZE_PT = "7.5"
 _PRESENTATION_PROPERTIES = {
     "fill",
     "stroke",
@@ -87,6 +89,10 @@ def normalize_ppt_svg_bytes(data: bytes) -> bytes:
     converting CSS ``style`` values into SVG presentation attributes that
     Office's SVG importer is more likely to honor. Identity/no-op transforms
     on text are removed so text does not get re-anchored to an unexpected point.
+    Text elements also get an Office-friendly font family (Arial for Latin,
+    SimSun/宋体 for Chinese) and a 六号 (7.5 pt) default font size when they do
+    not declare one, so ungrouping in PowerPoint does not swap in a random
+    font or re-flow overlapping text.
     """
     root = ET.fromstring(data)
 
@@ -109,8 +115,17 @@ def normalize_ppt_svg_bytes(data: bytes) -> bytes:
         elif "style" in elem.attrib:
             del elem.attrib["style"]
 
-        if tag in {"text", "tspan"} and _is_identity_text_transform(elem.get("transform")):
-            del elem.attrib["transform"]
+        if tag in {"text", "tspan"}:
+            if _is_identity_text_transform(elem.get("transform")):
+                del elem.attrib["transform"]
+            family = elem.get("font-family")
+            # Always declare the Office font stack so PowerPoint's font
+            # fallback is deterministic: Arial for Latin, SimSun (宋体) for
+            # Chinese, instead of whatever matplotlib resolved locally.
+            if not family or "SimSun" not in family:
+                elem.set("font-family", _PPT_FONT_FAMILY)
+            if not elem.get("font-size"):
+                elem.set("font-size", _PPT_DEFAULT_FONT_SIZE_PT)
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 

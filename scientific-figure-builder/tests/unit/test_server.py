@@ -121,71 +121,29 @@ def test_dispatch_generate_image_asset_isolated(tmp_path: Path):
     assert result["meta"]["transparent"] is True
 
 
-# --- Spec 0001: export validation gate ---
+# --- Spec 0001: export gate (rule lives in figure_tools/export/publish.py) ---
 
-def _setup_export_dirs(tmp_path: Path, validation_report: dict | None):
+def test_dispatch_export_figure_wiring(tmp_path: Path):
+    """Thin adapter smoke: the handler reads the on-disk final report and
+    returns the shared export_figure result shape. Gate behavior itself is
+    covered by tests/unit/test_publish.py."""
     run_dir = tmp_path / "run"
     assembly_dir = run_dir / "assembly"
     assembly_dir.mkdir(parents=True)
     (assembly_dir / "figure.png").write_bytes(b"fake-png")
     (assembly_dir / "figure.svg").write_text("<svg/>")
-    if validation_report is not None:
-        vdir = run_dir / "validation"
-        vdir.mkdir(parents=True, exist_ok=True)
-        (vdir / "validation_report.json").write_text(
-            json.dumps(validation_report), encoding="utf-8")
-    return assembly_dir, run_dir
-
-
-def test_export_blocked_when_no_validation_report(tmp_path: Path):
-    assembly_dir, _ = _setup_export_dirs(tmp_path, None)
-    output_dir = tmp_path / "exports"
-    result = dispatch("export_figure", {
-        "source_dir": str(assembly_dir), "output_dir": str(output_dir)})
-    assert result["files"] == {}
-    assert "export_blocked_reason" in result
-
-
-def test_export_blocked_when_validation_blocking(tmp_path: Path):
-    blocking_report = {
-        "schema_version": "1.0", "run_id": "final",
-        "checks": [{"check_id": "missing_assets", "scope": "final",
-                     "level": "error", "status": "fail", "detail": "missing"}],
-        "summary": {"errors": 1, "warnings": 0, "passed": 0, "blocking": True},
-    }
-    assembly_dir, _ = _setup_export_dirs(tmp_path, blocking_report)
-    output_dir = tmp_path / "exports"
-    result = dispatch("export_figure", {
-        "source_dir": str(assembly_dir), "output_dir": str(output_dir)})
-    assert result["files"] == {}
-    assert "export_blocked_reason" in result
-
-
-def test_export_succeeds_when_validation_non_blocking(tmp_path: Path):
+    vdir = run_dir / "validation"
+    vdir.mkdir(parents=True)
     ok_report = {
         "schema_version": "1.0", "run_id": "final",
-        "checks": [{"check_id": "missing_assets", "scope": "final",
-                     "level": "error", "status": "pass", "detail": "ok"}],
-        "summary": {"errors": 0, "warnings": 0, "passed": 1, "blocking": False},
+        "checks": [], "summary": {"errors": 0, "warnings": 0,
+                                  "passed": 0, "blocking": False},
     }
-    assembly_dir, _ = _setup_export_dirs(tmp_path, ok_report)
+    (vdir / "validation_report.json").write_text(
+        json.dumps(ok_report), encoding="utf-8")
     output_dir = tmp_path / "exports"
     result = dispatch("export_figure", {
         "source_dir": str(assembly_dir), "output_dir": str(output_dir)})
     assert "png" in result["files"]
     assert "svg" in result["files"]
-
-
-def test_export_force_bypasses_gate(tmp_path: Path):
-    blocking_report = {
-        "schema_version": "1.0", "run_id": "final",
-        "checks": [{"check_id": "missing_assets", "scope": "final",
-                     "level": "error", "status": "fail", "detail": "missing"}],
-        "summary": {"errors": 1, "warnings": 0, "passed": 0, "blocking": True},
-    }
-    assembly_dir, _ = _setup_export_dirs(tmp_path, blocking_report)
-    output_dir = tmp_path / "exports"
-    result = dispatch("export_figure", {
-        "source_dir": str(assembly_dir), "output_dir": str(output_dir),
-        "force_export": True})
-    assert "png" in result["files"]
+    assert result["export_blocked_reason"] is None

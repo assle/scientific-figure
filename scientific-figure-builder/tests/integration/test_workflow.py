@@ -298,13 +298,19 @@ def test_final_validation_uses_ark_client_not_skipped(tmp_path: Path):
 def test_final_validation_skipped_without_ark_client(tmp_path: Path):
     """Without an ark client the multimodal final check degrades to skipped.
     Verified at the unit level (the workflow needs ark for AI assets)."""
-    from figure_tools.validation.final_checks import validate_assembled_figure
+    from figure_tools.validation.engine import FigureQAEngine
+    from figure_tools.validation.models import AssembledFigure
     composed = tmp_path / "figure.png"; _save_rgba_img(composed)
     curve = tmp_path / "curve.png"; _save_rgba_img(curve)
     fiber = tmp_path / "fiber.png"; _save_rgba_img(fiber)
-    report = validate_assembled_figure(_simple_plan(), _simple_manifest(curve, fiber),
-                                       composed, physical_size_mm=(180, 112.5),
-                                       ark_client=None)
+    report = FigureQAEngine(config={}, ark_client=None).validate_final(
+        AssembledFigure(
+            figure_plan=_simple_plan(),
+            asset_manifest=_simple_manifest(curve, fiber),
+            image_path=composed,
+            layout_manifest_path=None,
+            physical_size_mm=(180, 112.5),
+        ))
     mm = next(c for c in report["checks"] if c["check_id"] == "multimodal_final")
     assert mm["status"] == "skipped"
     assert report["summary"]["blocking"] is False

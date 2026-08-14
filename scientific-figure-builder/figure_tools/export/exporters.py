@@ -21,6 +21,11 @@ from figure_tools.vector.svg_normalize import (  # noqa: E402
     resolve_export_target,
 )
 
+# Font family used for PowerPoint-ready SVG (export_target="ppt"). Arial covers
+# Latin text, SimSun (宋体) covers Chinese, sans-serif is the final fallback.
+PPT_FONT_FAMILY = ["Arial", "SimSun", "sans-serif"]
+
+
 _PDF_METADATA = {
     "Creator": "scientific-figure-builder",
     "Producer": "scientific-figure-builder",
@@ -46,6 +51,7 @@ def export_svg(fig, path: Path, export_target: str = "general") -> Path:
     rc = {"svg.hashsalt": HASHSALT}
     if export_target == "ppt":
         rc["svg.fonttype"] = "none"
+        rc["font.family"] = PPT_FONT_FAMILY
     with matplotlib.rc_context(rc):
         fig.savefig(buf, format="svg")
     path.write_bytes(normalize_svg_bytes(buf.getvalue(), export_target=export_target))
@@ -72,37 +78,3 @@ def save_figure(fig, out_dir: Path, basename: str = "plot",
     if "pdf" in formats:
         produced["pdf"] = export_pdf(fig, out_dir / f"{basename}.pdf")
     return produced
-
-
-def export_pptx(
-    placements: list[dict],
-    output_path: Path,
-    canvas_mm: tuple[float, float],
-    title: str | None = None,
-) -> Path:
-    """Optional editable PPTX (plan sections 2 and 13). Preserves editable text."""
-    from pptx import Presentation
-    from pptx.util import Mm
-
-    w_mm, h_mm = canvas_mm
-    prs = Presentation()
-    prs.slide_width = Mm(w_mm)
-    prs.slide_height = Mm(h_mm)
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank layout
-
-    for p in sorted(placements, key=lambda item: item.get("z_order", 0)):
-        x, y, bw, bh = p["bbox"]
-        slide.shapes.add_picture(
-            p["path"],
-            Mm(x * w_mm), Mm(y * h_mm),
-            Mm(bw * w_mm), Mm(bh * h_mm),
-        )
-
-    if title:
-        box = slide.shapes.add_textbox(Mm(2), Mm(2), Mm(w_mm - 4), Mm(8))
-        box.text_frame.text = title  # editable text
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(output_path)
-    return output_path

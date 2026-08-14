@@ -1,8 +1,8 @@
 """Figure QA engine (plan section 10).
 
 Orchestrates deterministic final checks, source-aware geometry rules, and the
-multimodal final check. ``final_checks.validate_assembled_figure`` delegates
-here so external callers keep their existing interface.
+multimodal final check. The interface takes an ``AssembledFigure`` so callers
+do not thread the figure's parts through a wide parameter list.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from PIL import Image
 from figure_tools.validation.evidence import generate_evidence
 from figure_tools.validation.extractors.assembly import map_bbox
 from figure_tools.validation.extractors.raster_ocr import detect_text_elements
-from figure_tools.validation.models import read_layout_manifest
+from figure_tools.validation.models import AssembledFigure, read_layout_manifest
 from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
     asset_bounds,
@@ -188,52 +188,48 @@ class FigureQAEngine:
 
     def validate_final(
         self,
-        figure_plan: dict[str, Any],
-        asset_manifest: dict[str, Any],
-        image_path: str | Path,
-        layout_manifest_path: str | Path | None,
-        physical_size_mm: tuple[float, float],
-        run_id: str,
+        figure: AssembledFigure,
+        run_id: str | None = None,
         min_dpi: int = 300,
         evidence_dir: str | Path | None = None,
-        asset_placements: dict[str, list[float]] | None = None,
     ) -> dict[str, Any]:
         checks: list[dict] = []
         checks.extend(_deterministic_final_checks(
-            figure_plan, asset_manifest, image_path, physical_size_mm, min_dpi))
+            figure.figure_plan, figure.asset_manifest, figure.image_path,
+            figure.physical_size_mm, min_dpi))
 
         manifest = None
-        if layout_manifest_path and Path(layout_manifest_path).exists():
+        if figure.layout_manifest_path and Path(figure.layout_manifest_path).exists():
             try:
-                manifest = read_layout_manifest(layout_manifest_path)
+                manifest = read_layout_manifest(figure.layout_manifest_path)
             except Exception:  # noqa: BLE001
                 manifest = None
 
         if manifest is not None:
             checks.extend(self._layout_checks(manifest))
         else:
-            checks.extend(_legacy_panel_label_consistency(figure_plan))
+            checks.extend(_legacy_panel_label_consistency(figure.figure_plan))
 
         # OCR fallback for raster/AI assets without layout metadata (plan 15).
         checks.extend(self._ocr_ai_text_checks(
-            asset_manifest, manifest, asset_placements))
+            figure.asset_manifest, manifest, figure.asset_placements))
 
         # Evidence crops for localized layout failures (plan section 13).
         ev_cfg = self.config.get("evidence", {})
         if not isinstance(ev_cfg, dict):
             ev_cfg = {}
         if evidence_dir is not None and ev_cfg.get("enabled", True):
-            generate_evidence(image_path, checks, evidence_dir, ev_cfg)
+            generate_evidence(figure.image_path, checks, evidence_dir, ev_cfg)
 
         # Local VLM review of suspicious regions (plan section 14).
         VLMVerifier(self.ark_client, self.config).review(checks)
 
         checks.extend(_multimodal_final_checks(
-            self.ark_client, image_path, physical_size_mm))
+            self.ark_client, figure.image_path, figure.physical_size_mm))
 
         return {
             "schema_version": "1.0",
-            "run_id": run_id or figure_plan.get("run_id", "final"),
+            "run_id": run_id or figure.figure_plan.get("run_id", "final"),
             "checks": checks,
             "summary": summarize_checks(checks),
         }

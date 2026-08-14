@@ -49,3 +49,27 @@ A VLM call that inspects the entire composed figure. Catches global issues that
 deterministic rules and local crops cannot (style consistency, object count,
 cross-panel semantics, background residue). Off by default for latency control.
 _Avoid_: final vision check, full-image audit
+
+**Assembled figure**:
+The composed figure under final validation, bundled as one object — figure
+plan, asset manifest, composed image path, layout manifest, and physical size.
+It is the input to `FigureQAEngine`; the engine interface no longer exposes
+the assembly details as separate parameters.
+_Avoid_: final figure bundle, composed input
+
+## Export
+
+**Export gate**:
+The decision, shared by the full workflow and the MCP export tool, that
+publishes an assembled figure only when the surfaced validation reports allow
+it: any report whose summary is blocking refuses export unless `force_export`
+explicitly bypasses the gate. The decision lives in the `export_figure` module.
+_Avoid_: publish gate, export check
+
+**PPT-ready SVG**:
+The `export_target="ppt"` SVG output contract: ordinary text is kept as real
+`<text>` elements so PowerPoint can ungroup them into editable text, the font
+stack is declared as `Arial, SimSun, sans-serif` (Arial for Latin, 宋体/SimSun
+for Chinese), and text without an explicit size defaults to 六号 (7.5 pt) so
+font substitution does not re-flow overlapping text.
+_Avoid_: ppt export mode, PowerPoint file

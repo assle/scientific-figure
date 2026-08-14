@@ -19,12 +19,13 @@ from figure_tools.ark.client import ArkClient
 from figure_tools.ark.transport import MockArkTransport
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.config import initialize_project
-from figure_tools.export.exporters import export_pptx
+from figure_tools.export.publish import export_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.planner import collect_required_clarifications, create_figure_plan
-from figure_tools.validation.final_checks import validate_assembled_figure
+from figure_tools.validation.engine import FigureQAEngine
+from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
@@ -164,50 +165,38 @@ def _h_assemble_figure(args):
 
 
 def _h_validate_assembled_figure(args):
-    return validate_assembled_figure(
-        args["figure_plan"], args["asset_manifest"], args["composed_image_path"],
-        physical_size_mm=tuple(args["physical_size_mm"]),
+    return FigureQAEngine(config=args.get("qa_config") or {},
+                          ark_client=_client()).validate_final(
+        AssembledFigure(
+            figure_plan=args["figure_plan"],
+            asset_manifest=args["asset_manifest"],
+            image_path=args["composed_image_path"],
+            layout_manifest_path=args.get("layout_manifest_path"),
+            physical_size_mm=tuple(args["physical_size_mm"]),
+            asset_placements=args.get("asset_placements"),
+        ),
         run_id=args.get("run_id"),
-        ark_client=_client())
+    )
 
 
 def _h_export_figure(args):
-    import shutil
+    import json as _json
 
     source_dir = Path(args["source_dir"])
     output_dir = Path(args["output_dir"])
-    force_export = args.get("force_export", False)
-
-    # Validation gate (spec 0001, improvement 3): refuse export if no
-    # validation report exists or if it contains blocking errors.
     validation_report_path = source_dir.parent / "validation" / "validation_report.json"
-    if not force_export:
-        if not validation_report_path.exists():
-            return {"files": {}, "export_blocked_reason": (
-                f"no validation report found at {validation_report_path}; "
-                "run validation before export or use force_export=True")}
-        import json as _json
-
+    if validation_report_path.exists():
         report = _json.loads(validation_report_path.read_text(encoding="utf-8"))
-        if report.get("summary", {}).get("blocking", False):
-            return {"files": {}, "export_blocked_reason": (
-                "validation report contains blocking errors; "
-                "use force_export=True to override")}
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    formats = args.get("formats", ["png", "svg", "pdf"])
-    files = {}
-    for ext in formats:
-        src = source_dir / f"figure.{ext}"
-        if src.exists():
-            dst = output_dir / f"figure.{ext}"
-            shutil.copyfile(src, dst)
-            files[ext] = str(dst)
-    if args.get("include_pptx"):
-        export_pptx(args.get("placements", []), output_dir / "figure.pptx",
-                    tuple(args["canvas_mm"]), title=args.get("title"))
-        files["pptx"] = str(output_dir / "figure.pptx")
-    return {"files": files}
+        validation_reports = [report]
+    else:
+        validation_reports = []
+    return export_figure(
+        validation_reports,
+        source_dir=source_dir,
+        output_dir=output_dir,
+        force_export=args.get("force_export", False),
+        formats=args.get("formats", ["png", "svg", "pdf"]),
+    )
 
 
 def _h_resume_figure_run(args):
