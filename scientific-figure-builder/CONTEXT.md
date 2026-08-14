@@ -57,6 +57,14 @@ It is the input to `FigureQAEngine`; the engine interface no longer exposes
 the assembly details as separate parameters.
 _Avoid_: final figure bundle, composed input
 
+**Degraded validation**:
+The state when the layout manifest is missing: geometry rules (overlap,
+clipping, panel labels, typography, colorbar) cannot run, and the engine emits
+an explicit `geometry_checks_skipped` (skipped + warning) finding instead of
+faking a pass. Callers can tell from the report exactly which checks did not
+run.
+_Avoid_: fallback validation, weak check
+
 ## Export
 
 **Export gate**:
@@ -73,3 +81,13 @@ stack is declared as `Arial, SimSun, sans-serif` (Arial for Latin, 宋体/SimSun
 for Chinese), and text without an explicit size defaults to 六号 (7.5 pt) so
 font substitution does not re-flow overlapping text.
 _Avoid_: ppt export mode, PowerPoint file
+
+## Planning
+
+**Required clarification**:
+A mandatory question the user must answer before any rendering, generation,
+assembly, or export (output target, figure width, text language, style). The
+four questions are defined by the `REQUIRED_CLARIFICATIONS` table;
+`create_figure_plan` and `collect_required_clarifications` both derive from
+it, so the two output shapes cannot drift.
+_Avoid_: pending question, user input requirement
