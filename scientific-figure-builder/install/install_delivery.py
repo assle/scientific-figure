@@ -57,6 +57,7 @@ RUNTIME_ITEMS = (
     "install/install_delivery.py",
     "install/configure_opencode.py",
     "install/configure_codex.py",
+    "install/provider_environment.py",
     "install.sh",
     "SKILL.md",
     "pyproject.toml",

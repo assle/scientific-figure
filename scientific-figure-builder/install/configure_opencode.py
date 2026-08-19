@@ -22,21 +22,13 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from .provider_environment import PROVIDER_ENV_VARS
+except ImportError:  # Direct execution from install.sh.
+    from provider_environment import PROVIDER_ENV_VARS
+
 DEFAULT_MCP_NAME = "scientific-figure"
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
-PROVIDER_ENV_VARS = (
-    "ARK_API_KEY",
-    "ARK_API_KEY_CODING",
-    "ARK_IMAGE_GENERATE",
-    "ARK_IMAGE_EDIT",
-    "ARK_VISION_ANALYZE",
-    "ARK_VISION_VALIDATE",
-    "ARK_AGENT_BASE_URL",
-    "ARK_CODING_BASE_URL",
-    "SCIENTIFIC_FIGURE_CONFIG",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-)
 
 
 def _strip_comments(text: str) -> str:
