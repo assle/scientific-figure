@@ -145,6 +145,7 @@ providers:
     type: openai
     base_url: https://ark.cn-beijing.volces.com/api/plan/v3
     key_env: ARK_API_KEY
+    supports_image_edit: true
   anthropic:
     type: anthropic
     base_url: https://ark.cn-beijing.volces.com/api/plan

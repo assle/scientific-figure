@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from figure_tools.server import REQUIRED_TOOLS, TOOL_REGISTRY, dispatch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +35,13 @@ def test_registry_exposes_all_required_tools():
     assert set(REQUIRED_TOOLS) == REQUIRED
     for name in REQUIRED:
         assert name in TOOL_REGISTRY
+
+
+def test_edit_tool_description_is_explicitly_generative_raster_only():
+    description = TOOL_REGISTRY["edit_image_asset"]["description"]
+
+    assert "generated or source-less raster" in description
+    assert "plots and vectors" in description
 
 
 def test_dispatch_initialize_figure_project(tmp_path: Path):
@@ -121,8 +130,9 @@ def test_dispatch_generate_image_asset_isolated(tmp_path: Path):
     assert result["meta"]["transparent"] is True
 
 
-def test_custom_provider_key_does_not_require_global_ark_key(
-    tmp_path: Path, monkeypatch,
+@pytest.mark.parametrize("provider_name", ["custom", "ark"])
+def test_configured_provider_key_does_not_require_global_ark_key(
+    tmp_path: Path, monkeypatch, provider_name: str,
 ):
     import figure_tools.server as server
     from figure_tools.ark.transport import MockArkTransport
@@ -131,30 +141,44 @@ def test_custom_provider_key_does_not_require_global_ark_key(
     project.mkdir()
     (project / "project.yaml").write_text(
         "models:\n"
-        "  image_generate: {model: image-model, provider: custom}\n"
+        f"  image_generate: {{model: image-model, provider: {provider_name}}}\n"
         "providers:\n"
-        "  custom:\n"
+        f"  {provider_name}:\n"
         "    type: openai\n"
         "    base_url: https://models.example/v1\n"
         "    key_env: CUSTOM_API_KEY\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("CUSTOM_API_KEY", "custom-secret")
+    custom_secret = f"custom-secret-{str(tmp_path).replace('/', '_')}"
+    monkeypatch.setenv("CUSTOM_API_KEY", custom_secret)
     monkeypatch.delenv("ARK_API_KEY", raising=False)
-    monkeypatch.setattr(
-        server,
-        "ProviderRouter",
-        lambda _models, _providers: MockArkTransport(),
-    )
+    routed = []
+
+    def provider_router(models, providers):
+        routed.append((models, providers))
+        return MockArkTransport()
+
+    monkeypatch.setattr(server, "ProviderRouter", provider_router)
 
     out = tmp_path / "asset.png"
     result = dispatch(
         "generate_image_asset",
-        {"prompt": "fiber", "output_path": str(out), "project_dir": str(tmp_path)},
+        {
+            "prompt": f"fiber {provider_name} {custom_secret}",
+            "output_path": str(out),
+            "project_dir": str(tmp_path),
+        },
     )
 
     assert out.is_file()
     assert result["meta"]["model"] == "image-model"
+    assert len(routed) == 1
+    prompt_logs = list((tmp_path / "prompts").glob("*.txt"))
+    assert len(prompt_logs) == 1
+    assert custom_secret not in prompt_logs[0].read_text(encoding="utf-8")
+    configured_client = server._client(project_dir=tmp_path)
+    assert configured_client.state is not None
+    assert "edits" not in configured_client.state.budget
 
 
 # --- Spec 0001: export gate (rule lives in figure_tools/export/publish.py) ---

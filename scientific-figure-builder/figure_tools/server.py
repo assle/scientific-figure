@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from figure_tools.ark.client import ArkClient
-from figure_tools.ark.generic_transport import ProviderRouter
+from figure_tools.ark.generic_transport import ProviderRouter, provider_key_env
 from figure_tools.ark.transport import MockArkTransport
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.config import (
@@ -66,18 +66,32 @@ def _client(output_dir: str | Path | None = None,
             project_dir: str | Path | None = None) -> ArkClient:
     from figure_tools.state import Cache, RunState
 
-    models = configured_models(project_dir or _project_dir_for_paths(output_dir))
+    resolved_project_dir = project_dir or _project_dir_for_paths(output_dir)
+    models = configured_models(resolved_project_dir)
+    providers = configured_providers(resolved_project_dir)
     provider_names = {
         model_cfg.get("provider", DEFAULT_PROVIDER_NAME)
         for model_cfg in (models or {}).values()
     }
     if models and (
-        provider_names != {DEFAULT_PROVIDER_NAME} or os.environ.get("ARK_API_KEY")
+        provider_names != {DEFAULT_PROVIDER_NAME}
+        or DEFAULT_PROVIDER_NAME in providers
+        or os.environ.get("ARK_API_KEY")
     ):
-        providers = configured_providers(project_dir)
         transport = ProviderRouter(models, providers)
         api_key = os.environ.get("ARK_API_KEY")
-        budget = _DEFAULT_BUDGET
+        api_keys = [key for key in (os.environ.get("ARK_API_KEY_CODING"),) if key]
+        api_keys.extend(
+            value
+            for provider_name in provider_names
+            if (provider := providers.get(str(provider_name))) is not None
+            if (value := os.environ.get(
+                provider_key_env(str(provider_name), provider)
+            )) is not None
+        )
+        budget = dict(_DEFAULT_BUDGET)
+        if "image_edit" not in models:
+            budget.pop("edits", None)
     else:
         transport = MockArkTransport()
         models = models or {
@@ -87,10 +101,11 @@ def _client(output_dir: str | Path | None = None,
             "vision_validate": {"model": "mock"},
         }
         api_key = None
+        api_keys = []
         budget = {}
 
     return ArkClient(
-        models, transport, api_key=api_key,
+        models, transport, api_key=api_key, api_keys=api_keys,
         state=RunState("mcp", budget=budget),
         cache=Cache(_CACHE_DIR), output_dir=Path(output_dir) if output_dir else None,
     )
@@ -270,12 +285,15 @@ _HANDLERS: dict[str, Callable[[dict], Any]] = {
 
 _DESCRIPTIONS = {
     "initialize_figure_project": "Create non-secret project config (.scientific-figure/).",
-    "analyze_reference_figure": "Analyze a reference figure via the Ark vision model.",
+    "analyze_reference_figure": "Analyze a reference figure via the configured vision model.",
     "check_figure_requirements": "Return unresolved required questions that must be answered before any generation.",
     "create_figure_plan": "Build a versioned figure plan from a structured request.",
     "create_layout_wireframe": "Render a no-cost SVG layout wireframe from a plan.",
-    "generate_image_asset": "Generate one isolated transparent asset via the Ark image model.",
-    "edit_image_asset": "Edit an existing asset via reference-image editing.",
+    "generate_image_asset": "Generate one isolated transparent asset via the configured image model.",
+    "edit_image_asset": (
+        "Revise a generated or source-less raster asset; plots and vectors "
+        "must be re-rendered from source."
+    ),
     "render_scientific_plot": "Render a reproducible data plot from a plot spec.",
     "render_vector_element": "Render an SVG label or LaTeX equation.",
     "validate_image_asset": "Two-layer validation of an image asset.",

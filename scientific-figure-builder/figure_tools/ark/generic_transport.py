@@ -11,11 +11,17 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from figure_tools.ark.real_transport import (
-    _DEFAULT_VALIDATION_INSTRUCTION,
-    _extract_json,
+from figure_tools.ark.contracts import (
+    extract_json,
+    vision_prompt,
 )
-from figure_tools.ark.transport import ArkError, ArkTransport, RateLimitError
+from figure_tools.ark.transport import (
+    ArkError,
+    ArkTransport,
+    RateLimitError,
+    ROLE_TO_MODEL_CONFIG,
+    model_config_for_role,
+)
 
 HTTP_OPENER = Callable[..., Any]
 _OPERATION_PATHS = ("/images/generations", "/responses", "/messages")
@@ -27,6 +33,18 @@ def _api_root(value: Any) -> str:
         if root.endswith(operation_path):
             return root[:-len(operation_path)]
     return root
+
+
+def provider_key_env(name: str, config: dict[str, Any]) -> str:
+    configured = config.get("key_env")
+    if configured is not None:
+        return str(configured)
+    provider_type = config.get("type")
+    if provider_type is None and config.get("protocol") == "anthropic":
+        provider_type = "anthropic"
+    if provider_type == "anthropic":
+        return "ANTHROPIC_API_KEY"
+    return f"{name.upper()}_API_KEY"
 
 
 def _data_url(path: str | Path) -> str:
@@ -69,9 +87,9 @@ class OpenAICompatibleTransport(ArkTransport):
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = _api_root(config.get("base_url"))
-        self.key_env = str(config.get("key_env", f"{name.upper()}_API_KEY"))
+        self.key_env = provider_key_env(name, config)
         api_key = os.environ.get(self.key_env)
-        self.supports_image_edit = bool(config.get("supports_image_edit", True))
+        self.supports_image_edit = bool(config.get("supports_image_edit", False))
         if not self.base_url:
             raise ArkError(f"provider {name!r} requires base_url")
         if not api_key:
@@ -147,7 +165,7 @@ class OpenAICompatibleTransport(ArkTransport):
         payload: dict,
         image_paths: list[str],
     ) -> dict[str, Any]:
-        prompt = _vision_prompt(role, payload)
+        prompt = vision_prompt(role, payload)
         content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
         content.extend(
             {"type": "input_image", "image_url": _data_url(path)}
@@ -159,7 +177,7 @@ class OpenAICompatibleTransport(ArkTransport):
             "max_output_tokens": 4096,
             "text": {"format": {"type": "json_object"}},
         })
-        return _extract_json(_responses_text(response))
+        return extract_json(_responses_text(response))
 
 
 def _responses_text(response: dict[str, Any]) -> str:
@@ -184,7 +202,7 @@ class AnthropicTransport(ArkTransport):
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = _api_root(config.get("base_url"))
-        self.key_env = str(config.get("key_env", "ANTHROPIC_API_KEY"))
+        self.key_env = provider_key_env(name, config)
         api_key = os.environ.get(self.key_env)
         self.version = config.get("anthropic_version", "2023-06-01")
         if not self.base_url:
@@ -206,7 +224,7 @@ class AnthropicTransport(ArkTransport):
                 "Anthropic Messages providers support vision analysis/validation, "
                 "not image generation or editing"
             )
-        prompt = _vision_prompt(role, payload)
+        prompt = vision_prompt(role, payload)
         content: list[dict[str, Any]] = []
         for path in image_paths or []:
             path_obj = Path(path)
@@ -239,7 +257,7 @@ class AnthropicTransport(ArkTransport):
             for block in response.get("content", [])
             if block.get("type") == "text"
         )
-        return _extract_json(text)
+        return extract_json(text)
 
 
 class ProviderRouter(ArkTransport):
@@ -252,29 +270,24 @@ class ProviderRouter(ArkTransport):
         self._transports: dict[str, ArkTransport] = {}
         self._providers = providers
         self._opener = opener
-        role_to_internal = {
-            "generation": "image_generate",
-            "edits": "image_edit",
-            "reference_analysis": "vision_analyze",
-            "validations": "vision_validate",
-            "final_validation": "vision_validate",
-        }
-        for role, internal_role in role_to_internal.items():
-            model_cfg = models.get(internal_role)
-            if model_cfg is None and internal_role == "image_edit":
-                model_cfg = models.get("image_generate")
-            if model_cfg is None:
+        for role in ROLE_TO_MODEL_CONFIG:
+            resolved = model_config_for_role(models, role)
+            if resolved is None:
                 continue
+            internal_role, model_cfg = resolved
             provider_name = str(model_cfg.get("provider", "ark"))
-            if provider_name != "ark":
-                provider = providers.get(provider_name)
-                if provider is None:
-                    raise ArkError(f"model role {internal_role!r} references unknown provider {provider_name!r}")
+            provider = providers.get(provider_name)
+            if provider is not None:
                 if self._provider_type(provider) not in {"openai", "anthropic"}:
                     raise ArkError(
                         f"provider {provider_name!r} has unsupported type "
                         f"{self._provider_type(provider)!r}"
                     )
+            elif provider_name != "ark":
+                raise ArkError(
+                    f"model role {internal_role!r} references unknown provider "
+                    f"{provider_name!r}"
+                )
             self._routes[role] = provider_name
 
     @staticmethod
@@ -294,7 +307,7 @@ class ProviderRouter(ArkTransport):
         transport = self._transports.get(provider_name)
         if transport is not None:
             return transport
-        if provider_name == "ark":
+        if provider_name == "ark" and provider_name not in self._providers:
             from figure_tools.ark.real_transport import RealArkTransport
 
             transport = RealArkTransport()
@@ -318,17 +331,3 @@ class ProviderRouter(ArkTransport):
             raise ArkError(f"no provider route for role {role!r}")
         transport = self._transport_for(self._routes[role])
         return transport.post(role, model, payload, image_paths)
-
-
-def _vision_prompt(role: str, payload: dict[str, Any]) -> str:
-    if role == "reference_analysis":
-        instruction = (
-            "Analyze this scientific reference figure. Return ONLY JSON with keys: "
-            '"panels" (list of {panel_id, bbox=[x,y,width,height] normalized 0-1}), '
-            '"objects" (list of {label, confidence}), "text_candidates" '
-            '(list of {text, confidence}), "confidence" (0-1), "uncertainties" (list of strings).'
-        )
-    else:
-        instruction = _DEFAULT_VALIDATION_INSTRUCTION
-    prompt = payload.get("prompt")
-    return f"{prompt}\n\n{instruction}" if prompt else instruction

@@ -101,6 +101,9 @@ def test_default_project_yaml_is_valid_and_non_secret() -> None:
     for role in ("image_generate", "vision_analyze", "vision_validate"):
         assert role in models, f"default-project.yaml missing model role {role}"
     assert "image_edit" not in models
+    template_text = project_yaml.read_text(encoding="utf-8")
+    assert "\n  # image_edit:\n" in template_text
+    assert "\n# image_edit:\n" not in template_text
 
     # Project config must contain no secrets (plan section 5). Comments are not
     # parsed YAML, so explanatory mentions of ARK_API_KEY are allowed; actual

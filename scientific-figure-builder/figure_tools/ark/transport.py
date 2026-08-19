@@ -11,6 +11,29 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
+ROLE_TO_MODEL_CONFIG = {
+    "generation": "image_generate",
+    "edits": "image_edit",
+    "reference_analysis": "vision_analyze",
+    "validations": "vision_validate",
+    "final_validation": "vision_validate",
+}
+
+
+def model_config_for_role(
+    models: dict[str, dict[str, Any]], role: str,
+) -> tuple[str, dict[str, Any]] | None:
+    config_role = ROLE_TO_MODEL_CONFIG.get(role)
+    if config_role is None:
+        return None
+    model_config = models.get(config_role)
+    if model_config is None and config_role == "image_edit":
+        config_role = "image_generate"
+        model_config = models.get(config_role)
+    if model_config is None:
+        return None
+    return config_role, model_config
+
 
 class ArkError(Exception):
     pass

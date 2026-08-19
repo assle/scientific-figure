@@ -222,3 +222,21 @@ def test_edit_reuses_generation_model_when_override_is_absent(tmp_path: Path):
 
     assert meta["model"] == "ep-gen"
     assert transport.calls == [("edits", "ep-gen")]
+
+
+def test_edit_without_override_consumes_generation_budget(tmp_path: Path):
+    models = {key: value for key, value in MODELS.items() if key != "image_edit"}
+    client = ArkClient(
+        models,
+        MockArkTransport(),
+        state=RunState("run-1", budget={"generation": 0}),
+        cache=Cache(tmp_path / "cache"),
+        output_dir=tmp_path,
+    )
+    parent = tmp_path / "parent.png"
+    _save_rgba(parent)
+
+    with pytest.raises(BudgetExceeded, match="generation"):
+        client.edit_image_asset(
+            parent, "make it blue", {}, output_path=tmp_path / "edited.png",
+        )

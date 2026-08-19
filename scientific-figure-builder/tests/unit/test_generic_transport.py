@@ -78,7 +78,7 @@ def test_legacy_responses_protocol_has_actionable_migration(tmp_path: Path, monk
     )
     monkeypatch.setenv("SCIENTIFIC_FIGURE_CONFIG", str(user))
 
-    with pytest.warns(DeprecationWarning, match="use type: openai"):
+    with pytest.warns(FutureWarning, match="use type: openai"):
         providers = configured_providers(None)
 
     assert providers["legacy"]["type"] == "openai"
@@ -225,6 +225,7 @@ def test_provider_router_reuses_generation_provider_for_optional_edits(
             "type": "openai",
             "base_url": "https://models.example/v1",
             "key_env": "CUSTOM_API_KEY",
+            "supports_image_edit": True,
         }},
         opener=opener,
     )
@@ -271,6 +272,27 @@ def test_provider_router_does_not_require_unused_provider_credentials(
     assert result["image_bytes"] == b"image"
 
 
+def test_configured_provider_instance_may_be_named_ark(monkeypatch):
+    encoded = base64.b64encode(b"image").decode("ascii")
+    monkeypatch.setenv("CUSTOM_API_KEY", "custom-key")
+    monkeypatch.delenv("ARK_API_KEY", raising=False)
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "ark"}},
+        {"ark": {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+        }},
+        opener=lambda _request: _FakeResponse({
+            "data": [{"b64_json": encoded}],
+        }),
+    )
+
+    result = router.post("generation", "image-model", {"prompt": "draw"})
+
+    assert result["image_bytes"] == b"image"
+
+
 def test_openai_provider_can_reject_unsupported_reference_image_edit(
     tmp_path: Path, monkeypatch,
 ):
@@ -283,7 +305,6 @@ def test_openai_provider_can_reject_unsupported_reference_image_edit(
             "type": "openai",
             "base_url": "https://models.example/v1",
             "key_env": "CUSTOM_API_KEY",
-            "supports_image_edit": False,
         },
         opener=lambda _request: pytest.fail("unsupported edit must not make a request"),
     )

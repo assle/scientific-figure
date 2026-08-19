@@ -9,11 +9,14 @@ The API key is read from the environment and never serialized.
 from __future__ import annotations
 
 import base64
-import json
-import re
 from pathlib import Path
 from typing import Any
 
+from figure_tools.ark.contracts import (
+    DEFAULT_VALIDATION_INSTRUCTION as _DEFAULT_VALIDATION_INSTRUCTION,
+    extract_json as _extract_json,
+    vision_prompt,
+)
 from figure_tools.ark.transport import ArkError, RateLimitError, ArkTransport
 
 try:
@@ -33,37 +36,6 @@ def _data_url(path: str | Path) -> str:
     raw = Path(path).read_bytes()
     b64 = base64.b64encode(raw).decode("ascii")
     return f"data:image/png;base64,{b64}"
-
-
-def _extract_json(text: str) -> dict:
-    text = text.strip()
-    # Strip markdown code fences if present.
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    if fence:
-        text = fence.group(1).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        raise ArkError(f"could not parse JSON from model response: {text[:200]}")
-
-
-_DEFAULT_VALIDATION_INSTRUCTION = (
-    "Validate this scientific figure image. Return ONLY JSON with keys: "
-    '"checks" (list of {check_id, status, detail}) and "blocking" (boolean). '
-    "Check: background_residues (opaque bg that should be transparent), "
-    "text_overlap (colliding text/labels/ticks/titles), "
-    "label_axis_collision (panel labels (a),(b) vs axis labels/ticks), "
-    "colorbar_collision (colorbar vs plot area/panels), "
-    "legend_data_overlap (legend vs data), "
-    "label_readability (tick labels readable, not crowded), "
-    "object_count (expected objects present), "
-    "forbidden_text (text in AI-generated portions, must be text-free), "
-    "style_consistency (consistent style across panels), "
-    "scientific_errors (wrong axis direction or misleading color scale)."
-)
 
 
 class RealArkTransport(ArkTransport):
@@ -149,17 +121,8 @@ class RealArkTransport(ArkTransport):
                 "seed": kwargs.get("seed")}
 
     def _vision(self, role, model, payload, image_paths):
-        if role == "reference_analysis":
-            instruction = (
-                "Analyze this scientific reference figure. Return ONLY JSON with keys: "
-                '"panels" (list of {panel_id, bbox=[x,y,width,height] normalized 0-1}), '
-                '"objects" (list of {label, confidence}), "text_candidates" '
-                '(list of {text, confidence}), "confidence" (0-1), "uncertainties" (list of strings).'
-            )
-        else:
-            instruction = _DEFAULT_VALIDATION_INSTRUCTION
-        prompt = payload.get("prompt") or instruction
-        content: list[dict] = [{"type": "text", "text": prompt + "\n\n" + instruction}]
+        prompt = vision_prompt(role, payload)
+        content: list[dict] = [{"type": "text", "text": prompt}]
         for p in image_paths:
             content.append({"type": "image_url", "image_url": {"url": _data_url(p)}})
         resp = self._clients[self._plan_for(role)].chat.completions.create(

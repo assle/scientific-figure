@@ -49,11 +49,11 @@ models:
     model: "<fixed-model-or-endpoint-id>"
     provider: anthropic
 
-# Optional image-model override for reference-image revision. When omitted,
-# edit_image_asset reuses image_generate if the provider supports that capability.
-# image_edit:
-#   model: "<fixed-model-or-endpoint-id>"
-#   provider: openai
+  # Optional image-model override for reference-image revision. When omitted,
+  # edit_image_asset reuses image_generate if the provider supports that capability.
+  # image_edit:
+  #   model: "<fixed-model-or-endpoint-id>"
+  #   provider: openai
 
 # Reusable Agent Plan API roots. The adapter appends /images/generations,
 # /responses, or /messages for each operation.
@@ -63,6 +63,7 @@ providers:
     type: openai
     base_url: https://ark.cn-beijing.volces.com/api/plan/v3
     key_env: ARK_API_KEY
+    supports_image_edit: true
   anthropic:
     type: anthropic
     base_url: https://ark.cn-beijing.volces.com/api/plan

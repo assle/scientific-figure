@@ -170,7 +170,7 @@ def configured_providers(project_dir: str | Path | None) -> dict[str, dict[str, 
             warnings.warn(
                 f"provider {name!r}: protocol: {legacy_protocol} is deprecated; "
                 f"use type: {migrated_type}",
-                DeprecationWarning,
+                FutureWarning,
                 stacklevel=2,
             )
             provider_type = migrated_type
