@@ -96,10 +96,11 @@ def test_default_project_yaml_is_valid_and_non_secret() -> None:
     assert project_yaml.is_file(), "default-project.yaml template missing"
     data = yaml.safe_load(project_yaml.read_text(encoding="utf-8"))
     assert isinstance(data, dict)
-    # Must contain the four model roles from plan section 5.
+    # Generative image editing is optional; reproducible assets are re-rendered.
     models = data.get("models", {})
-    for role in ("image_generate", "image_edit", "vision_analyze", "vision_validate"):
+    for role in ("image_generate", "vision_analyze", "vision_validate"):
         assert role in models, f"default-project.yaml missing model role {role}"
+    assert "image_edit" not in models
 
     # Project config must contain no secrets (plan section 5). Comments are not
     # parsed YAML, so explanatory mentions of ARK_API_KEY are allowed; actual

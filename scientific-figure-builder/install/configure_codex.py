@@ -98,6 +98,11 @@ def _env_vars_from_environment() -> list[str]:
         "ARK_IMAGE_EDIT",
         "ARK_VISION_ANALYZE",
         "ARK_VISION_VALIDATE",
+        "ARK_AGENT_BASE_URL",
+        "ARK_CODING_BASE_URL",
+        "SCIENTIFIC_FIGURE_CONFIG",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
     )
     return list(names)
 

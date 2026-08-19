@@ -94,6 +94,11 @@ def _mcp_environment() -> dict[str, str]:
         "ARK_IMAGE_EDIT": "{env:ARK_IMAGE_EDIT}",
         "ARK_VISION_ANALYZE": "{env:ARK_VISION_ANALYZE}",
         "ARK_VISION_VALIDATE": "{env:ARK_VISION_VALIDATE}",
+        "ARK_AGENT_BASE_URL": "{env:ARK_AGENT_BASE_URL}",
+        "ARK_CODING_BASE_URL": "{env:ARK_CODING_BASE_URL}",
+        "SCIENTIFIC_FIGURE_CONFIG": "{env:SCIENTIFIC_FIGURE_CONFIG}",
+        "OPENAI_API_KEY": "{env:OPENAI_API_KEY}",
+        "ANTHROPIC_API_KEY": "{env:ANTHROPIC_API_KEY}",
     }
 
 

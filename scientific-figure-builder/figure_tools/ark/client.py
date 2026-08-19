@@ -61,7 +61,15 @@ class ArkClient:
         self._lock = threading.Lock()
 
     def _role_model(self, role: str) -> str:
-        return self.models[ROLE_TO_CONFIG[role]]["model"]
+        config_role = ROLE_TO_CONFIG[role]
+        if config_role == "image_edit" and config_role not in self.models:
+            config_role = "image_generate"
+        model_config = self.models.get(config_role)
+        if not model_config or not model_config.get("model"):
+            raise ArkError(
+                f"model role {config_role!r} is not configured for {role!r}"
+            )
+        return str(model_config["model"])
 
     def _record_call(self, role: str) -> None:
         if self.state is not None:

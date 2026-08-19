@@ -14,8 +14,9 @@ def test_cli_init_creates_project_config(tmp_path: Path, capsys):
     assert (tmp_path / ".scientific-figure" / "project.yaml").is_file()
     out = capsys.readouterr().out
     cfg = json.loads(out)
-    for role in ("image_generate", "image_edit", "vision_analyze", "vision_validate"):
-        assert role in cfg["models"]
+    assert set(cfg["models"]) == {
+        "image_generate", "vision_analyze", "vision_validate",
+    }
 
 
 def test_cli_init_defaults_to_cwd(tmp_path: Path, monkeypatch):

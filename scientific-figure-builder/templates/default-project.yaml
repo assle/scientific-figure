@@ -33,17 +33,40 @@ limits:
   default_candidate_count: 1
 
 # Fixed model roles (plan section 5). Two roles may share a model, but each role
-# is configured independently. Replace the placeholders with fixed model IDs or
-# Volcengine Ark Endpoint IDs. Do NOT use "latest" resolution.
+# is configured independently. For a global default, set the same keys in
+# ~/.config/scientific-figure-builder/config.yaml; this project file overrides it.
+# Provider instances use the OpenAI- or Anthropic-compatible adapter type.
+# ARK_* environment variables override model IDs in both files.
+# Do NOT use "latest" resolution.
 models:
   image_generate:
     model: "<fixed-model-or-endpoint-id>"
-  image_edit:
-    model: "<fixed-model-or-endpoint-id>"
+    provider: openai
   vision_analyze:
     model: "<fixed-model-or-endpoint-id>"
+    provider: anthropic
   vision_validate:
     model: "<fixed-model-or-endpoint-id>"
+    provider: anthropic
+
+# Optional image-model override for reference-image revision. When omitted,
+# edit_image_asset reuses image_generate if the provider supports that capability.
+# image_edit:
+#   model: "<fixed-model-or-endpoint-id>"
+#   provider: openai
+
+# Reusable Agent Plan API roots. The adapter appends /images/generations,
+# /responses, or /messages for each operation.
+# Credentials are referenced by environment-variable name and never stored here.
+providers:
+  openai:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+    key_env: ARK_API_KEY
+  anthropic:
+    type: anthropic
+    base_url: https://ark.cn-beijing.volces.com/api/plan
+    key_env: ARK_API_KEY
 
 # Optional domain template selection.
 domain_template: null

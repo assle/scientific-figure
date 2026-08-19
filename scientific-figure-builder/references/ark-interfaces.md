@@ -43,7 +43,7 @@ Volcengine Ark provider integration notes (plan sections 5, 8, 12, 17).
 | Internal role | Config key | Plan | Operation |
 |---|---|---|---|
 | `generation` | `image_generate` | agent | isolated asset generation |
-| `edits` | `image_edit` | agent | reference-image editing |
+| `edits` | optional `image_edit`, else `image_generate` | agent | generated-raster reference revision |
 | `reference_analysis` | `vision_analyze` | coding | reference figure analysis |
 | `validations` | `vision_validate` | coding | per-asset multimodal validation + local-region review |
 | `final_validation` | `vision_validate` | coding | assembled-figure whole-image validation |
@@ -76,17 +76,34 @@ keep the deterministic result.
 ARK_API_KEY=<agent-plan API key>
 ARK_API_KEY_CODING=<coding-plan API key>
 ARK_IMAGE_GENERATE=<image-gen model/Endpoint ID>
-ARK_IMAGE_EDIT=<image-edit model/Endpoint ID>
+ARK_IMAGE_EDIT=<optional image-edit override>
 ARK_VISION_ANALYZE=<vision model/Endpoint ID>
 ARK_VISION_VALIDATE=<vision model/Endpoint ID>
+ARK_AGENT_BASE_URL=<optional image API base URL>
+ARK_CODING_BASE_URL=<optional vision API base URL>
 ```
+
+Model IDs can alternatively be stored without secrets in
+`~/.config/scientific-figure-builder/config.yaml` or a project's
+`.scientific-figure/project.yaml` under `models`. Precedence is user config,
+project config, then `ARK_*` environment variables. `SCIENTIFIC_FIGURE_CONFIG`
+can point to another non-secret YAML config file.
+Canonical providers are configured with `type: openai | anthropic`, `base_url`,
+and a non-secret `key_env` reference. OpenAI-compatible providers handle vision
+through `/responses` and image generation through `/images/generations`.
+Anthropic-compatible providers handle vision through `/messages` only. Legacy
+`protocol: responses` is accepted with migration guidance.
+Custom `key_env` values must also be forwarded by the agent's MCP environment
+configuration.
 
 ### Behaviors
 
 - `analyze_reference_figure` returns structured panels, objects, text
   candidates, confidence, and uncertainties.
-- `generate_image_asset` / `edit_image_asset` produce one isolated object; the
-  opaque model output gets background-removed to a genuinely transparent PNG.
+- `generate_image_asset` produces one isolated object. `edit_image_asset` is
+  reserved for generated or source-less raster assets and reuses the generation
+  model unless an override is configured. Opaque model output gets
+  background-removed to a genuinely transparent PNG.
 - `validate_image_asset` combines deterministic image checks with one multimodal
   validation call and returns a `validation-report`-conformant dict.
 - Every paid call records against the run budget; identical requests hit the

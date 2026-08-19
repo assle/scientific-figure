@@ -121,6 +121,42 @@ def test_dispatch_generate_image_asset_isolated(tmp_path: Path):
     assert result["meta"]["transparent"] is True
 
 
+def test_custom_provider_key_does_not_require_global_ark_key(
+    tmp_path: Path, monkeypatch,
+):
+    import figure_tools.server as server
+    from figure_tools.ark.transport import MockArkTransport
+
+    project = tmp_path / ".scientific-figure"
+    project.mkdir()
+    (project / "project.yaml").write_text(
+        "models:\n"
+        "  image_generate: {model: image-model, provider: custom}\n"
+        "providers:\n"
+        "  custom:\n"
+        "    type: openai\n"
+        "    base_url: https://models.example/v1\n"
+        "    key_env: CUSTOM_API_KEY\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CUSTOM_API_KEY", "custom-secret")
+    monkeypatch.delenv("ARK_API_KEY", raising=False)
+    monkeypatch.setattr(
+        server,
+        "ProviderRouter",
+        lambda _models, _providers: MockArkTransport(),
+    )
+
+    out = tmp_path / "asset.png"
+    result = dispatch(
+        "generate_image_asset",
+        {"prompt": "fiber", "output_path": str(out), "project_dir": str(tmp_path)},
+    )
+
+    assert out.is_file()
+    assert result["meta"]["model"] == "image-model"
+
+
 # --- Spec 0001: export gate (rule lives in figure_tools/export/publish.py) ---
 
 def test_dispatch_export_figure_wiring(tmp_path: Path):

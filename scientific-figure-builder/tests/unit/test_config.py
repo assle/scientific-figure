@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from figure_tools.config import initialize_project, load_config
+from figure_tools.config import configured_models, initialize_project, load_config
 
 PROJECT_CONFIG_NAME = ".scientific-figure"
 
@@ -68,11 +68,78 @@ def test_project_overrides_user_local(tmp_path: Path) -> None:
     assert cfg["export"]["dpi"] == 200  # project > user-local
 
 
-def test_load_config_has_four_model_roles(tmp_path: Path) -> None:
+def test_model_placeholders_are_not_treated_as_configured(tmp_path: Path,
+                                                          monkeypatch) -> None:
+    user_config = tmp_path / "user-config.yaml"
+    user_config.write_text(
+        "models:\n  image_generate: {model: ep-user-gen}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SCIENTIFIC_FIGURE_CONFIG", str(user_config))
+    assert configured_models(tmp_path) == {"image_generate": {"model": "ep-user-gen"}}
+
+
+def test_models_merge_user_project_and_environment(tmp_path: Path,
+                                                    monkeypatch) -> None:
+    user_config = tmp_path / "user-config.yaml"
+    user_config.write_text(
+        "\n".join((
+            "models:",
+            "  image_generate: {model: ep-user-gen}",
+            "  image_edit: {model: ep-user-edit}",
+            "  vision_analyze: {model: ep-user-vision}",
+            "  vision_validate: {model: ep-user-validate}",
+        )) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SCIENTIFIC_FIGURE_CONFIG", str(user_config))
+    initialize_project(tmp_path)
+    project = tmp_path / PROJECT_CONFIG_NAME / "project.yaml"
+    data = yaml.safe_load(project.read_text(encoding="utf-8"))
+    data["models"]["image_edit"] = {
+        "model": "ep-project-edit", "provider": "openai",
+    }
+    project.write_text(yaml.safe_dump(data), encoding="utf-8")
+
+    models = configured_models(
+        tmp_path,
+        environ={"ARK_VISION_VALIDATE": "ep-env-validate"},
+    )
+    assert models == {
+        "image_generate": {"provider": "openai", "model": "ep-user-gen"},
+        "image_edit": {"provider": "openai", "model": "ep-project-edit"},
+        "vision_analyze": {"provider": "anthropic", "model": "ep-user-vision"},
+        "vision_validate": {"provider": "anthropic", "model": "ep-env-validate"},
+    }
+
+
+def test_load_config_has_three_canonical_model_roles(tmp_path: Path) -> None:
     initialize_project(tmp_path)
     cfg = load_config(tmp_path)
-    for role in ("image_generate", "image_edit", "vision_analyze", "vision_validate"):
-        assert role in cfg["models"]
+    assert set(cfg["models"]) == {
+        "image_generate", "vision_analyze", "vision_validate",
+    }
+    assert cfg["models"]["image_generate"]["provider"] == "openai"
+    assert cfg["models"]["vision_analyze"]["provider"] == "anthropic"
+    assert cfg["models"]["vision_validate"]["provider"] == "anthropic"
+
+
+def test_load_config_has_agent_plan_provider_roots(tmp_path: Path) -> None:
+    initialize_project(tmp_path)
+    providers = load_config(tmp_path)["providers"]
+
+    assert providers == {
+        "openai": {
+            "type": "openai",
+            "base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+            "key_env": "ARK_API_KEY",
+        },
+        "anthropic": {
+            "type": "anthropic",
+            "base_url": "https://ark.cn-beijing.volces.com/api/plan",
+            "key_env": "ARK_API_KEY",
+        },
+    }
 
 
 def test_load_config_skill_defaults_provide_limits(tmp_path: Path) -> None:

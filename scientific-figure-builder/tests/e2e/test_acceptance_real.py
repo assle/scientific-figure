@@ -2,7 +2,7 @@
 
 These make REAL paid Volcengine Ark calls. They are skipped unless credentials
 are present in the environment:
-  ARK_API_KEY, ARK_IMAGE_GENERATE, ARK_IMAGE_EDIT,
+  ARK_API_KEY, ARK_IMAGE_GENERATE,
   ARK_VISION_ANALYZE, ARK_VISION_VALIDATE
 """
 
@@ -28,7 +28,7 @@ from figure_tools.workflow import FigureWorkflow
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 
-CREDS = {"ARK_API_KEY", "ARK_API_KEY_CODING", "ARK_IMAGE_GENERATE", "ARK_IMAGE_EDIT",
+CREDS = {"ARK_API_KEY", "ARK_API_KEY_CODING", "ARK_IMAGE_GENERATE",
          "ARK_VISION_ANALYZE", "ARK_VISION_VALIDATE"}
 has_creds = all(os.environ.get(c) for c in CREDS)
 skip_real = pytest.mark.skipif(not has_creds, reason="Ark credentials not set")
@@ -40,7 +40,6 @@ BUDGET = {"reference_analysis": 2, "generation": 6, "edits": 3,
 def _models() -> dict:
     return {
         "image_generate": {"model": os.environ["ARK_IMAGE_GENERATE"]},
-        "image_edit": {"model": os.environ["ARK_IMAGE_EDIT"]},
         "vision_analyze": {"model": os.environ["ARK_VISION_ANALYZE"]},
         "vision_validate": {"model": os.environ["ARK_VISION_VALIDATE"]},
     }

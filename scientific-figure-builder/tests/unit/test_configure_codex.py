@@ -29,6 +29,8 @@ def test_update_creates_codex_mcp_table(tmp_path: Path):
     assert "[mcp_servers.scientific-figure]" in text
     assert 'command = "' in text
     assert "env_vars = [" in text
+    for name in ("SCIENTIFIC_FIGURE_CONFIG", "ARK_AGENT_BASE_URL", "ARK_CODING_BASE_URL"):
+        assert f'"{name}"' in text
     assert "[mcp_servers.scientific-figure.env]" not in text
 
     verified = verify_codex_config(config, DEFAULT_MCP_NAME)

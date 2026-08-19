@@ -201,3 +201,24 @@ def test_edit_produces_child_with_parent(tmp_path: Path):
     assert out.is_file()
     assert meta["parent_asset_id"] == "asset-1"
     assert meta["reference_hashes"] == [file_hash(parent)]
+
+
+def test_edit_reuses_generation_model_when_override_is_absent(tmp_path: Path):
+    models = {key: value for key, value in MODELS.items() if key != "image_edit"}
+    transport = MockArkTransport()
+    client = ArkClient(
+        models,
+        transport,
+        state=RunState("run-1", budget=BUDGET),
+        cache=Cache(tmp_path / "cache"),
+        output_dir=tmp_path,
+    )
+    parent = tmp_path / "parent.png"
+    _save_rgba(parent)
+
+    meta = client.edit_image_asset(
+        parent, "make it blue", {}, output_path=tmp_path / "edited.png",
+    )
+
+    assert meta["model"] == "ep-gen"
+    assert transport.calls == [("edits", "ep-gen")]

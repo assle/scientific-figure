@@ -16,9 +16,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from figure_tools.ark.client import ArkClient
+from figure_tools.ark.generic_transport import ProviderRouter
 from figure_tools.ark.transport import MockArkTransport
 from figure_tools.assembly.compositor import compose_assets
-from figure_tools.config import initialize_project
+from figure_tools.config import (
+    DEFAULT_PROVIDER_NAME,
+    configured_models,
+    configured_providers,
+    initialize_project,
+)
 from figure_tools.export.publish import export_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
@@ -40,32 +46,37 @@ _DEFAULT_BUDGET = {
 }
 
 
-def _models_from_env() -> dict[str, dict] | None:
-    """Read the four fixed model/Endpoint IDs from the environment (user-local
-    private config, plan section 5). Returns None if not all are set."""
-    roles = {
-        "image_generate": "ARK_IMAGE_GENERATE",
-        "image_edit": "ARK_IMAGE_EDIT",
-        "vision_analyze": "ARK_VISION_ANALYZE",
-        "vision_validate": "ARK_VISION_VALIDATE",
-    }
-    models = {role: {"model": os.environ[var]} for role, var in roles.items()
-              if os.environ.get(var)}
-    if len(models) != len(roles):
-        return None
-    return models
+def _project_dir_for_paths(*values: str | Path | None) -> Path | None:
+    explicit_dir = os.environ.get("SCIENTIFIC_FIGURE_PROJECT_DIR")
+    if explicit_dir:
+        return Path(explicit_dir)
+    for value in values:
+        if not value:
+            continue
+        path = Path(value)
+        if not path.is_dir():
+            path = path.parent
+        for candidate in (path, *path.parents):
+            if (candidate / ".scientific-figure").is_dir():
+                return candidate
+    return None
 
 
-def _client(output_dir: str | Path | None = None) -> ArkClient:
+def _client(output_dir: str | Path | None = None,
+            project_dir: str | Path | None = None) -> ArkClient:
     from figure_tools.state import Cache, RunState
 
-    models = _models_from_env()
-    if models is not None and os.environ.get("ARK_API_KEY"):
-        # Real Ark (Phase 7). Plan routing is handled by RealArkTransport.
-        from figure_tools.ark.real_transport import RealArkTransport
-
-        transport = RealArkTransport()
-        api_key = os.environ["ARK_API_KEY"]
+    models = configured_models(project_dir or _project_dir_for_paths(output_dir))
+    provider_names = {
+        model_cfg.get("provider", DEFAULT_PROVIDER_NAME)
+        for model_cfg in (models or {}).values()
+    }
+    if models and (
+        provider_names != {DEFAULT_PROVIDER_NAME} or os.environ.get("ARK_API_KEY")
+    ):
+        providers = configured_providers(project_dir)
+        transport = ProviderRouter(models, providers)
+        api_key = os.environ.get("ARK_API_KEY")
         budget = _DEFAULT_BUDGET
     else:
         transport = MockArkTransport()
@@ -92,7 +103,9 @@ def _h_initialize_figure_project(args):
 
 
 def _h_analyze_reference_figure(args):
-    return _client().analyze_reference_figure(args["image_path"], prompt=args.get("prompt"))
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["image_path"])
+    return _client(project_dir=project_dir).analyze_reference_figure(
+        args["image_path"], prompt=args.get("prompt"))
 
 
 def _h_create_figure_plan(args):
@@ -109,13 +122,19 @@ def _h_create_layout_wireframe(args):
 
 
 def _h_generate_image_asset(args):
-    meta = _client().generate_image_asset(args["prompt"], {}, output_path=args["output_path"])
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["output_path"])
+    meta = _client(output_dir=Path(args["output_path"]).parent,
+                   project_dir=project_dir).generate_image_asset(
+        args["prompt"], {}, output_path=args["output_path"])
     return {"meta": meta}
 
 
 def _h_edit_image_asset(args):
-    meta = _client().edit_image_asset(args["parent_path"], args["prompt"], {},
-                                      output_path=args["output_path"])
+    project_dir = args.get("project_dir") or _project_dir_for_paths(
+        args["parent_path"], args["output_path"])
+    meta = _client(output_dir=Path(args["output_path"]).parent,
+                   project_dir=project_dir).edit_image_asset(
+        args["parent_path"], args["prompt"], {}, output_path=args["output_path"])
     return {"meta": meta}
 
 
@@ -140,7 +159,8 @@ def _h_render_vector_element(args):
 
 
 def _h_validate_image_asset(args):
-    report = _client().validate_image_asset(
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["image_path"])
+    report = _client(project_dir=project_dir).validate_image_asset(
         args["image_path"],
         physical_size_mm=tuple(args["physical_size_mm"]) if args.get("physical_size_mm") else None)
     return report
@@ -165,8 +185,12 @@ def _h_assemble_figure(args):
 
 
 def _h_validate_assembled_figure(args):
+    project_dir = args.get("project_dir") or _project_dir_for_paths(
+        args["composed_image_path"], args.get("layout_manifest_path"))
     return FigureQAEngine(config=args.get("qa_config") or {},
-                          ark_client=_client()).validate_final(
+                          ark_client=_client(
+                              output_dir=Path(args["composed_image_path"]).parent,
+                              project_dir=project_dir)).validate_final(
         AssembledFigure(
             figure_plan=args["figure_plan"],
             asset_manifest=args["asset_manifest"],

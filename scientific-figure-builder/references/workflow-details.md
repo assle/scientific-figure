@@ -5,27 +5,30 @@ Configuration, approval, budget, and resume behavior (plan sections 5 and 12).
 ## Configuration layers (merged in order)
 
 1. Skill defaults (safe rendering defaults, templates, schema versions, limits).
-2. User-local private configuration (Ark API key reference, fixed model/Endpoint IDs).
+2. User-local private configuration (provider references, fixed model/Endpoint IDs).
 3. Project configuration (`.scientific-figure/project.yaml`, `style_bible.json`).
 4. Per-run overrides.
 
 ## Secrets
 
-Read the Ark API key from the `ARK_API_KEY` environment variable or a
-user-private file. Never write it to a repository, report, prompt log, or run
-manifest. Project config must contain no secrets.
+Provider credentials are read only from configured environment variables.
+Never write them to a repository, report, prompt log, or run manifest. Project
+config must contain no secrets.
 
 ## Model roles
 
-Configured independently with fixed IDs, even if two roles share a model:
+The three canonical online roles use fixed IDs:
 
 ```yaml
 models:
-  image_generate: { model: "<fixed-model-or-endpoint-id>" }
-  image_edit:     { model: "<fixed-model-or-endpoint-id>" }
+  image_generate: { model: "<fixed-model-or-endpoint-id>", provider: openai }
   vision_analyze: { model: "<fixed-model-or-endpoint-id>" }
   vision_validate:{ model: "<fixed-model-or-endpoint-id>" }
 ```
+
+`image_edit` is an optional override for generated or source-less raster assets.
+When it is absent, reference-image revision reuses `image_generate`. Scientific
+plots and vector elements are changed at their source and rendered again.
 
 No `latest` resolution or silent model upgrades.
 
@@ -100,7 +103,7 @@ custom style reference. Record the answer as `style`; the default is
 - Max quality retries per asset: 2.
 - Transient network/rate-limit retries are tracked separately from quality retries.
 - Default independent-asset concurrency: 2.
-- Exponential backoff for Ark rate limits.
+- Exponential backoff for provider rate limits.
 - Cache key from model ID + prompt + parameters + reference hashes; reuse exact
   cache hits unless forced regeneration is requested.
 - Persist step outputs and hashes for resume; regenerate only invalidated

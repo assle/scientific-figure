@@ -30,7 +30,7 @@
 | | 功能 | 说明 |
 |---|---|---|
 | 📊 | **确定性数据图** | 折线/散点/柱状/热图/误差棒/多面板 - CSV 转图，字节级可复现 |
-| 🎨 | **AI 素材生成** | Ark 图像模型生成隔离视觉元素（设备示意图等），自动去背景 |
+| 🎨 | **AI 素材生成** | 可配置图像模型生成隔离视觉元素（设备示意图等），自动去背景 |
 | 🏷️ | **SVG 标签** | 箭头、公式、标注，全部确定性生成 |
 | 🧩 | **自动拼装** | 多元素按 z-order 合成，导出 PNG/SVG/PDF |
 | 🎯 | **导出场景** | `general` 输出跨工具通用的路径文字，`ppt` 输出适合 PowerPoint 的可编辑 SVG |
@@ -120,16 +120,43 @@ style: default
 [OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
 仓库本身不会变成你项目的一部分。
 
-### 配置 Ark（可选）
+### 配置模型接口（可选）
+
+模型角色可全局配置在 `~/.config/scientific-figure-builder/config.yaml`，
+项目级覆盖在 `.scientific-figure/project.yaml`；环境变量优先级最高。
+Provider 实例只使用 `openai` 或 `anthropic` 两种适配器类型。OpenAI 兼容
+适配器会在内部选择 Images 或 Responses；`base_url` 应填写 API 根地址，
+不要填写完整操作地址。
 
 ```bash
-export ARK_API_KEY="<密钥>"
-export ARK_API_KEY_CODING="<coding 套餐密钥>"
-export ARK_IMAGE_GENERATE="<模型 ID>"
-export ARK_IMAGE_EDIT="<模型 ID>"
-export ARK_VISION_ANALYZE="<模型 ID>"
-export ARK_VISION_VALIDATE="<模型 ID>"
+export ARK_API_KEY="<Agent Plan 专属密钥>"
 ```
+
+```yaml
+# ~/.config/scientific-figure-builder/config.yaml（不要写入 API Key）
+providers:
+  openai:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+    key_env: ARK_API_KEY
+  anthropic:
+    type: anthropic
+    base_url: https://ark.cn-beijing.volces.com/api/plan
+    key_env: ARK_API_KEY
+models:
+  image_generate: {model: "<Seedream 模型>", provider: openai}
+  vision_analyze: {model: "<视觉分析模型>", provider: anthropic}
+  vision_validate: {model: "<校验模型>", provider: anthropic}
+```
+
+`image_edit` 是可选角色。没有显式覆盖时，生成式位图的参考图修改会复用
+`image_generate`。脚本图、标签、公式和 SVG 元素必须修改源参数后重新渲染，
+不能交给图片编辑模型。Anthropic 兼容接口只承担视觉分析和校验。
+
+迁移期间仍兼容旧的 `protocol: responses` 配置，以及 `ARK_IMAGE_*`、
+`ARK_*_BASE_URL` 环境变量。
+如果使用自定义 `key_env`，还需要在 OpenCode/Codex 的 MCP 配置中转发这个
+环境变量。
 
 > 纯本地绘图？跳过此步，运行 `./install.sh --without-ark`
 

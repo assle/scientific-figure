@@ -510,7 +510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if install_codex:
         agents.append("Codex")
     print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
-    print("Ark credentials stay in environment variables and were not written to disk.")
+    print("Provider credentials stay in environment variables and were not written to disk.")
     return 0
 
 

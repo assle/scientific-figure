@@ -32,7 +32,7 @@ Transform natural-language requests into **reproducible, publication-quality** s
 | | Feature | Description |
 |---|---|---|
 | 📊 | **Deterministic Plots** | Line / scatter / bar / heatmap / error bar / multipanel — CSV to figure, byte-reproducible |
-| 🎨 | **AI Assets** | Ark image model generates isolated visual elements (device schematics, etc.) with auto background removal |
+| 🎨 | **AI Assets** | Configurable image models generate isolated visual elements (device schematics, etc.) with auto background removal |
 | 🏷️ | **SVG Labels** | Arrows, equations, annotations — all deterministic |
 | 🧩 | **Auto Assembly** | Multi-element z-order composition → PNG / SVG / PDF |
 | 🎯 | **Export Targets** | `general` for portable path-based text, `ppt` for editable PowerPoint-friendly SVG |
@@ -125,16 +125,46 @@ Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), and whichever of
 [OpenCode](https://opencode.ai/) or Codex you use. Run the installer once from a
 checkout of this repository; the checkout does not become part of your project.
 
-### Configure Ark (optional)
+### Configure model providers (optional)
+
+Model roles can be configured globally in
+`~/.config/scientific-figure-builder/config.yaml` and overridden per project in
+`.scientific-figure/project.yaml`. Environment variables override both files.
+Provider instances use one of two adapter types: `openai` or `anthropic`.
+The OpenAI-compatible adapter selects Images or Responses internally; configure
+an API root, not a complete operation URL.
 
 ```bash
-export ARK_API_KEY="<key>"
-export ARK_API_KEY_CODING="<coding key>"
-export ARK_IMAGE_GENERATE="<model id>"
-export ARK_IMAGE_EDIT="<model id>"
-export ARK_VISION_ANALYZE="<model id>"
-export ARK_VISION_VALIDATE="<model id>"
+export ARK_API_KEY="<Agent Plan key>"
 ```
+
+```yaml
+# ~/.config/scientific-figure-builder/config.yaml (no API keys)
+providers:
+  openai:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+    key_env: ARK_API_KEY
+  anthropic:
+    type: anthropic
+    base_url: https://ark.cn-beijing.volces.com/api/plan
+    key_env: ARK_API_KEY
+models:
+  image_generate: {model: "<Seedream model>", provider: openai}
+  vision_analyze: {model: "<vision model>", provider: anthropic}
+  vision_validate: {model: "<validation model>", provider: anthropic}
+```
+
+`image_edit` is optional. Reference-image revision reuses `image_generate`
+unless an explicit override is configured. Plots, labels, equations, and SVG
+elements are changed at their source and rendered again; they are never sent to
+an image-edit model. Anthropic-compatible providers support vision analysis and
+validation only.
+
+Legacy `protocol: responses` configuration and the `ARK_IMAGE_*` /
+`ARK_*_BASE_URL` environment variables remain available during migration.
+For a custom `key_env`, also forward that environment variable through your
+OpenCode or Codex MCP configuration.
 
 > Local-only plotting? Skip this and run `./install.sh --without-ark`
 

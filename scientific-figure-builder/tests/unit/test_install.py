@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 
 from figure_tools.config import deep_merge
-from install.configure_opencode import apply_merge, propose_merge, render_diff
+from install.configure_opencode import (
+    apply_merge,
+    mcp_entry_for_python,
+    propose_merge,
+    render_diff,
+)
 from install.install_delivery import (
     delivery_paths,
     install_delivery,
@@ -173,6 +178,15 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
         codex_home=project / ".codex",
     )
     assert paths.config_file == nested_config
+
+
+def test_mcp_environment_forwards_model_and_endpoint_configuration(tmp_path: Path):
+    entry = mcp_entry_for_python(tmp_path / "python")
+    assert entry["environment"]["SCIENTIFIC_FIGURE_CONFIG"] == (
+        "{env:SCIENTIFIC_FIGURE_CONFIG}"
+    )
+    assert entry["environment"]["ARK_AGENT_BASE_URL"] == "{env:ARK_AGENT_BASE_URL}"
+    assert entry["environment"]["ARK_CODING_BASE_URL"] == "{env:ARK_CODING_BASE_URL}"
 
 
 def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
