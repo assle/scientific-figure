@@ -99,7 +99,18 @@ def test_dispatch_check_figure_requirements_unblocked():
     assert result["requirements"] == []
 
 
-def test_dispatch_render_scientific_plot(tmp_path: Path):
+def test_dispatch_render_scientific_plot_never_uses_generative_transport(
+    tmp_path: Path, monkeypatch,
+):
+    import figure_tools.server as server
+
+    monkeypatch.setattr(
+        server,
+        "_client",
+        lambda *_args, **_kwargs: pytest.fail(
+            "deterministic plot rendering must not construct a model client"
+        ),
+    )
     result = dispatch("render_scientific_plot", {
         "plot_spec_path": str(FIXTURES / "plot_spec_line.json"),
         "output_dir": str(tmp_path),
@@ -107,6 +118,28 @@ def test_dispatch_render_scientific_plot(tmp_path: Path):
     })
     assert (tmp_path / "plot.png").is_file()
     assert "data_used.csv" in result["files"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "content"),
+    [("label", "panel a"), ("equation", r"E=mc^2")],
+)
+def test_dispatch_render_vector_never_uses_generative_transport(
+    monkeypatch, kind: str, content: str,
+):
+    import figure_tools.server as server
+
+    monkeypatch.setattr(
+        server,
+        "_client",
+        lambda *_args, **_kwargs: pytest.fail(
+            "deterministic vector rendering must not construct a model client"
+        ),
+    )
+
+    result = dispatch("render_vector_element", {"kind": kind, "content": content})
+
+    assert "<svg" in result["svg"]
 
 
 def test_dispatch_create_layout_wireframe():

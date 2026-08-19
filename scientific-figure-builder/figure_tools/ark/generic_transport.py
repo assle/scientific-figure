@@ -274,20 +274,8 @@ class ProviderRouter(ArkTransport):
             resolved = model_config_for_role(models, role)
             if resolved is None:
                 continue
-            internal_role, model_cfg = resolved
+            _internal_role, model_cfg = resolved
             provider_name = str(model_cfg.get("provider", "ark"))
-            provider = providers.get(provider_name)
-            if provider is not None:
-                if self._provider_type(provider) not in {"openai", "anthropic"}:
-                    raise ArkError(
-                        f"provider {provider_name!r} has unsupported type "
-                        f"{self._provider_type(provider)!r}"
-                    )
-            elif provider_name != "ark":
-                raise ArkError(
-                    f"model role {internal_role!r} references unknown provider "
-                    f"{provider_name!r}"
-                )
             self._routes[role] = provider_name
 
     @staticmethod
@@ -312,15 +300,22 @@ class ProviderRouter(ArkTransport):
 
             transport = RealArkTransport()
         else:
-            provider = self._providers[provider_name]
+            provider = self._providers.get(provider_name)
+            if provider is None:
+                raise ArkError(f"unknown provider {provider_name!r}")
             provider_type = self._provider_type(provider)
             if provider_type == "openai":
                 transport = OpenAICompatibleTransport(
                     provider_name, provider, opener=self._opener,
                 )
-            else:
+            elif provider_type == "anthropic":
                 transport = AnthropicTransport(
                     provider_name, provider, opener=self._opener,
+                )
+            else:
+                raise ArkError(
+                    f"provider {provider_name!r} has unsupported type "
+                    f"{provider_type!r}"
                 )
         self._transports[provider_name] = transport
         return transport

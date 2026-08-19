@@ -24,6 +24,19 @@ from typing import Any, Callable
 
 DEFAULT_MCP_NAME = "scientific-figure"
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
+PROVIDER_ENV_VARS = (
+    "ARK_API_KEY",
+    "ARK_API_KEY_CODING",
+    "ARK_IMAGE_GENERATE",
+    "ARK_IMAGE_EDIT",
+    "ARK_VISION_ANALYZE",
+    "ARK_VISION_VALIDATE",
+    "ARK_AGENT_BASE_URL",
+    "ARK_CODING_BASE_URL",
+    "SCIENTIFIC_FIGURE_CONFIG",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
 
 
 def _strip_comments(text: str) -> str:
@@ -87,19 +100,7 @@ def apply_merge(
 
 
 def _mcp_environment() -> dict[str, str]:
-    return {
-        "ARK_API_KEY": "{env:ARK_API_KEY}",
-        "ARK_API_KEY_CODING": "{env:ARK_API_KEY_CODING}",
-        "ARK_IMAGE_GENERATE": "{env:ARK_IMAGE_GENERATE}",
-        "ARK_IMAGE_EDIT": "{env:ARK_IMAGE_EDIT}",
-        "ARK_VISION_ANALYZE": "{env:ARK_VISION_ANALYZE}",
-        "ARK_VISION_VALIDATE": "{env:ARK_VISION_VALIDATE}",
-        "ARK_AGENT_BASE_URL": "{env:ARK_AGENT_BASE_URL}",
-        "ARK_CODING_BASE_URL": "{env:ARK_CODING_BASE_URL}",
-        "SCIENTIFIC_FIGURE_CONFIG": "{env:SCIENTIFIC_FIGURE_CONFIG}",
-        "OPENAI_API_KEY": "{env:OPENAI_API_KEY}",
-        "ANTHROPIC_API_KEY": "{env:ANTHROPIC_API_KEY}",
-    }
+    return {name: f"{{env:{name}}}" for name in PROVIDER_ENV_VARS}
 
 
 def mcp_entry_for_python(runtime_python: str | Path) -> dict[str, Any]:

@@ -199,12 +199,10 @@ def test_provider_router_rejects_unknown_provider():
     models = {
         "vision_analyze": {"model": "vision-model", "provider": "missing"},
     }
-    try:
-        ProviderRouter(models, {})
-    except ArkError as exc:
-        assert "unknown provider" in str(exc)
-    else:
-        raise AssertionError("expected ArkError")
+    router = ProviderRouter(models, {})
+
+    with pytest.raises(ArkError, match="unknown provider"):
+        router.post("reference_analysis", "vision-model", {})
 
 
 def test_provider_router_reuses_generation_provider_for_optional_edits(
@@ -250,18 +248,13 @@ def test_provider_router_does_not_require_unused_provider_credentials(
     router = ProviderRouter(
         {
             "image_generate": {"model": "image-model", "provider": "openai"},
-            "vision_analyze": {"model": "vision-model", "provider": "anthropic"},
+            "vision_analyze": {"model": "vision-model", "provider": "missing"},
         },
         {
             "openai": {
                 "type": "openai",
                 "base_url": "https://models.example/v1",
                 "key_env": "OPENAI_TEST_KEY",
-            },
-            "anthropic": {
-                "type": "anthropic",
-                "base_url": "https://anthropic.example/v1",
-                "key_env": "ANTHROPIC_TEST_KEY",
             },
         },
         opener=opener,
