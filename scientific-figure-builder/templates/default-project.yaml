@@ -68,6 +68,8 @@ providers:
     type: anthropic
     base_url: https://ark.cn-beijing.volces.com/api/plan
     key_env: ARK_API_KEY
+    auth_scheme: bearer
+    messages_path: /v1/messages
 
 # Optional domain template selection.
 domain_template: null

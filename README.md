@@ -150,6 +150,8 @@ providers:
     type: anthropic
     base_url: https://ark.cn-beijing.volces.com/api/plan
     key_env: ARK_API_KEY
+    auth_scheme: bearer
+    messages_path: /v1/messages
 models:
   image_generate: {model: "<Seedream model>", provider: openai}
   vision_analyze: {model: "<vision model>", provider: anthropic}

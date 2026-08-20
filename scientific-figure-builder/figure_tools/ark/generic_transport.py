@@ -24,7 +24,12 @@ from figure_tools.ark.transport import (
 )
 
 HTTP_OPENER = Callable[..., Any]
-_OPERATION_PATHS = ("/images/generations", "/responses", "/messages")
+_OPERATION_PATHS = (
+    "/images/generations",
+    "/v1/messages",
+    "/responses",
+    "/messages",
+)
 
 
 def _api_root(value: Any) -> str:
@@ -204,11 +209,20 @@ class AnthropicTransport(ArkTransport):
         self.base_url = _api_root(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
         api_key = os.environ.get(self.key_env)
-        self.version = config.get("anthropic_version", "2023-06-01")
+        self.version = str(config.get("anthropic_version", "2023-06-01"))
+        self.auth_scheme = str(config.get("auth_scheme", "x-api-key")).lower()
+        self.messages_path = "/" + str(
+            config.get("messages_path", "/messages")
+        ).lstrip("/")
         if not self.base_url:
             raise ArkError(f"provider {name!r} requires base_url")
         if not api_key:
             raise ArkError(f"{self.key_env} is not set for provider {name!r}")
+        if self.auth_scheme not in {"x-api-key", "bearer"}:
+            raise ArkError(
+                f"provider {name!r} has unsupported auth_scheme "
+                f"{self.auth_scheme!r}; expected x-api-key or bearer"
+            )
         self.api_key = api_key
         self._opener = opener
 
@@ -238,13 +252,15 @@ class AnthropicTransport(ArkTransport):
                 },
             })
         content.append({"type": "text", "text": prompt})
+        headers = {"anthropic-version": self.version}
+        if self.auth_scheme == "bearer":
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            headers["x-api-key"] = self.api_key
         response = _request_json(
-            f"{self.base_url}/messages",
+            f"{self.base_url}{self.messages_path}",
             method="POST",
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": self.version,
-            },
+            headers=headers,
             body={
                 "model": model,
                 "max_tokens": 4096,

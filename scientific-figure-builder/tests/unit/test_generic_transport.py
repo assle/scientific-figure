@@ -181,6 +181,42 @@ def test_anthropic_vision_uses_messages_api(tmp_path: Path, monkeypatch):
     assert requests[0].get_header("X-api-key") == "test-key"
 
 
+def test_agent_plan_anthropic_uses_bearer_and_v1_messages(
+    tmp_path: Path, monkeypatch,
+):
+    image = tmp_path / "input.png"
+    _png(image)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        assert request.full_url == (
+            "https://ark.cn-beijing.volces.com/api/plan/v1/messages"
+        )
+        return _FakeResponse({
+            "content": [{"type": "text", "text": '{"blocking": false}'}],
+        })
+
+    monkeypatch.setenv("ARK_API_KEY", "agent-plan-key")
+    transport = AnthropicTransport(
+        "anthropic",
+        {
+            "type": "anthropic",
+            "base_url": "https://ark.cn-beijing.volces.com/api/plan",
+            "key_env": "ARK_API_KEY",
+            "auth_scheme": "bearer",
+            "messages_path": "/v1/messages",
+        },
+        opener=opener,
+    )
+
+    result = transport.post("validations", "vision-model", {}, [image])
+
+    assert result == {"blocking": False}
+    assert requests[0].get_header("Authorization") == "Bearer agent-plan-key"
+    assert requests[0].get_header("X-api-key") is None
+
+
 def test_anthropic_rejects_image_generation(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     transport = AnthropicTransport(

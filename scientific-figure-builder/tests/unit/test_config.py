@@ -139,6 +139,8 @@ def test_load_config_has_agent_plan_provider_roots(tmp_path: Path) -> None:
             "type": "anthropic",
             "base_url": "https://ark.cn-beijing.volces.com/api/plan",
             "key_env": "ARK_API_KEY",
+            "auth_scheme": "bearer",
+            "messages_path": "/v1/messages",
         },
     }
 

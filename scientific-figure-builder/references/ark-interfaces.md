@@ -93,6 +93,9 @@ and a non-secret `key_env` reference. OpenAI-compatible providers handle vision
 through `/responses` and image generation through `/images/generations`.
 Anthropic-compatible providers handle vision through `/messages` only. Legacy
 `protocol: responses` is accepted with migration guidance.
+The Volcengine Agent Plan Anthropic dialect explicitly sets `auth_scheme: bearer`
+and `messages_path: /v1/messages`; standard Anthropic providers default
+to `x-api-key` and `/messages`.
 Custom `key_env` values must also be forwarded by the agent's MCP environment
 configuration.
 
