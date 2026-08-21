@@ -131,6 +131,69 @@ Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), and whichever of
 [OpenCode](https://opencode.ai/) or Codex you use. Run the installer once from a
 checkout of this repository; the checkout does not become part of your project.
 
+## Install
+
+Run once from a checkout of this repository:
+
+```bash
+./install.sh
+```
+
+Target only one agent, or install into a specific project:
+
+```bash
+./install.sh --target codex         # or: --target opencode
+./install.sh --project /path/to/project
+```
+
+**What the installer does.**
+
+- Creates a private, self-contained runtime at `~/.local/share/scientific-figure-builder/`
+  (a virtualenv with the package, schemas, templates, and references).
+- Installs the **skill** into your agent(s) so they can invoke the tool:
+  - Codex: `~/.codex/skills/scientific-figure-builder/`
+  - OpenCode: `~/.config/opencode/skills/scientific-figure-builder/`
+- Adds an OpenCode **slash command** at `~/.config/opencode/commands/scientific-figure.md`.
+- Registers the MCP **server entry** (launches `figure_tools.server`):
+  - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
+  - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- Forwards the configured provider environment variables (every provider's
+  `key_env` plus the `SCI_FIG_*` model-role overrides) to the MCP host.
+- Backs up any existing config before editing.
+
+No API keys are written to disk; credentials stay in environment variables.
+Choose which providers to use under "Configure model providers" below.
+
+## Uninstall
+
+Remove the installed software and its MCP entries without touching this
+repository or unrelated configuration:
+
+```bash
+./uninstall.sh                        # global install
+./uninstall.sh --config               # also remove ~/.config/scientific-figure-builder/
+./uninstall.sh --all                  # global + user config
+./uninstall.sh --project /path/to/project   # a per-project install
+./uninstall.sh --dry-run              # preview without changing anything
+```
+
+**What the uninstaller removes.**
+
+- The private runtime: `~/.local/share/scientific-figure-builder/`
+- Installed skills:
+  - `~/.codex/skills/scientific-figure-builder/`
+  - `~/.config/opencode/skills/scientific-figure-builder/`
+- The OpenCode slash command: `~/.config/opencode/commands/scientific-figure.md`
+- The MCP server entries (only `scientific-figure`; other servers are preserved):
+  - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
+  - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- With `--config`: the user config directory `~/.config/scientific-figure-builder/`
+- With `--project DIR`: the per-project `.opencode/` and `.codex/` skill, command,
+  and MCP entries for that project install
+
+Other agent config, projects, and this repository are left untouched. Removed
+directories can be restored by re-running `./install.sh`.
+
 ### Configure model providers (optional)
 
 Each model role is assigned to a provider, so different steps can use different

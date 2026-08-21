@@ -126,6 +126,63 @@ curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/instal
 [OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
 仓库本身不会变成你项目的一部分。
 
+## 安装
+
+在仓库检出目录执行一次即可：
+
+```bash
+./install.sh
+```
+
+只装某个 agent，或安装到指定项目：
+
+```bash
+./install.sh --target codex         # 或：--target opencode
+./install.sh --project /path/to/project
+```
+
+**安装会做什么。**
+
+- 在 `~/.local/share/scientific-figure-builder/` 创建私有运行环境（包含包、Schema、模板、参考资料的虚拟环境）。
+- 把 **skill** 安装到你的 agent，使其能调用本工具：
+  - Codex：`~/.codex/skills/scientific-figure-builder/`
+  - OpenCode：`~/.config/opencode/skills/scientific-figure-builder/`
+- 添加 OpenCode **斜杠命令**：`~/.config/opencode/commands/scientific-figure.md`
+- 注册 MCP **服务条目**（用于启动 `figure_tools.server`）：
+  - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
+  - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
+- 把配置好的供应商环境变量（各 provider 的 `key_env` 及 `SCI_FIG_*` 模型覆盖项）转发给 MCP 宿主。
+- 编辑已有配置前会先备份。
+
+不会把 API Key 写入磁盘；凭证始终走环境变量。要选择用哪些供应商，见下方“配置模型接口”。
+
+## 卸载
+
+移除已安装的软件及其 MCP 条目，不影响本仓库和无关配置：
+
+```bash
+./uninstall.sh                        # 全局安装
+./uninstall.sh --config               # 同时删除 ~/.config/scientific-figure-builder/
+./uninstall.sh --all                  # 全局 + 用户配置
+./uninstall.sh --project /path/to/project   # 删除某项目内的安装
+./uninstall.sh --dry-run              # 先预览，不改动任何东西
+```
+
+**卸载会删除什么。**
+
+- 私有运行环境：`~/.local/share/scientific-figure-builder/`
+- 已安装的 skill：
+  - `~/.codex/skills/scientific-figure-builder/`
+  - `~/.config/opencode/skills/scientific-figure-builder/`
+- OpenCode 斜杠命令：`~/.config/opencode/commands/scientific-figure.md`
+- MCP 服务条目（只删 `scientific-figure`，其它服务器保留）：
+  - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
+  - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
+- 加 `--config`：删除用户配置目录 `~/.config/scientific-figure-builder/`
+- 加 `--project DIR`：删除该项目 `.opencode/` 与 `.codex/` 下的 skill、命令及 MCP 条目
+
+其它 agent 配置、项目和本仓库均不受影响。被删除的目录可通过重新执行 `./install.sh` 恢复。
+
 ### 配置模型接口（可选）
 
 每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
