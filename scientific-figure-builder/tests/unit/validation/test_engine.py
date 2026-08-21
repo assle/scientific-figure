@@ -151,7 +151,7 @@ def test_engine_flags_ai_text_with_ocr_backend(tmp_path: Path):
 
     plan = _plan()
     plan["assets"].append({"asset_id": "fiber", "type": "image_asset",
-                           "z_order": 2, "dependencies": [], "routing": "ark_image"})
+                           "z_order": 2, "dependencies": [], "routing": "image_model"})
     engine = FigureQAEngine(config={}, ocr_backend=FakeOCR())
     report = engine.validate_final(AssembledFigure(
         figure_plan=plan, asset_manifest=manifest, image_path=composed,

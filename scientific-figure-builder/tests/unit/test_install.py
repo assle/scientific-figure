@@ -185,8 +185,8 @@ def test_mcp_environment_forwards_model_and_endpoint_configuration(tmp_path: Pat
     assert entry["environment"]["SCIENTIFIC_FIGURE_CONFIG"] == (
         "{env:SCIENTIFIC_FIGURE_CONFIG}"
     )
-    assert entry["environment"]["ARK_AGENT_BASE_URL"] == "{env:ARK_AGENT_BASE_URL}"
-    assert entry["environment"]["ARK_CODING_BASE_URL"] == "{env:ARK_CODING_BASE_URL}"
+    assert entry["environment"]["OPENAI_API_KEY"] == "{env:OPENAI_API_KEY}"
+    assert entry["environment"]["SCI_FIG_IMAGE_GENERATE"] == "{env:SCI_FIG_IMAGE_GENERATE}"
 
 
 def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
@@ -199,15 +199,13 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     paths.config_file.parent.mkdir(parents=True)
     paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
 
-    def _use_test_python(runtime_dir: Path, *, with_ark: bool) -> Path:
+    def _use_test_python(runtime_dir: Path) -> Path:
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
-        assert with_ark is False
         return Path(sys.executable)
 
     result = install_delivery(
         source,
         paths,
-        with_ark=False,
         runtime_sync=_use_test_python,
     )
     assert (paths.skill_dir / "SKILL.md").is_file()
@@ -234,7 +232,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         codex_home=tmp_path / "codex",
     )
 
-    def _use_test_python(_runtime_dir: Path, *, with_ark: bool) -> Path:
+    def _use_test_python(_runtime_dir: Path) -> Path:
         return Path(sys.executable)
 
     first = install_delivery(

@@ -8,11 +8,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from figure_tools.config import configured_models, initialize_project, load_config
 
 PROJECT_CONFIG_NAME = ".scientific-figure"
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_config(monkeypatch, tmp_path):
+    """Keep config tests hermetic.
+
+    A developer may have ``SCIENTIFIC_FIGURE_CONFIG`` (or ``~/.config/...``)
+    pointing at real providers. Clear both so every config test sees only skill
+    defaults plus its own temp files.
+    """
+    monkeypatch.delenv("SCIENTIFIC_FIGURE_CONFIG", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
 
 def test_initialize_project_creates_non_secret_config(tmp_path: Path) -> None:
@@ -103,7 +116,7 @@ def test_models_merge_user_project_and_environment(tmp_path: Path,
 
     models = configured_models(
         tmp_path,
-        environ={"ARK_VISION_VALIDATE": "ep-env-validate"},
+        environ={"SCI_FIG_VISION_VALIDATE": "ep-env-validate"},
     )
     assert models == {
         "image_generate": {"provider": "openai", "model": "ep-user-gen"},
@@ -124,23 +137,23 @@ def test_load_config_has_three_canonical_model_roles(tmp_path: Path) -> None:
     assert cfg["models"]["vision_validate"]["provider"] == "anthropic"
 
 
-def test_load_config_has_agent_plan_provider_roots(tmp_path: Path) -> None:
+def test_load_config_has_provider_neutral_roots(tmp_path: Path) -> None:
     initialize_project(tmp_path)
     providers = load_config(tmp_path)["providers"]
 
     assert providers == {
         "openai": {
             "type": "openai",
-            "base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
-            "key_env": "ARK_API_KEY",
+            "base_url": "",
+            "key_env": "OPENAI_API_KEY",
             "supports_image_edit": True,
         },
         "anthropic": {
             "type": "anthropic",
-            "base_url": "https://ark.cn-beijing.volces.com/api/plan",
-            "key_env": "ARK_API_KEY",
-            "auth_scheme": "bearer",
-            "messages_path": "/v1/messages",
+            "base_url": "",
+            "key_env": "ANTHROPIC_API_KEY",
+            "auth_scheme": "x-api-key",
+            "messages_path": "/messages",
         },
     }
 

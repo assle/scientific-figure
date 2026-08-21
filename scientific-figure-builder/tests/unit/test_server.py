@@ -168,7 +168,7 @@ def test_configured_provider_key_does_not_require_global_ark_key(
     tmp_path: Path, monkeypatch, provider_name: str,
 ):
     import figure_tools.server as server
-    from figure_tools.ark.transport import MockArkTransport
+    from figure_tools.providers.transport import MockProviderTransport
 
     project = tmp_path / ".scientific-figure"
     project.mkdir()
@@ -189,7 +189,7 @@ def test_configured_provider_key_does_not_require_global_ark_key(
 
     def provider_router(models, providers):
         routed.append((models, providers))
-        return MockArkTransport()
+        return MockProviderTransport()
 
     monkeypatch.setattr(server, "ProviderRouter", provider_router)
 

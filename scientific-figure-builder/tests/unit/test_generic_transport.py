@@ -11,12 +11,12 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from figure_tools.ark.generic_transport import (
+from figure_tools.providers.generic_transport import (
     AnthropicTransport,
     OpenAICompatibleTransport,
     ProviderRouter,
 )
-from figure_tools.ark.transport import ArkError
+from figure_tools.providers.transport import ProviderError
 
 
 class _FakeResponse:
@@ -225,10 +225,10 @@ def test_anthropic_rejects_image_generation(monkeypatch):
     )
     try:
         transport.post("generation", "image-model", {"prompt": "draw"})
-    except ArkError as exc:
+    except ProviderError as exc:
         assert "not image generation" in str(exc)
     else:
-        raise AssertionError("expected ArkError")
+        raise AssertionError("expected ProviderError")
 
 
 def test_provider_router_rejects_unknown_provider():
@@ -237,7 +237,7 @@ def test_provider_router_rejects_unknown_provider():
     }
     router = ProviderRouter(models, {})
 
-    with pytest.raises(ArkError, match="unknown provider"):
+    with pytest.raises(ProviderError, match="unknown provider"):
         router.post("reference_analysis", "vision-model", {})
 
 
@@ -338,5 +338,5 @@ def test_openai_provider_can_reject_unsupported_reference_image_edit(
         opener=lambda _request: pytest.fail("unsupported edit must not make a request"),
     )
 
-    with pytest.raises(ArkError, match="does not support reference-image editing"):
+    with pytest.raises(ProviderError, match="does not support reference-image editing"):
         transport.post("edits", "image-model", {"prompt": "change it"}, [parent])

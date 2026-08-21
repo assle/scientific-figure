@@ -1,7 +1,9 @@
-"""Ark transport abstraction (plan section 17).
+"""Provider transport abstraction (plan section 17).
 
 The transport layer is injectable so the client can be tested without paid
-calls. A real HTTP transport is finalized in Phase 7 against verified Ark docs.
+calls. A real HTTP transport is implemented by the provider adapters in
+``generic_transport``, which speak the OpenAI-compatible (``/responses`` +
+``/images/generations``) and Anthropic-compatible (``/messages``) dialects.
 """
 
 from __future__ import annotations
@@ -35,15 +37,15 @@ def model_config_for_role(
     return config_role, model_config
 
 
-class ArkError(Exception):
+class ProviderError(Exception):
     pass
 
 
-class RateLimitError(ArkError):
+class RateLimitError(ProviderError):
     pass
 
 
-class ArkTransport:
+class ProviderTransport:
     def post(
         self,
         role: str,
@@ -65,7 +67,7 @@ def _transparent_circle_png(size: int = 1024) -> bytes:
     return buf.getvalue()
 
 
-class MockArkTransport(ArkTransport):
+class MockProviderTransport(ProviderTransport):
     """Deterministic, no-network transport for tests and offline runs."""
 
     def __init__(self, fail_once_roles: set[str] | None = None) -> None:
@@ -121,4 +123,4 @@ class MockArkTransport(ArkTransport):
                 ],
                 "blocking": False,
             }
-        raise ArkError(f"unknown role {role!r}")
+        raise ProviderError(f"unknown role {role!r}")

@@ -1,4 +1,4 @@
-"""Ark client: fixed-role model integration with budget, cache, and retry.
+"""Provider client: fixed-role model integration with budget, cache, and retry.
 
 Plan sections 5, 8, 12, 17. Tested with an injectable transport (no paid calls).
 The API key is never serialized into artifacts, logs, or manifests.
@@ -18,10 +18,10 @@ from typing import Any
 
 from PIL import Image
 
-from figure_tools.ark.auth import redact
-from figure_tools.ark.transport import (
-    ArkError,
-    ArkTransport,
+from figure_tools.providers.auth import redact
+from figure_tools.providers.transport import (
+    ProviderError,
+    ProviderTransport,
     RateLimitError,
     ROLE_TO_MODEL_CONFIG,
     model_config_for_role,
@@ -39,11 +39,11 @@ def _sha(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-class ArkClient:
+class ProviderClient:
     def __init__(
         self,
         models: dict[str, dict],
-        transport: ArkTransport,
+        transport: ProviderTransport,
         api_key: str | None = None,
         api_keys: Iterable[str] | None = None,
         state: RunState | None = None,
@@ -66,7 +66,7 @@ class ArkClient:
         config_role = ROLE_TO_MODEL_CONFIG.get(role, role)
         model_config = resolved[1] if resolved is not None else None
         if not model_config or not model_config.get("model"):
-            raise ArkError(
+            raise ProviderError(
                 f"model role {config_role!r} is not configured for {role!r}"
             )
         return str(model_config["model"])

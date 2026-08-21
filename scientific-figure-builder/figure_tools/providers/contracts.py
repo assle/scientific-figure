@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from figure_tools.ark.transport import ArkError
+from figure_tools.providers.transport import ProviderError
 
 REFERENCE_ANALYSIS_INSTRUCTION = (
     "Analyze this scientific reference figure. Return ONLY JSON with keys: "
@@ -44,11 +44,11 @@ def extract_json(text: str) -> dict[str, Any]:
         if match:
             value = json.loads(match.group(0))
         else:
-            raise ArkError(
+            raise ProviderError(
                 f"could not parse JSON from model response: {text[:200]}"
             )
     if not isinstance(value, dict):
-        raise ArkError("model response JSON must be an object")
+        raise ProviderError("model response JSON must be an object")
     return value
 
 

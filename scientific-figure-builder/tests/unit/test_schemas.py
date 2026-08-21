@@ -130,7 +130,7 @@ def test_publication_mplstyle_exists() -> None:
 
 
 def test_network_only_via_transport_abstraction() -> None:
-    """All network I/O is confined to the ark/ subpackage (the transport seam).
+    """All network I/O is confined to the providers/ subpackage (the transport seam).
     No direct HTTP/network call sites exist elsewhere in figure_tools."""
     forbidden_patterns = [
         r"volcengine",
@@ -141,10 +141,10 @@ def test_network_only_via_transport_abstraction() -> None:
     ]
     offenders = []
     for py in (ROOT / "figure_tools").rglob("*.py"):
-        if "ark" in py.relative_to(ROOT).parts:  # ark/ is the network boundary
+        if "providers" in py.relative_to(ROOT).parts:  # providers/ is the boundary
             continue
         text = py.read_text(encoding="utf-8")
         for pat in forbidden_patterns:
             if re.search(pat, text, re.IGNORECASE):
                 offenders.append(f"{py.relative_to(ROOT)} matches {pat}")
-    assert not offenders, "direct network call site outside ark/: " + ", ".join(offenders)
+    assert not offenders, "direct network call site outside providers/: " + ", ".join(offenders)

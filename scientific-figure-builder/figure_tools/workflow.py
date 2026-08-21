@@ -38,7 +38,7 @@ class FigureWorkflow:
         request: dict[str, Any],
         config: dict[str, Any],
         run_dir: str | Path,
-        ark_client: Any,
+        provider_client: Any,
         state: Any,
         base_dir: str | Path = ".",
         compose_dpi: int = 300,
@@ -46,7 +46,7 @@ class FigureWorkflow:
         self.request = request
         self.config = config
         self.run_dir = Path(run_dir)
-        self.ark = ark_client
+        self.provider = provider_client
         self.state = state
         self.base_dir = Path(base_dir)
         self.compose_dpi = compose_dpi
@@ -121,7 +121,7 @@ class FigureWorkflow:
             anchor_id = ai_elements[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
             if not anchor_path.exists():
-                self.ark.generate_image_asset(
+                self.provider.generate_image_asset(
                     ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
             if not style_anchor_approved:
                 self.state.request_approval("style_anchor_approval", "pending")
@@ -151,11 +151,11 @@ class FigureWorkflow:
                                          export_target=export_target)
         composed_png = Path(assembly_result["files"]["png"])
 
-        # Final validation (plan section 17.1): thread the ark client and the
+        # Final validation (plan section 17.1): thread the provider client and the
         # assembly layout manifest so the multimodal final check actually runs.
         final = FigureQAEngine(
             config=self.config.get("validation", {}),
-            ark_client=self.ark,
+            provider_client=self.provider,
         ).validate_final(
             AssembledFigure(
                 figure_plan=plan,
@@ -371,8 +371,8 @@ class FigureWorkflow:
     def _safe_gen_ai(self, panel, el):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
-            meta = self.ark.generate_image_asset(el["prompt"], {}, output_path=path)
-            report = self.ark.validate_image_asset(
+            meta = self.provider.generate_image_asset(el["prompt"], {}, output_path=path)
+            report = self.provider.validate_image_asset(
                 path, physical_size_mm=tuple(panel["physical_size"]))
             return (el["element_id"], meta, report, None)
         except Exception as e:  # noqa: BLE001
@@ -444,7 +444,7 @@ class FigureWorkflow:
         }
 
     def _vector_meta(self, asset_id, atype, path, plan):
-        from figure_tools.ark.client import file_hash
+        from figure_tools.providers.client import file_hash
 
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),

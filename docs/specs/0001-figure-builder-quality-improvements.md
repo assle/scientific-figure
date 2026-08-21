@@ -122,7 +122,7 @@ adr: 0001-current-evidence-figure-set
   - 测试校验报告中包含 `legend_data_overlap` 等 check_id
   - 测试当 validation blocking 时 export 被阻止
   - 测试当 validation 有 fail 项时生成了 `validation/root_cause_report.json`
-- 使用 MockArkTransport 注入预设的验证结果，不依赖真实 Ark 服务。
+- 使用 MockProviderTransport 注入预设的验证结果，不依赖真实供应商服务。
 
 ### 单元测试
 

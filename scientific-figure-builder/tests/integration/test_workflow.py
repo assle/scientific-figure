@@ -4,7 +4,7 @@
 - Scientific ambiguity pauses for user input.
 - Warnings and blocking errors behave as specified.
 
-All runs use MockArkTransport - no paid calls.
+All runs use MockProviderTransport - no paid calls.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from figure_tools.ark.client import ArkClient
-from figure_tools.ark.transport import MockArkTransport
+from figure_tools.providers.client import ProviderClient
+from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.state import Cache, RunDirectory, RunState
 from figure_tools.workflow import FigureWorkflow
 
@@ -61,12 +61,12 @@ def _request(auto_execute=True, **over):
 
 def _workflow(tmp_path: Path, request, transport=None, compose_dpi=300):
     run_dir = RunDirectory(base_dir=tmp_path).create(request["figure_id"])
-    transport = transport or MockArkTransport()
+    transport = transport or MockProviderTransport()
     state = RunState(run_id=run_dir.name, budget=BUDGET)
     cache = Cache(run_dir / "cache")
-    client = ArkClient(MODELS, transport, api_key=None, state=state, cache=cache,
-                       output_dir=run_dir)
-    wf = FigureWorkflow(request, config={}, run_dir=run_dir, ark_client=client,
+    client = ProviderClient(MODELS, transport, api_key=None, state=state, cache=cache,
+                            output_dir=run_dir)
+    wf = FigureWorkflow(request, config={}, run_dir=run_dir, provider_client=client,
                         state=state, base_dir=ROOT, compose_dpi=compose_dpi)
     return wf, client, run_dir
 
@@ -97,17 +97,17 @@ def test_image_model_never_generates_plots_axes_or_labels(tmp_path: Path):
     # Ark is used only for isolated asset generation + validation (per-asset and
     # final). It never generates plots, axes, or labels.
     assert roles_used <= {"generation", "validations", "final_validation"}
-    # The data plot is a Python-rendered artifact, not an Ark output.
+    # The data plot is a Python-rendered artifact, not an image-model output.
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
     # The AI asset is isolated and transparent.
     manifest = json.loads((run_dir / "asset_manifest.json").read_text())
     fiber = next(a for a in manifest["assets"] if a["asset_id"] == "fiber")
     assert fiber["transparent"] is True
     assert fiber["type"] == "image_asset"
-    # Routing lives in the figure plan: data plot -> python, AI asset -> ark.
+    # Routing lives in the figure plan: data plot -> python, AI asset -> image model.
     plan_routing = {a["asset_id"]: a["routing"] for a in result["figure_plan"]["assets"]}
     assert plan_routing["curve"] == "python"
-    assert plan_routing["fiber"] == "ark_image"
+    assert plan_routing["fiber"] == "image_model"
 
 
 def test_scientific_ambiguity_pauses_before_generation(tmp_path: Path):
@@ -281,29 +281,29 @@ def test_no_root_cause_report_when_all_pass(tmp_path: Path):
 
 # --- Image QA: final validation link fix (PR 1) ---
 
-def test_final_validation_uses_ark_client_not_skipped(tmp_path: Path):
-    """FigureWorkflow.run() must thread ark_client into final validation so the
+def test_final_validation_uses_provider_client_not_skipped(tmp_path: Path):
+    """FigureWorkflow.run() must thread provider_client into final validation so the
     multimodal final check actually runs instead of defaulting to skipped."""
     wf, client, run_dir = _workflow(tmp_path, _request())
     result = wf.run()
     assert result["paused"] is False
     final = result["validation_reports"][-1]
-    # The final_validation paid role was actually invoked, proving the ark
+    # The final_validation paid role was actually invoked, proving the provider
     # client was threaded into the final check (PR1 fix).
     assert any(role == "final_validation" for role, _ in client.transport.calls)
     # The model's multimodal checks are present in the final report.
     assert any(c["check_id"] == "multimodal_semantic" for c in final["checks"])
 
 
-def test_final_validation_skipped_without_ark_client(tmp_path: Path):
-    """Without an ark client the multimodal final check degrades to skipped.
-    Verified at the unit level (the workflow needs ark for AI assets)."""
+def test_final_validation_skipped_without_provider_client(tmp_path: Path):
+    """Without a provider client the multimodal final check degrades to skipped.
+    Verified at the unit level (the workflow needs a provider for AI assets)."""
     from figure_tools.validation.engine import FigureQAEngine
     from figure_tools.validation.models import AssembledFigure
     composed = tmp_path / "figure.png"; _save_rgba_img(composed)
     curve = tmp_path / "curve.png"; _save_rgba_img(curve)
     fiber = tmp_path / "fiber.png"; _save_rgba_img(fiber)
-    report = FigureQAEngine(config={}, ark_client=None).validate_final(
+    report = FigureQAEngine(config={}, provider_client=None).validate_final(
         AssembledFigure(
             figure_plan=_simple_plan(),
             asset_manifest=_simple_manifest(curve, fiber),
@@ -334,7 +334,7 @@ def _simple_plan():
         "assets": [{"asset_id": "curve", "type": "data_plot", "z_order": 1,
                     "dependencies": [], "routing": "python"},
                    {"asset_id": "fiber", "type": "image_asset", "z_order": 2,
-                    "dependencies": [], "routing": "ark_image"}],
+                    "dependencies": [], "routing": "image_model"}],
         "style_bible_ref": "default", "text_elements": [],
         "assumptions": [], "uncertainties": [], "user_input_requirements": [],
         "estimated_paid_calls": {}, "planned_uploads": [],

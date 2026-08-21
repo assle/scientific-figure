@@ -82,15 +82,15 @@ def _deterministic_final_checks(
 
 
 def _multimodal_final_checks(
-    ark_client: Any,
+    provider_client: Any,
     composed_image_path: str | Path,
     physical_size_mm: tuple[float, float],
 ) -> list[dict]:
-    if ark_client is None:
+    if provider_client is None:
         return [make_check("multimodal_final", "final", "warning", "skipped",
-                       "no ark client; multimodal final check skipped")]
+                       "no provider client; multimodal final check skipped")]
     try:
-        raw = ark_client.validate_final_figure(
+        raw = provider_client.validate_final_figure(
             composed_image_path, physical_size_mm=physical_size_mm)
     except Exception as e:  # noqa: BLE001
         return [make_check("multimodal_final", "final", "warning", "skipped",
@@ -110,11 +110,11 @@ class FigureQAEngine:
     def __init__(
         self,
         config: dict[str, Any] | None = None,
-        ark_client: Any = None,
+        provider_client: Any = None,
         ocr_backend: Any = None,
     ) -> None:
         self.config = config or {}
-        self.ark_client = ark_client
+        self.provider_client = provider_client
         if ocr_backend is not None:
             self.ocr_backend = ocr_backend
         else:
@@ -218,10 +218,10 @@ class FigureQAEngine:
             generate_evidence(figure.image_path, checks, evidence_dir, ev_cfg)
 
         # Local VLM review of suspicious regions (plan section 14).
-        VLMVerifier(self.ark_client, self.config).review(checks)
+        VLMVerifier(self.provider_client, self.config).review(checks)
 
         checks.extend(_multimodal_final_checks(
-            self.ark_client, figure.image_path, figure.physical_size_mm))
+            self.provider_client, figure.image_path, figure.physical_size_mm))
 
         return {
             "schema_version": "1.0",

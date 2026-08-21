@@ -57,7 +57,7 @@ def test_classify_schematic_only():
 
 def test_route_element():
     assert route_element({"type": "data_plot"}) == "python"
-    assert route_element({"type": "image_asset"}) == "ark_image"
+    assert route_element({"type": "image_asset"}) == "image_model"
     assert route_element({"type": "label"}) == "svg"
     assert route_element({"type": "equation"}) == "svg"
 
@@ -68,12 +68,12 @@ def test_create_figure_plan_conforms_to_schema():
     assert not list(Draft202012Validator(schema).iter_errors(plan))
 
 
-def test_plan_routes_data_plot_to_python_and_ai_to_ark():
+def test_plan_routes_data_plot_to_python_and_ai_to_image_model():
     plan = create_figure_plan(_request())
     by_id = {a["asset_id"]: a for a in plan["assets"]}
     assert by_id["curve"]["routing"] == "python"
     assert by_id["curve"]["type"] == "data_plot"
-    assert by_id["fiber"]["routing"] == "ark_image"
+    assert by_id["fiber"]["routing"] == "image_model"
     assert by_id["fiber"]["type"] == "image_asset"
     assert by_id["label-a"]["routing"] == "svg"
 

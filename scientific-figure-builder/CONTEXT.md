@@ -91,3 +91,42 @@ four questions are defined by the `REQUIRED_CLARIFICATIONS` table;
 `create_figure_plan` and `collect_required_clarifications` both derive from
 it, so the two output shapes cannot drift.
 _Avoid_: pending question, user input requirement
+
+## Model roles & providers
+
+**Multimodal model**:
+A model that reads images and understands them (reference-figure analysis,
+per-asset validation, and final-figure validation). It never generates images.
+Configured under the `vision_analyze` and `vision_validate` roles.
+_Avoid_: vision model, image-understanding model
+
+**Image-generation model**:
+A model that produces isolated, complex, non-quantitative raster assets. It is
+the only role that truly generates pixels; it is configured under the
+`image_generate` (and optional `image_edit`) roles. Python/SVG output uses no
+model at all.
+_Avoid_: drawing model, image model (ambiguous)
+
+**Model role**:
+A named slot in the `models:` config keyed by function (`image_generate`,
+`image_edit`, `vision_analyze`, `vision_validate`). Each role resolves to one
+model id plus a provider reference. The role keys stay stable while the
+providers underneath change.
+_Avoid_: model, step, flow
+
+**Provider**:
+A named endpoint described by `type` (`openai` or `anthropic`), `base_url`,
+and `key_env`. The `ProviderRouter` sends each model role to its referenced
+provider's transport. No provider is a built-in default; the tool is
+vendor-neutral.
+_Avoid_: vendor, service, upstream
+
+**Provider type**:
+The wire dialect a provider speaks. `openai` covers `/images/generations` and
+`/responses`; `anthropic` covers `/messages` (vision only, no image generation).
+_Avoid_: protocol, API style
+
+**key_env**:
+The name of the environment variable that holds a provider's credential. The
+credential is never stored in config, logs, artifacts, or manifests.
+_Avoid_: api key, key field

@@ -21,8 +21,8 @@ REVIEWABLE_ISSUES = frozenset({
 
 
 class VLMVerifier:
-    def __init__(self, ark_client: Any, config: dict[str, Any] | None = None) -> None:
-        self.ark = ark_client
+    def __init__(self, provider_client: Any, config: dict[str, Any] | None = None) -> None:
+        self.provider = provider_client
         config = config or {}
         mm = config.get("multimodal", {})
         if not isinstance(mm, dict):
@@ -33,7 +33,7 @@ class VLMVerifier:
 
     def review(self, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Enrich failing reviewable checks with a VLM verdict (in place)."""
-        if self.ark is None or not self.enabled:
+        if self.provider is None or not self.enabled:
             return checks
 
         candidates = [
@@ -54,7 +54,7 @@ class VLMVerifier:
             "detail": check.get("detail"),
         }
         try:
-            verdict = self.ark.verify_local_region(
+            verdict = self.provider.verify_local_region(
                 check["evidence_path"], check["check_id"], context)
         except Exception as e:  # noqa: BLE001
             # VLM failure: keep the deterministic result, record the skip.

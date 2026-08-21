@@ -29,7 +29,7 @@
       "type": "image_asset",
       "z_order": 2,
       "dependencies": [],
-      "routing": "ark_image"
+      "routing": "image_model"
     }
   ],
   "style_bible_ref": "default",

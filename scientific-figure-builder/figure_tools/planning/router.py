@@ -6,7 +6,7 @@ from typing import Any
 
 _ELEMENT_ROUTING = {
     "data_plot": "python",
-    "image_asset": "ark_image",
+    "image_asset": "image_model",
     "label": "svg",
     "annotation": "svg",
     "text": "svg",

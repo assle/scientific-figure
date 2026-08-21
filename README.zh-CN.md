@@ -11,7 +11,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License"></a>
   <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Required-purple?logo=astralshuv&logoColor=white" alt="uv"></a>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/OpenCode-Ready-orange" alt="OpenCode"></a>
-  <a href="https://www.volcengine.com/product/ark"><img src="https://img.shields.io/badge/Ark-Volcengine-red" alt="Ark"></a>
+  <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible">
 </p>
 
@@ -92,6 +92,12 @@ style: default
 ./install.sh
 ```
 
+也可以直接从 GitHub 全局安装，无需手动克隆：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/install.sh | sh
+```
+
 这会把你电脑用户级目录中的 skill、命令和私有运行时安装好。你**不需要**把
 仓库复制到每个项目里。安装器默认同时写入 OpenCode 和 Codex 的配置。
 
@@ -122,46 +128,40 @@ style: default
 
 ### 配置模型接口（可选）
 
-模型角色可全局配置在 `~/.config/scientific-figure-builder/config.yaml`，
-项目级覆盖在 `.scientific-figure/project.yaml`；环境变量优先级最高。
-Provider 实例只使用 `openai` 或 `anthropic` 两种适配器类型。OpenAI 兼容
-适配器会在内部选择 Images 或 Responses；`base_url` 应填写 API 根地址，
-不要填写完整操作地址。
+每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
+在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在
+`.scientific-figure/project.yaml` 做项目级覆盖；`SCI_FIG_*` 环境变量覆盖
+模型 id，各 provider 的 `key_env` 指定存放其凭证的环境变量名（优先级最高）。
 
-```bash
-export ARK_API_KEY="<Agent Plan 专属密钥>"
-```
+Provider 只使用两种接口方言：`openai` — 生图走 `/images/generations`、视觉走
+`/responses`；`anthropic` — 仅视觉走 `/messages`。`base_url` 应填 API 根地址，
+不要填完整操作地址。
 
 ```yaml
 # ~/.config/scientific-figure-builder/config.yaml（不要写入 API Key）
 providers:
-  openai:
+  deepseek:
     type: openai
-    base_url: https://ark.cn-beijing.volces.com/api/plan/v3
+    base_url: https://api.deepseek.com/           # DeepSeek 多模态，走 /responses
+    key_env: DEEPSEEK_API_KEY
+  ark_seedream:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3  # Seedream，走 /images/generations
     key_env: ARK_API_KEY
     supports_image_edit: true
-  anthropic:
-    type: anthropic
-    base_url: https://ark.cn-beijing.volces.com/api/plan
-    key_env: ARK_API_KEY
-    auth_scheme: bearer
-    messages_path: /v1/messages
 models:
-  image_generate: {model: "<Seedream 模型>", provider: openai}
-  vision_analyze: {model: "<视觉分析模型>", provider: anthropic}
-  vision_validate: {model: "<校验模型>", provider: anthropic}
+  image_generate: {model: "<Seedream 模型 id>", provider: ark_seedream}
+  vision_analyze: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
+  vision_validate: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
 ```
 
-`image_edit` 是可选角色。没有显式覆盖时，生成式位图的参考图修改会复用
-`image_generate`。脚本图、标签、公式和 SVG 元素必须修改源参数后重新渲染，
-不能交给图片编辑模型。Anthropic 兼容接口只承担视觉分析和校验。
-
-迁移期间仍兼容旧的 `protocol: responses` 配置，以及 `ARK_IMAGE_*`、
-`ARK_*_BASE_URL` 环境变量。
-如果使用自定义 `key_env`，还需要在 OpenCode/Codex 的 MCP 配置中转发这个
-环境变量。
-
-> 纯本地绘图？跳过此步，运行 `./install.sh --without-ark`
+`image_generate` 必须是真正的图片生成模型；`vision_analyze` /
+`vision_validate` 是多模态（读图）模型，可以是与分析步骤同一厂商。
+`image_edit` 为可选角色，省略时回退到 `image_generate`。图表、标签、公式和
+SVG 元素由确定性引擎渲染，绝不发送给模型。凭证永不写入配置、日志、产出物
+或清单；安装脚本会自动转发用户配置里的所有 `key_env` 到 MCP 宿主。若只做
+本地开发，可用 `SCIENTIFIC_FIGURE_CONFIG` 指向自己的配置文件，而不必改
+`~/.config/...`。
 
 ### 在 OpenCode 中使用
 
@@ -213,14 +213,14 @@ RUN_POWERPOINT_E2E=1 uv run pytest tests/e2e/test_powerpoint_import.py -q
 ```
 scientific-figure-builder/
 ├── figure_tools/        # Python 核心包
-│   ├── ark/             # Ark 客户端 + 传输层（mock/real）
+│   ├── providers/       # Provider 传输层 + 客户端（OpenAI/Anthropic）
 │   ├── plotting/        # 图表规范、数据、配方、渲染器
 │   ├── validation/      # 几何规则 + VLM 审核 + 证据图
 │   ├── assembly/        # 图形合成
 │   └── export/          # PNG/SVG/PDF/PPTX 导出
 ├── schemas/             # 6 个版本化 JSON Schema
 ├── templates/           # 默认配置 + 绘图配方
-├── references/          # 路由/工作流/Ark 文档
+├── references/          # 路由/工作流/provider 文档
 └── tests/               # 单元/集成/端到端测试
 ```
 

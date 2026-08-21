@@ -1,8 +1,8 @@
 """MCP server exposing the 14 stable capability tools (plan section 8).
 
-Tool handlers wrap the deterministic engines and the Ark client. The stdio
-JSON-RPC loop lets OpenCode discover and invoke the tools. When Ark credentials
-are present in the environment (ARK_API_KEY + role model IDs), real paid calls
+Tool handlers wrap the deterministic engines and the provider client. The stdio
+JSON-RPC loop lets OpenCode discover and invoke the tools. When configured
+provider credentials are present in the environment, real paid calls
 are made under a run budget; otherwise a mock transport is used (safe default).
 """
 
@@ -15,16 +15,11 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from figure_tools.ark.client import ArkClient
-from figure_tools.ark.generic_transport import ProviderRouter, provider_key_env
-from figure_tools.ark.transport import MockArkTransport
+from figure_tools.providers.client import ProviderClient
+from figure_tools.providers.generic_transport import ProviderRouter, provider_key_env
+from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.assembly.compositor import compose_assets
-from figure_tools.config import (
-    DEFAULT_PROVIDER_NAME,
-    configured_models,
-    configured_providers,
-    initialize_project,
-)
+from figure_tools.config import configured_models, configured_providers, initialize_project
 from figure_tools.export.publish import export_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
@@ -63,37 +58,38 @@ def _project_dir_for_paths(*values: str | Path | None) -> Path | None:
 
 
 def _client(output_dir: str | Path | None = None,
-            project_dir: str | Path | None = None) -> ArkClient:
+            project_dir: str | Path | None = None) -> ProviderClient:
     from figure_tools.state import Cache, RunState
 
     resolved_project_dir = project_dir or _project_dir_for_paths(output_dir)
     models = configured_models(resolved_project_dir)
     providers = configured_providers(resolved_project_dir)
     provider_names = {
-        model_cfg.get("provider", DEFAULT_PROVIDER_NAME)
+        name
         for model_cfg in (models or {}).values()
+        if (name := model_cfg.get("provider"))
     }
-    if models and (
-        provider_names != {DEFAULT_PROVIDER_NAME}
-        or DEFAULT_PROVIDER_NAME in providers
-        or os.environ.get("ARK_API_KEY")
-    ):
+    has_live_provider = any(
+        (provider := providers.get(name)) is not None
+        and bool(os.environ.get(provider_key_env(name, provider)))
+        for name in provider_names
+    )
+    if models and has_live_provider:
         transport = ProviderRouter(models, providers)
-        api_key = os.environ.get("ARK_API_KEY")
-        api_keys = [key for key in (os.environ.get("ARK_API_KEY_CODING"),) if key]
-        api_keys.extend(
+        api_keys = [
             value
-            for provider_name in provider_names
-            if (provider := providers.get(str(provider_name))) is not None
+            for name in provider_names
+            if (provider := providers.get(name)) is not None
             if (value := os.environ.get(
-                provider_key_env(str(provider_name), provider)
+                provider_key_env(name, provider)
             )) is not None
-        )
+        ]
+        api_key = api_keys[0] if api_keys else None
         budget = dict(_DEFAULT_BUDGET)
         if "image_edit" not in models:
             budget.pop("edits", None)
     else:
-        transport = MockArkTransport()
+        transport = MockProviderTransport()
         models = models or {
             "image_generate": {"model": "mock"},
             "image_edit": {"model": "mock"},
@@ -104,7 +100,7 @@ def _client(output_dir: str | Path | None = None,
         api_keys = []
         budget = {}
 
-    return ArkClient(
+    return ProviderClient(
         models, transport, api_key=api_key, api_keys=api_keys,
         state=RunState("mcp", budget=budget),
         cache=Cache(_CACHE_DIR), output_dir=Path(output_dir) if output_dir else None,
@@ -203,7 +199,7 @@ def _h_validate_assembled_figure(args):
     project_dir = args.get("project_dir") or _project_dir_for_paths(
         args["composed_image_path"], args.get("layout_manifest_path"))
     return FigureQAEngine(config=args.get("qa_config") or {},
-                          ark_client=_client(
+                          provider_client=_client(
                               output_dir=Path(args["composed_image_path"]).parent,
                               project_dir=project_dir)).validate_final(
         AssembledFigure(

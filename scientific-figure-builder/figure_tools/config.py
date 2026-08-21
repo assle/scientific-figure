@@ -27,13 +27,12 @@ MODEL_ROLES = (
     "vision_validate",
 )
 ROLE_ENV_VARS = {
-    "image_generate": "ARK_IMAGE_GENERATE",
-    "image_edit": "ARK_IMAGE_EDIT",
-    "vision_analyze": "ARK_VISION_ANALYZE",
-    "vision_validate": "ARK_VISION_VALIDATE",
+    "image_generate": "SCI_FIG_IMAGE_GENERATE",
+    "image_edit": "SCI_FIG_IMAGE_EDIT",
+    "vision_analyze": "SCI_FIG_VISION_ANALYZE",
+    "vision_validate": "SCI_FIG_VISION_VALIDATE",
 }
 PLACEHOLDER_MODEL = "<fixed-model-or-endpoint-id>"
-DEFAULT_PROVIDER_NAME = "ark"
 PROVIDER_TYPES = ("openai", "anthropic")
 LEGACY_PROVIDER_PROTOCOLS = {
     "responses": "openai",

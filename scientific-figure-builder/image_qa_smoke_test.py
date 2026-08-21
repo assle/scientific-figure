@@ -84,7 +84,7 @@ def main():
             "evidence": {"enabled": True, "crop_padding_pixels": 30,
                          "crop_scale": 4, "draw_boxes": True},
         },
-        ark_client=None,  # offline: multimodal/VLM skipped
+        provider_client=None,  # offline: multimodal/VLM skipped
     )
     plan = {"schema_version": "1.0", "figure_id": "overlap_test", "run_id": "overlap",
             "assets": [], "text_elements": [], "approval": {"status": "approved"}}

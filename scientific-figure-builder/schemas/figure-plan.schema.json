@@ -116,7 +116,7 @@
         "dependencies": { "type": "array", "items": { "type": "string" } },
         "routing": {
           "type": "string",
-          "enum": ["python", "svg", "ark_image", "ark_edit", "ark_vision", "pptx"]
+          "enum": ["python", "svg", "image_model", "pptx"]
         }
       }
     },
