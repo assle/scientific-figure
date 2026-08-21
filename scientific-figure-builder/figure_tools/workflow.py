@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from figure_tools.assembly.compositor import compose_assets
+from figure_tools.export.publish import export_figure
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.layout_analysis import analyze_layout
@@ -23,7 +24,8 @@ from figure_tools.planning.planner import (
 )
 from figure_tools.planning.router import classify_task
 from figure_tools.report import write_generation_report
-from figure_tools.validation.final_checks import validate_assembled_figure
+from figure_tools.validation.engine import FigureQAEngine
+from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
@@ -36,7 +38,7 @@ class FigureWorkflow:
         request: dict[str, Any],
         config: dict[str, Any],
         run_dir: str | Path,
-        ark_client: Any,
+        provider_client: Any,
         state: Any,
         base_dir: str | Path = ".",
         compose_dpi: int = 300,
@@ -44,7 +46,7 @@ class FigureWorkflow:
         self.request = request
         self.config = config
         self.run_dir = Path(run_dir)
-        self.ark = ark_client
+        self.provider = provider_client
         self.state = state
         self.base_dir = Path(base_dir)
         self.compose_dpi = compose_dpi
@@ -119,7 +121,7 @@ class FigureWorkflow:
             anchor_id = ai_elements[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
             if not anchor_path.exists():
-                self.ark.generate_image_asset(
+                self.provider.generate_image_asset(
                     ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
             if not style_anchor_approved:
                 self.state.request_approval("style_anchor_approval", "pending")
@@ -149,45 +151,37 @@ class FigureWorkflow:
                                          export_target=export_target)
         composed_png = Path(assembly_result["files"]["png"])
 
-        # Final validation (plan section 17.1): thread the ark client and the
+        # Final validation (plan section 17.1): thread the provider client and the
         # assembly layout manifest so the multimodal final check actually runs.
-        final = validate_assembled_figure(
-            figure_plan=plan,
-            asset_manifest=manifest,
-            composed_image_path=composed_png,
-            physical_size_mm=self._canvas_mm(),
+        final = FigureQAEngine(
+            config=self.config.get("validation", {}),
+            provider_client=self.provider,
+        ).validate_final(
+            AssembledFigure(
+                figure_plan=plan,
+                asset_manifest=manifest,
+                image_path=composed_png,
+                layout_manifest_path=assembly_result.get("layout_manifest"),
+                physical_size_mm=self._canvas_mm(),
+                asset_placements={p["asset_id"]: p["bbox"] for p in placements
+                                  if p.get("asset_id")},
+            ),
             run_id=self.state.run_id,
-            layout_manifest_path=assembly_result.get("layout_manifest"),
-            ark_client=self.ark,
-            qa_config=self.config.get("validation", {}),
             evidence_dir=self.run_dir / "validation" / "evidence",
-            asset_placements={p["asset_id"]: p["bbox"] for p in placements
-                              if p.get("asset_id")},
         )
         validation_reports.append(final)
         self._write_json("validation/validation_report.json", final)
         self._write_json("validation/final.json", final)
 
-        # Export gate (spec 0001, improvement 3).
-        exported = False
-        export_blocked_reason: str | None = None
-        if not validation_reports:
-            export_blocked_reason = (
-                "no validation reports found; run validation before export"
-            )
-        elif not force_export and any(r["summary"]["blocking"] for r in validation_reports):
-            export_blocked_reason = (
-                "validation reports contain blocking errors; "
-                "use force_export=True to override"
-            )
-        else:
-            exports = self.run_dir / "exports"
-            exports.mkdir(parents=True, exist_ok=True)
-            for ext in ("png", "svg", "pdf"):
-                src = assembly_dir / f"figure.{ext}"
-                if src.exists():
-                    shutil.copyfile(src, exports / f"figure.{ext}")
-            exported = True
+        # Export gate (spec 0001, improvement 3): one shared deep module.
+        export_result = export_figure(
+            validation_reports,
+            source_dir=assembly_dir,
+            output_dir=self.run_dir / "exports",
+            force_export=force_export,
+        )
+        exported = bool(export_result["files"])
+        export_blocked_reason = export_result["export_blocked_reason"]
 
         # Root cause analysis (spec 0001, improvement 4): triggered by blocking
         # (error-level) failures. Warning-level failures are recorded but do not
@@ -377,8 +371,8 @@ class FigureWorkflow:
     def _safe_gen_ai(self, panel, el):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
-            meta = self.ark.generate_image_asset(el["prompt"], {}, output_path=path)
-            report = self.ark.validate_image_asset(
+            meta = self.provider.generate_image_asset(el["prompt"], {}, output_path=path)
+            report = self.provider.validate_image_asset(
                 path, physical_size_mm=tuple(panel["physical_size"]))
             return (el["element_id"], meta, report, None)
         except Exception as e:  # noqa: BLE001
@@ -450,7 +444,7 @@ class FigureWorkflow:
         }
 
     def _vector_meta(self, asset_id, atype, path, plan):
-        from figure_tools.ark.client import file_hash
+        from figure_tools.providers.client import file_hash
 
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),

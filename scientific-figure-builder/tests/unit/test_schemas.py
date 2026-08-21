@@ -96,10 +96,14 @@ def test_default_project_yaml_is_valid_and_non_secret() -> None:
     assert project_yaml.is_file(), "default-project.yaml template missing"
     data = yaml.safe_load(project_yaml.read_text(encoding="utf-8"))
     assert isinstance(data, dict)
-    # Must contain the four model roles from plan section 5.
+    # Generative image editing is optional; reproducible assets are re-rendered.
     models = data.get("models", {})
-    for role in ("image_generate", "image_edit", "vision_analyze", "vision_validate"):
+    for role in ("image_generate", "vision_analyze", "vision_validate"):
         assert role in models, f"default-project.yaml missing model role {role}"
+    assert "image_edit" not in models
+    template_text = project_yaml.read_text(encoding="utf-8")
+    assert "\n  # image_edit:\n" in template_text
+    assert "\n# image_edit:\n" not in template_text
 
     # Project config must contain no secrets (plan section 5). Comments are not
     # parsed YAML, so explanatory mentions of ARK_API_KEY are allowed; actual
@@ -126,7 +130,7 @@ def test_publication_mplstyle_exists() -> None:
 
 
 def test_network_only_via_transport_abstraction() -> None:
-    """All network I/O is confined to the ark/ subpackage (the transport seam).
+    """All network I/O is confined to the providers/ subpackage (the transport seam).
     No direct HTTP/network call sites exist elsewhere in figure_tools."""
     forbidden_patterns = [
         r"volcengine",
@@ -137,10 +141,10 @@ def test_network_only_via_transport_abstraction() -> None:
     ]
     offenders = []
     for py in (ROOT / "figure_tools").rglob("*.py"):
-        if "ark" in py.relative_to(ROOT).parts:  # ark/ is the network boundary
+        if "providers" in py.relative_to(ROOT).parts:  # providers/ is the boundary
             continue
         text = py.read_text(encoding="utf-8")
         for pat in forbidden_patterns:
             if re.search(pat, text, re.IGNORECASE):
                 offenders.append(f"{py.relative_to(ROOT)} matches {pat}")
-    assert not offenders, "direct network call site outside ark/: " + ", ".join(offenders)
+    assert not offenders, "direct network call site outside providers/: " + ", ".join(offenders)

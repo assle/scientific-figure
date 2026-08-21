@@ -1,4 +1,4 @@
-"""Ark client: fixed-role model integration with budget, cache, and retry.
+"""Provider client: fixed-role model integration with budget, cache, and retry.
 
 Plan sections 5, 8, 12, 17. Tested with an injectable transport (no paid calls).
 The API key is never serialized into artifacts, logs, or manifests.
@@ -11,14 +11,21 @@ import io
 import json
 import threading
 import time
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from PIL import Image
 
-from figure_tools.ark.auth import redact
-from figure_tools.ark.transport import ArkError, RateLimitError, ArkTransport
+from figure_tools.providers.auth import redact
+from figure_tools.providers.transport import (
+    ProviderError,
+    ProviderTransport,
+    RateLimitError,
+    ROLE_TO_MODEL_CONFIG,
+    model_config_for_role,
+)
 from figure_tools.state import Cache, RunState
 from figure_tools.validation.image_checks import deterministic_image_checks
 from figure_tools.validation.summary import summarize_checks
@@ -32,22 +39,13 @@ def _sha(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# Internal paid-call roles -> config model-role keys (plan section 5).
-ROLE_TO_CONFIG = {
-    "generation": "image_generate",
-    "edits": "image_edit",
-    "reference_analysis": "vision_analyze",
-    "validations": "vision_validate",
-    "final_validation": "vision_validate",
-}
-
-
-class ArkClient:
+class ProviderClient:
     def __init__(
         self,
         models: dict[str, dict],
-        transport: ArkTransport,
+        transport: ProviderTransport,
         api_key: str | None = None,
+        api_keys: Iterable[str] | None = None,
         state: RunState | None = None,
         cache: Cache | None = None,
         output_dir: str | Path | None = None,
@@ -55,18 +53,31 @@ class ArkClient:
         self.models = models
         self.transport = transport
         self.api_key = api_key
+        self.api_keys = tuple(dict.fromkeys(
+            key for key in (api_key, *(api_keys or ())) if key
+        ))
         self.state = state
         self.cache = cache
         self.output_dir = Path(output_dir) if output_dir else None
         self._lock = threading.Lock()
 
     def _role_model(self, role: str) -> str:
-        return self.models[ROLE_TO_CONFIG[role]]["model"]
+        resolved = model_config_for_role(self.models, role)
+        config_role = ROLE_TO_MODEL_CONFIG.get(role, role)
+        model_config = resolved[1] if resolved is not None else None
+        if not model_config or not model_config.get("model"):
+            raise ProviderError(
+                f"model role {config_role!r} is not configured for {role!r}"
+            )
+        return str(model_config["model"])
 
     def _record_call(self, role: str) -> None:
         if self.state is not None:
+            budget_role = role
+            if role == "edits" and "image_edit" not in self.models:
+                budget_role = "generation"
             with self._lock:
-                self.state.record_call(role)
+                self.state.record_call(budget_role)
 
     def _cache_hit(self) -> None:
         if self.state is not None:
@@ -78,7 +89,9 @@ class ArkClient:
             return
         prompts_dir = self.output_dir / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
-        safe = redact(prompt, self.api_key)
+        safe = prompt
+        for api_key in self.api_keys:
+            safe = redact(safe, api_key)
         (prompts_dir / f"{role}_{_sha(prompt)[:16]}.txt").write_text(safe, encoding="utf-8")
 
     def _post(self, role: str, payload: dict, image_paths: list[str] | None = None,

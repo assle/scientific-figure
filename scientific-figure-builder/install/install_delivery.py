@@ -57,6 +57,7 @@ RUNTIME_ITEMS = (
     "install/install_delivery.py",
     "install/configure_opencode.py",
     "install/configure_codex.py",
+    "install/provider_environment.py",
     "install.sh",
     "SKILL.md",
     "pyproject.toml",
@@ -187,15 +188,13 @@ def _replace_file(source: Path, destination: Path) -> Path | None:
     return backup
 
 
-def sync_runtime(runtime_dir: Path, *, with_ark: bool = True) -> Path:
+def sync_runtime(runtime_dir: Path) -> Path:
     uv = shutil.which("uv")
     if uv is None:
         raise RuntimeError(
             "`uv` is required. Install it first from https://docs.astral.sh/uv/."
         )
     command = [uv, "sync", "--frozen", "--no-dev", "--directory", str(runtime_dir)]
-    if with_ark:
-        command.extend(["--extra", "ark"])
     subprocess.run(command, check=True)
     candidates = (
         runtime_dir / ".venv" / "bin" / "python",
@@ -238,7 +237,6 @@ def install_delivery(
     source_dir: Path,
     paths: DeliveryPaths,
     *,
-    with_ark: bool = True,
     runtime_sync: Callable[..., Path] = sync_runtime,
     run_smoke_test: bool = True,
     install_opencode: bool = True,
@@ -283,7 +281,7 @@ def install_delivery(
 
         runtime_backup = _replace_directory(staged_runtime, paths.runtime_dir)
         try:
-            runtime_python = runtime_sync(paths.runtime_dir, with_ark=with_ark)
+            runtime_python = runtime_sync(paths.runtime_dir)
             if run_smoke_test:
                 smoke_test_mcp(runtime_python, paths.runtime_dir)
         except Exception:
@@ -448,11 +446,6 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--without-ark",
-        action="store_true",
-        help="Skip the optional Volcengine Ark SDK and install local plotting only.",
-    )
-    parser.add_argument(
         "--verify",
         action="store_true",
         help="Verify an existing installation without changing it.",
@@ -481,7 +474,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = install_delivery(
             args.source_dir,
             paths,
-            with_ark=not args.without_ark,
             install_opencode=install_opencode,
             install_codex=install_codex,
         )
@@ -510,7 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if install_codex:
         agents.append("Codex")
     print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
-    print("Ark credentials stay in environment variables and were not written to disk.")
+    print("Provider credentials stay in environment variables and were not written to disk.")
     return 0
 
 

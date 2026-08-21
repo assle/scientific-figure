@@ -11,7 +11,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License"></a>
   <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Required-purple?logo=astralshuv&logoColor=white" alt="uv"></a>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/OpenCode-Ready-orange" alt="OpenCode"></a>
-  <a href="https://www.volcengine.com/product/ark"><img src="https://img.shields.io/badge/Ark-Volcengine-red" alt="Ark"></a>
+  <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible">
 </p>
 
@@ -30,7 +30,7 @@
 | | 功能 | 说明 |
 |---|---|---|
 | 📊 | **确定性数据图** | 折线/散点/柱状/热图/误差棒/多面板 - CSV 转图，字节级可复现 |
-| 🎨 | **AI 素材生成** | Ark 图像模型生成隔离视觉元素（设备示意图等），自动去背景 |
+| 🎨 | **AI 素材生成** | 可配置图像模型生成隔离视觉元素（设备示意图等），自动去背景 |
 | 🏷️ | **SVG 标签** | 箭头、公式、标注，全部确定性生成 |
 | 🧩 | **自动拼装** | 多元素按 z-order 合成，导出 PNG/SVG/PDF |
 | 🎯 | **导出场景** | `general` 输出跨工具通用的路径文字，`ppt` 输出适合 PowerPoint 的可编辑 SVG |
@@ -92,6 +92,12 @@ style: default
 ./install.sh
 ```
 
+也可以直接从 GitHub 全局安装，无需手动克隆：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/install.sh | sh
+```
+
 这会把你电脑用户级目录中的 skill、命令和私有运行时安装好。你**不需要**把
 仓库复制到每个项目里。安装器默认同时写入 OpenCode 和 Codex 的配置。
 
@@ -120,18 +126,42 @@ style: default
 [OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
 仓库本身不会变成你项目的一部分。
 
-### 配置 Ark（可选）
+### 配置模型接口（可选）
 
-```bash
-export ARK_API_KEY="<密钥>"
-export ARK_API_KEY_CODING="<coding 套餐密钥>"
-export ARK_IMAGE_GENERATE="<模型 ID>"
-export ARK_IMAGE_EDIT="<模型 ID>"
-export ARK_VISION_ANALYZE="<模型 ID>"
-export ARK_VISION_VALIDATE="<模型 ID>"
+每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
+在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在
+`.scientific-figure/project.yaml` 做项目级覆盖；`SCI_FIG_*` 环境变量覆盖
+模型 id，各 provider 的 `key_env` 指定存放其凭证的环境变量名（优先级最高）。
+
+Provider 只使用两种接口方言：`openai` — 生图走 `/images/generations`、视觉走
+`/responses`；`anthropic` — 仅视觉走 `/messages`。`base_url` 应填 API 根地址，
+不要填完整操作地址。
+
+```yaml
+# ~/.config/scientific-figure-builder/config.yaml（不要写入 API Key）
+providers:
+  deepseek:
+    type: openai
+    base_url: https://api.deepseek.com/           # DeepSeek 多模态，走 /responses
+    key_env: DEEPSEEK_API_KEY
+  ark_seedream:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3  # Seedream，走 /images/generations
+    key_env: ARK_API_KEY
+    supports_image_edit: true
+models:
+  image_generate: {model: "<Seedream 模型 id>", provider: ark_seedream}
+  vision_analyze: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
+  vision_validate: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
 ```
 
-> 纯本地绘图？跳过此步，运行 `./install.sh --without-ark`
+`image_generate` 必须是真正的图片生成模型；`vision_analyze` /
+`vision_validate` 是多模态（读图）模型，可以是与分析步骤同一厂商。
+`image_edit` 为可选角色，省略时回退到 `image_generate`。图表、标签、公式和
+SVG 元素由确定性引擎渲染，绝不发送给模型。凭证永不写入配置、日志、产出物
+或清单；安装脚本会自动转发用户配置里的所有 `key_env` 到 MCP 宿主。若只做
+本地开发，可用 `SCIENTIFIC_FIGURE_CONFIG` 指向自己的配置文件，而不必改
+`~/.config/...`。
 
 ### 在 OpenCode 中使用
 
@@ -183,14 +213,14 @@ RUN_POWERPOINT_E2E=1 uv run pytest tests/e2e/test_powerpoint_import.py -q
 ```
 scientific-figure-builder/
 ├── figure_tools/        # Python 核心包
-│   ├── ark/             # Ark 客户端 + 传输层（mock/real）
+│   ├── providers/       # Provider 传输层 + 客户端（OpenAI/Anthropic）
 │   ├── plotting/        # 图表规范、数据、配方、渲染器
 │   ├── validation/      # 几何规则 + VLM 审核 + 证据图
 │   ├── assembly/        # 图形合成
 │   └── export/          # PNG/SVG/PDF/PPTX 导出
 ├── schemas/             # 6 个版本化 JSON Schema
 ├── templates/           # 默认配置 + 绘图配方
-├── references/          # 路由/工作流/Ark 文档
+├── references/          # 路由/工作流/provider 文档
 └── tests/               # 单元/集成/端到端测试
 ```
 

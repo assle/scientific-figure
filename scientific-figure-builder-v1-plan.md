@@ -182,7 +182,7 @@ scientific-figure-builder/
 ├── references/
 │   ├── routing-rules.md
 │   ├── workflow-details.md
-│   ├── ark-interfaces.md
+│   ├── provider-interfaces.md
 │   ├── output-contract.md
 │   └── optics-materials-templates.md
 ├── templates/
@@ -711,6 +711,5 @@ v1 is complete only when:
 Ark APIs and available models can change. Before implementing the provider
 client, verify the current official Agent Plan documentation, request schema,
 authentication requirements, model IDs, image-edit support, output retention,
-and rate limits. Keep any updated API details in `references/ark-interfaces.md`,
+and rate limits. Keep any updated API details in `references/provider-interfaces.md`,
 not in the core Skill workflow.
-

@@ -1,8 +1,8 @@
 """MCP server exposing the 14 stable capability tools (plan section 8).
 
-Tool handlers wrap the deterministic engines and the Ark client. The stdio
-JSON-RPC loop lets OpenCode discover and invoke the tools. When Ark credentials
-are present in the environment (ARK_API_KEY + role model IDs), real paid calls
+Tool handlers wrap the deterministic engines and the provider client. The stdio
+JSON-RPC loop lets OpenCode discover and invoke the tools. When configured
+provider credentials are present in the environment, real paid calls
 are made under a run budget; otherwise a mock transport is used (safe default).
 """
 
@@ -15,16 +15,18 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from figure_tools.ark.client import ArkClient
-from figure_tools.ark.transport import MockArkTransport
+from figure_tools.providers.client import ProviderClient
+from figure_tools.providers.generic_transport import ProviderRouter, provider_key_env
+from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.assembly.compositor import compose_assets
-from figure_tools.config import initialize_project
-from figure_tools.export.exporters import export_pptx
+from figure_tools.config import configured_models, configured_providers, initialize_project
+from figure_tools.export.publish import export_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.planner import collect_required_clarifications, create_figure_plan
-from figure_tools.validation.final_checks import validate_assembled_figure
+from figure_tools.validation.engine import FigureQAEngine
+from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
@@ -39,35 +41,55 @@ _DEFAULT_BUDGET = {
 }
 
 
-def _models_from_env() -> dict[str, dict] | None:
-    """Read the four fixed model/Endpoint IDs from the environment (user-local
-    private config, plan section 5). Returns None if not all are set."""
-    roles = {
-        "image_generate": "ARK_IMAGE_GENERATE",
-        "image_edit": "ARK_IMAGE_EDIT",
-        "vision_analyze": "ARK_VISION_ANALYZE",
-        "vision_validate": "ARK_VISION_VALIDATE",
-    }
-    models = {role: {"model": os.environ[var]} for role, var in roles.items()
-              if os.environ.get(var)}
-    if len(models) != len(roles):
-        return None
-    return models
+def _project_dir_for_paths(*values: str | Path | None) -> Path | None:
+    explicit_dir = os.environ.get("SCIENTIFIC_FIGURE_PROJECT_DIR")
+    if explicit_dir:
+        return Path(explicit_dir)
+    for value in values:
+        if not value:
+            continue
+        path = Path(value)
+        if not path.is_dir():
+            path = path.parent
+        for candidate in (path, *path.parents):
+            if (candidate / ".scientific-figure").is_dir():
+                return candidate
+    return None
 
 
-def _client(output_dir: str | Path | None = None) -> ArkClient:
+def _client(output_dir: str | Path | None = None,
+            project_dir: str | Path | None = None) -> ProviderClient:
     from figure_tools.state import Cache, RunState
 
-    models = _models_from_env()
-    if models is not None and os.environ.get("ARK_API_KEY"):
-        # Real Ark (Phase 7). Plan routing is handled by RealArkTransport.
-        from figure_tools.ark.real_transport import RealArkTransport
-
-        transport = RealArkTransport()
-        api_key = os.environ["ARK_API_KEY"]
-        budget = _DEFAULT_BUDGET
+    resolved_project_dir = project_dir or _project_dir_for_paths(output_dir)
+    models = configured_models(resolved_project_dir)
+    providers = configured_providers(resolved_project_dir)
+    provider_names = {
+        name
+        for model_cfg in (models or {}).values()
+        if (name := model_cfg.get("provider"))
+    }
+    has_live_provider = any(
+        (provider := providers.get(name)) is not None
+        and bool(os.environ.get(provider_key_env(name, provider)))
+        for name in provider_names
+    )
+    if models and has_live_provider:
+        transport = ProviderRouter(models, providers)
+        api_keys = [
+            value
+            for name in provider_names
+            if (provider := providers.get(name)) is not None
+            if (value := os.environ.get(
+                provider_key_env(name, provider)
+            )) is not None
+        ]
+        api_key = api_keys[0] if api_keys else None
+        budget = dict(_DEFAULT_BUDGET)
+        if "image_edit" not in models:
+            budget.pop("edits", None)
     else:
-        transport = MockArkTransport()
+        transport = MockProviderTransport()
         models = models or {
             "image_generate": {"model": "mock"},
             "image_edit": {"model": "mock"},
@@ -75,10 +97,11 @@ def _client(output_dir: str | Path | None = None) -> ArkClient:
             "vision_validate": {"model": "mock"},
         }
         api_key = None
+        api_keys = []
         budget = {}
 
-    return ArkClient(
-        models, transport, api_key=api_key,
+    return ProviderClient(
+        models, transport, api_key=api_key, api_keys=api_keys,
         state=RunState("mcp", budget=budget),
         cache=Cache(_CACHE_DIR), output_dir=Path(output_dir) if output_dir else None,
     )
@@ -91,7 +114,9 @@ def _h_initialize_figure_project(args):
 
 
 def _h_analyze_reference_figure(args):
-    return _client().analyze_reference_figure(args["image_path"], prompt=args.get("prompt"))
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["image_path"])
+    return _client(project_dir=project_dir).analyze_reference_figure(
+        args["image_path"], prompt=args.get("prompt"))
 
 
 def _h_create_figure_plan(args):
@@ -108,13 +133,19 @@ def _h_create_layout_wireframe(args):
 
 
 def _h_generate_image_asset(args):
-    meta = _client().generate_image_asset(args["prompt"], {}, output_path=args["output_path"])
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["output_path"])
+    meta = _client(output_dir=Path(args["output_path"]).parent,
+                   project_dir=project_dir).generate_image_asset(
+        args["prompt"], {}, output_path=args["output_path"])
     return {"meta": meta}
 
 
 def _h_edit_image_asset(args):
-    meta = _client().edit_image_asset(args["parent_path"], args["prompt"], {},
-                                      output_path=args["output_path"])
+    project_dir = args.get("project_dir") or _project_dir_for_paths(
+        args["parent_path"], args["output_path"])
+    meta = _client(output_dir=Path(args["output_path"]).parent,
+                   project_dir=project_dir).edit_image_asset(
+        args["parent_path"], args["prompt"], {}, output_path=args["output_path"])
     return {"meta": meta}
 
 
@@ -139,7 +170,8 @@ def _h_render_vector_element(args):
 
 
 def _h_validate_image_asset(args):
-    report = _client().validate_image_asset(
+    project_dir = args.get("project_dir") or _project_dir_for_paths(args["image_path"])
+    report = _client(project_dir=project_dir).validate_image_asset(
         args["image_path"],
         physical_size_mm=tuple(args["physical_size_mm"]) if args.get("physical_size_mm") else None)
     return report
@@ -164,50 +196,42 @@ def _h_assemble_figure(args):
 
 
 def _h_validate_assembled_figure(args):
-    return validate_assembled_figure(
-        args["figure_plan"], args["asset_manifest"], args["composed_image_path"],
-        physical_size_mm=tuple(args["physical_size_mm"]),
+    project_dir = args.get("project_dir") or _project_dir_for_paths(
+        args["composed_image_path"], args.get("layout_manifest_path"))
+    return FigureQAEngine(config=args.get("qa_config") or {},
+                          provider_client=_client(
+                              output_dir=Path(args["composed_image_path"]).parent,
+                              project_dir=project_dir)).validate_final(
+        AssembledFigure(
+            figure_plan=args["figure_plan"],
+            asset_manifest=args["asset_manifest"],
+            image_path=args["composed_image_path"],
+            layout_manifest_path=args.get("layout_manifest_path"),
+            physical_size_mm=tuple(args["physical_size_mm"]),
+            asset_placements=args.get("asset_placements"),
+        ),
         run_id=args.get("run_id"),
-        ark_client=_client())
+    )
 
 
 def _h_export_figure(args):
-    import shutil
+    import json as _json
 
     source_dir = Path(args["source_dir"])
     output_dir = Path(args["output_dir"])
-    force_export = args.get("force_export", False)
-
-    # Validation gate (spec 0001, improvement 3): refuse export if no
-    # validation report exists or if it contains blocking errors.
     validation_report_path = source_dir.parent / "validation" / "validation_report.json"
-    if not force_export:
-        if not validation_report_path.exists():
-            return {"files": {}, "export_blocked_reason": (
-                f"no validation report found at {validation_report_path}; "
-                "run validation before export or use force_export=True")}
-        import json as _json
-
+    if validation_report_path.exists():
         report = _json.loads(validation_report_path.read_text(encoding="utf-8"))
-        if report.get("summary", {}).get("blocking", False):
-            return {"files": {}, "export_blocked_reason": (
-                "validation report contains blocking errors; "
-                "use force_export=True to override")}
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    formats = args.get("formats", ["png", "svg", "pdf"])
-    files = {}
-    for ext in formats:
-        src = source_dir / f"figure.{ext}"
-        if src.exists():
-            dst = output_dir / f"figure.{ext}"
-            shutil.copyfile(src, dst)
-            files[ext] = str(dst)
-    if args.get("include_pptx"):
-        export_pptx(args.get("placements", []), output_dir / "figure.pptx",
-                    tuple(args["canvas_mm"]), title=args.get("title"))
-        files["pptx"] = str(output_dir / "figure.pptx")
-    return {"files": files}
+        validation_reports = [report]
+    else:
+        validation_reports = []
+    return export_figure(
+        validation_reports,
+        source_dir=source_dir,
+        output_dir=output_dir,
+        force_export=args.get("force_export", False),
+        formats=args.get("formats", ["png", "svg", "pdf"]),
+    )
 
 
 def _h_resume_figure_run(args):
@@ -257,12 +281,15 @@ _HANDLERS: dict[str, Callable[[dict], Any]] = {
 
 _DESCRIPTIONS = {
     "initialize_figure_project": "Create non-secret project config (.scientific-figure/).",
-    "analyze_reference_figure": "Analyze a reference figure via the Ark vision model.",
+    "analyze_reference_figure": "Analyze a reference figure via the configured vision model.",
     "check_figure_requirements": "Return unresolved required questions that must be answered before any generation.",
     "create_figure_plan": "Build a versioned figure plan from a structured request.",
     "create_layout_wireframe": "Render a no-cost SVG layout wireframe from a plan.",
-    "generate_image_asset": "Generate one isolated transparent asset via the Ark image model.",
-    "edit_image_asset": "Edit an existing asset via reference-image editing.",
+    "generate_image_asset": "Generate one isolated transparent asset via the configured image model.",
+    "edit_image_asset": (
+        "Revise a generated or source-less raster asset; plots and vectors "
+        "must be re-rendered from source."
+    ),
     "render_scientific_plot": "Render a reproducible data plot from a plot spec.",
     "render_vector_element": "Render an SVG label or LaTeX equation.",
     "validate_image_asset": "Two-layer validation of an image asset.",

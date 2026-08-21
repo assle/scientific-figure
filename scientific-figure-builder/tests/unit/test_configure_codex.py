@@ -29,6 +29,8 @@ def test_update_creates_codex_mcp_table(tmp_path: Path):
     assert "[mcp_servers.scientific-figure]" in text
     assert 'command = "' in text
     assert "env_vars = [" in text
+    for name in ("SCIENTIFIC_FIGURE_CONFIG", "SCI_FIG_IMAGE_GENERATE", "OPENAI_API_KEY"):
+        assert f'"{name}"' in text
     assert "[mcp_servers.scientific-figure.env]" not in text
 
     verified = verify_codex_config(config, DEFAULT_MCP_NAME)
@@ -43,7 +45,7 @@ def test_update_preserves_unrelated_config_and_env_subtable(tmp_path: Path):
         "[mcp_servers.other]\n"
         'command = "other"\n'
         "[mcp_servers.scientific-figure.env]\n"
-        'ARK_VISION_ANALYZE = "vision-model"\n',
+        'SCI_FIG_VISION_ANALYZE = "vision-model"\n',
         encoding="utf-8",
     )
     entry = _entry(tmp_path)
@@ -53,7 +55,7 @@ def test_update_preserves_unrelated_config_and_env_subtable(tmp_path: Path):
     assert 'model = "some-model"' in text
     assert "[mcp_servers.other]" in text
     assert "[mcp_servers.scientific-figure.env]" in text
-    assert 'ARK_VISION_ANALYZE = "vision-model"' in text
+    assert 'SCI_FIG_VISION_ANALYZE = "vision-model"' in text
     assert "env_vars = [" not in text
 
 

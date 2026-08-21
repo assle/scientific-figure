@@ -13,7 +13,7 @@
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License"></a>
   <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Required-purple?logo=astralshuv&logoColor=white" alt="uv"></a>
   <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/OpenCode-Ready-orange?logo=data:image/svg+xml;base64,&logoColor=white" alt="OpenCode"></a>
-  <a href="https://www.volcengine.com/product/ark"><img src="https://img.shields.io/badge/Ark-Volcengine-red" alt="Ark"></a>
+  <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible">
 </p>
 
@@ -32,7 +32,7 @@ Transform natural-language requests into **reproducible, publication-quality** s
 | | Feature | Description |
 |---|---|---|
 | 📊 | **Deterministic Plots** | Line / scatter / bar / heatmap / error bar / multipanel — CSV to figure, byte-reproducible |
-| 🎨 | **AI Assets** | Ark image model generates isolated visual elements (device schematics, etc.) with auto background removal |
+| 🎨 | **AI Assets** | Configurable image models generate isolated visual elements (device schematics, etc.) with auto background removal |
 | 🏷️ | **SVG Labels** | Arrows, equations, annotations — all deterministic |
 | 🧩 | **Auto Assembly** | Multi-element z-order composition → PNG / SVG / PDF |
 | 🎯 | **Export Targets** | `general` for portable path-based text, `ppt` for editable PowerPoint-friendly SVG |
@@ -96,6 +96,12 @@ Install once for **both OpenCode and Codex** (global):
 ./install.sh
 ```
 
+Or install directly from GitHub without cloning manually:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/install.sh | sh
+```
+
 This copies the skill, command, and private runtime into your user-level
 OpenCode and Codex directories. You do **not** need to copy the repository into
 each project. The installer writes both integrations by default.
@@ -125,18 +131,45 @@ Requires: Python 3.11+, [uv](https://docs.astral.sh/uv/), and whichever of
 [OpenCode](https://opencode.ai/) or Codex you use. Run the installer once from a
 checkout of this repository; the checkout does not become part of your project.
 
-### Configure Ark (optional)
+### Configure model providers (optional)
 
-```bash
-export ARK_API_KEY="<key>"
-export ARK_API_KEY_CODING="<coding key>"
-export ARK_IMAGE_GENERATE="<model id>"
-export ARK_IMAGE_EDIT="<model id>"
-export ARK_VISION_ANALYZE="<model id>"
-export ARK_VISION_VALIDATE="<model id>"
+Each model role is assigned to a provider, so different steps can use different
+vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`
+and override per project in `.scientific-figure/project.yaml`. The `SCI_FIG_*`
+environment variables override model ids; each provider's `key_env` names the
+environment variable holding its credential (highest precedence).
+
+A provider speaks one of two wire dialects: `openai` — `/images/generations`
+for generation plus `/responses` for vision; `anthropic` — `/messages` for
+vision only. Point `base_url` at the API root, not a complete operation URL.
+
+```yaml
+# ~/.config/scientific-figure-builder/config.yaml (no API keys)
+providers:
+  deepseek:
+    type: openai
+    base_url: https://api.deepseek.com/           # DeepSeek multimodal via /responses
+    key_env: DEEPSEEK_API_KEY
+  ark_seedream:
+    type: openai
+    base_url: https://ark.cn-beijing.volces.com/api/plan/v3  # Seedream via /images/generations
+    key_env: ARK_API_KEY
+    supports_image_edit: true
+models:
+  image_generate: {model: "<Seedream model id>", provider: ark_seedream}
+  vision_analyze: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
+  vision_validate: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
 ```
 
-> Local-only plotting? Skip this and run `./install.sh --without-ark`
+`image_generate` must be a true image-generation model. `vision_analyze` and
+`vision_validate` are multimodal (image-reading) models and may be the same
+vendor as the analysis step. `image_edit` is optional and falls back to
+`image_generate`. Plots, labels, equations, and SVG elements are rendered
+deterministically and never sent to a model. Credentials are never stored in
+config, logs, artifacts, or manifests; the installer forwards every configured
+`key_env` to the MCP host automatically. For a local checkout, point
+`SCIENTIFIC_FIGURE_CONFIG` at your own config file instead of editing
+`~/.config/...`.
 
 ### Use in OpenCode
 
@@ -190,14 +223,14 @@ the macOS permission prompt.
 ```
 scientific-figure-builder/
 ├── figure_tools/        # Core Python package
-│   ├── ark/             # Ark client + transport (mock/real)
+│   ├── providers/       # Provider transports + client (OpenAI/Anthropic)
 │   ├── plotting/        # Plot specs, data, recipes, renderer
 │   ├── validation/      # Geometry rules + VLM review + evidence
 │   ├── assembly/        # Figure composition
 │   └── export/          # PNG/SVG/PDF/PPTX
 ├── schemas/             # 6 versioned JSON Schemas
 ├── templates/           # Default config + plot recipes
-├── references/          # Routing/workflow/Ark docs
+├── references/          # Routing/workflow/provider docs
 └── tests/               # unit / integration / e2e
 ```
 

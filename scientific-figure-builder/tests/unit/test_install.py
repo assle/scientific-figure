@@ -10,7 +10,12 @@ import sys
 from pathlib import Path
 
 from figure_tools.config import deep_merge
-from install.configure_opencode import apply_merge, propose_merge, render_diff
+from install.configure_opencode import (
+    apply_merge,
+    mcp_entry_for_python,
+    propose_merge,
+    render_diff,
+)
 from install.install_delivery import (
     delivery_paths,
     install_delivery,
@@ -175,6 +180,15 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
     assert paths.config_file == nested_config
 
 
+def test_mcp_environment_forwards_model_and_endpoint_configuration(tmp_path: Path):
+    entry = mcp_entry_for_python(tmp_path / "python")
+    assert entry["environment"]["SCIENTIFIC_FIGURE_CONFIG"] == (
+        "{env:SCIENTIFIC_FIGURE_CONFIG}"
+    )
+    assert entry["environment"]["OPENAI_API_KEY"] == "{env:OPENAI_API_KEY}"
+    assert entry["environment"]["SCI_FIG_IMAGE_GENERATE"] == "{env:SCI_FIG_IMAGE_GENERATE}"
+
+
 def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     source = Path(__file__).resolve().parents[2]
     paths = delivery_paths(
@@ -185,15 +199,13 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     paths.config_file.parent.mkdir(parents=True)
     paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
 
-    def _use_test_python(runtime_dir: Path, *, with_ark: bool) -> Path:
+    def _use_test_python(runtime_dir: Path) -> Path:
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
-        assert with_ark is False
         return Path(sys.executable)
 
     result = install_delivery(
         source,
         paths,
-        with_ark=False,
         runtime_sync=_use_test_python,
     )
     assert (paths.skill_dir / "SKILL.md").is_file()
@@ -220,7 +232,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         codex_home=tmp_path / "codex",
     )
 
-    def _use_test_python(_runtime_dir: Path, *, with_ark: bool) -> Path:
+    def _use_test_python(_runtime_dir: Path) -> Path:
         return Path(sys.executable)
 
     first = install_delivery(

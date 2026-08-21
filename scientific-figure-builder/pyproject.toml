@@ -20,9 +20,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ark = [
-    "volcengine-python-sdk[ark]>=5.0",
-]
 qa = [
     "opencv-python-headless",
 ]
@@ -47,6 +44,8 @@ packages = ["figure_tools"]
 "install.sh" = "scientific_figure_builder_skill/install.sh"
 "install/install_delivery.py" = "scientific_figure_builder_skill/install/install_delivery.py"
 "install/configure_opencode.py" = "scientific_figure_builder_skill/install/configure_opencode.py"
+"install/configure_codex.py" = "scientific_figure_builder_skill/install/configure_codex.py"
+"install/provider_environment.py" = "scientific_figure_builder_skill/install/provider_environment.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

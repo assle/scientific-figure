@@ -8,7 +8,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from figure_tools.validation.engine import FigureQAEngine
-from figure_tools.validation.models import LayoutElement, LayoutManifest, PixelBBox, write_layout_manifest
+from figure_tools.validation.models import (
+    AssembledFigure,
+    LayoutElement,
+    LayoutManifest,
+    PixelBBox,
+    write_layout_manifest,
+)
 
 
 def _save_rgba(path: Path, size=(2048, 1280)):
@@ -61,8 +67,10 @@ def test_engine_runs_layout_rules_when_manifest_present(tmp_path: Path):
     ]
     man_path = _manifest(tmp_path / "layout_manifest.json", elements)
     engine = FigureQAEngine(config={"thresholds": {"overlap_error_ratio": 0.03}})
-    report = engine.validate_final(_plan(), _asset_manifest(curve), composed, man_path,
-                                   (180, 112.5), run_id="r1")
+    report = engine.validate_final(AssembledFigure(
+        figure_plan=_plan(), asset_manifest=_asset_manifest(curve),
+        image_path=composed, layout_manifest_path=man_path,
+        physical_size_mm=(180, 112.5)), run_id="r1")
     ids = {c["check_id"] for c in report["checks"]}
     assert "text_text_overlap" in ids
     overlap = [c for c in report["checks"]
@@ -71,16 +79,23 @@ def test_engine_runs_layout_rules_when_manifest_present(tmp_path: Path):
     assert report["summary"]["blocking"] is True
 
 
-def test_engine_falls_back_without_manifest(tmp_path: Path):
+def test_engine_marks_geometry_skipped_without_manifest(tmp_path: Path):
     composed = tmp_path / "figure.png"; _save_rgba(composed)
     curve = tmp_path / "curve.png"; _save_rgba(curve)
     engine = FigureQAEngine(config={})
-    report = engine.validate_final(_plan(), _asset_manifest(curve), composed, None,
-                                   (180, 112.5), run_id="r1")
+    report = engine.validate_final(AssembledFigure(
+        figure_plan=_plan(), asset_manifest=_asset_manifest(curve),
+        image_path=composed, layout_manifest_path=None,
+        physical_size_mm=(180, 112.5)), run_id="r1")
     ids = {c["check_id"] for c in report["checks"]}
-    # No geometry rules run; legacy panel-label consistency is used.
+    skipped = [c for c in report["checks"]
+               if c["check_id"] == "geometry_checks_skipped"]
+    # No geometry rules run; the report says so explicitly instead of
+    # pretending a weak legacy check is a pass.
+    assert skipped and skipped[0]["status"] == "skipped"
+    assert skipped[0]["level"] == "warning"
     assert "text_text_overlap" not in ids
-    assert "panel_label_consistency" in ids
+    assert "panel_label_consistency" not in ids
     assert report["summary"]["blocking"] is False
 
 
@@ -95,8 +110,10 @@ def test_engine_report_conforms_to_schema(tmp_path: Path):
                       panel_id="a", text="(a)", font_size_pt=9.0),
     ])
     engine = FigureQAEngine(config={})
-    report = engine.validate_final(_plan(), _asset_manifest(curve), composed, man_path,
-                                   (180, 112.5), run_id="r1")
+    report = engine.validate_final(AssembledFigure(
+        figure_plan=_plan(), asset_manifest=_asset_manifest(curve),
+        image_path=composed, layout_manifest_path=man_path,
+        physical_size_mm=(180, 112.5)), run_id="r1")
     schema = json.loads(schema_path("validation-report.schema.json").read_text("utf-8"))
     assert not list(Draft202012Validator(schema).iter_errors(report))
 
@@ -105,8 +122,10 @@ def test_engine_skips_ocr_when_no_backend(tmp_path: Path):
     composed = tmp_path / "figure.png"; _save_rgba(composed)
     curve = tmp_path / "curve.png"; _save_rgba(curve)
     engine = FigureQAEngine(config={})  # no OCR backend available in test env
-    report = engine.validate_final(_plan(), _asset_manifest(curve), composed, None,
-                                   (180, 112.5), run_id="r1")
+    report = engine.validate_final(AssembledFigure(
+        figure_plan=_plan(), asset_manifest=_asset_manifest(curve),
+        image_path=composed, layout_manifest_path=None,
+        physical_size_mm=(180, 112.5)), run_id="r1")
     ai = [c for c in report["checks"] if c["check_id"] == "unexpected_ai_text"]
     assert ai and ai[0]["status"] == "skipped"
 
@@ -132,11 +151,12 @@ def test_engine_flags_ai_text_with_ocr_backend(tmp_path: Path):
 
     plan = _plan()
     plan["assets"].append({"asset_id": "fiber", "type": "image_asset",
-                           "z_order": 2, "dependencies": [], "routing": "ark_image"})
+                           "z_order": 2, "dependencies": [], "routing": "image_model"})
     engine = FigureQAEngine(config={}, ocr_backend=FakeOCR())
-    report = engine.validate_final(
-        plan, manifest, composed, None, (180, 112.5), run_id="r1",
-        asset_placements={"fiber": [0.5, 0.0, 0.5, 1.0]})
+    report = engine.validate_final(AssembledFigure(
+        figure_plan=plan, asset_manifest=manifest, image_path=composed,
+        layout_manifest_path=None, physical_size_mm=(180, 112.5),
+        asset_placements={"fiber": [0.5, 0.0, 0.5, 1.0]}), run_id="r1")
     ai = [c for c in report["checks"]
           if c["check_id"] == "unexpected_ai_text" and c["status"] == "fail"]
     assert ai and ai[0]["element_ids"] == ["fiber"]

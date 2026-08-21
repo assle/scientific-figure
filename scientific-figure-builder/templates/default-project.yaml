@@ -1,6 +1,6 @@
 # Default project configuration for scientific-figure-builder.
-# This file contains NO secrets. Read the Ark API key from the ARK_API_KEY
-# environment variable or a user-private file (see references/ark-interfaces.md).
+# This file contains NO secrets. Provider keys are read from the environment
+# variables named by each provider's `key_env` (see references/provider-interfaces.md).
 #
 # Configuration is merged in this order (plan section 5):
 #   Skill defaults < user-local private config < project config < per-run overrides
@@ -32,18 +32,50 @@ limits:
   max_quality_retries_per_asset: 2
   default_candidate_count: 1
 
-# Fixed model roles (plan section 5). Two roles may share a model, but each role
-# is configured independently. Replace the placeholders with fixed model IDs or
-# Volcengine Ark Endpoint IDs. Do NOT use "latest" resolution.
+# Model roles (plan section 5). Two roles may share a model, but each role is
+# configured independently. For a global default, set the same keys in
+# ~/.config/scientific-figure-builder/config.yaml; this project file overrides it.
+# Each model references a provider defined in `providers` below. A role is only
+# routed to a real provider when that provider is configured AND its key_env is
+# present in the environment; otherwise the safe mock transport is used.
+# SCI_FIG_* environment variables override model IDs for these roles.
+# Do NOT use "latest" resolution.
 models:
   image_generate:
     model: "<fixed-model-or-endpoint-id>"
-  image_edit:
-    model: "<fixed-model-or-endpoint-id>"
+    provider: openai
   vision_analyze:
     model: "<fixed-model-or-endpoint-id>"
+    provider: anthropic
   vision_validate:
     model: "<fixed-model-or-endpoint-id>"
+    provider: anthropic
+
+  # Optional image-model override for reference-image revision. When omitted,
+  # edit_image_asset reuses image_generate if the provider supports that capability.
+  # image_edit:
+  #   model: "<fixed-model-or-endpoint-id>"
+  #   provider: openai
+
+# Provider endpoints. Fill in each provider's `base_url` and choose a `key_env`
+# that names the environment variable holding that provider's credential.
+# - type: openai -> image generation/editing via /images/generations, and vision
+#   (reference analysis / validation) via the OpenAI Responses API /responses.
+# - type: anthropic -> vision (reference analysis / validation) via /messages.
+#   It does NOT support image generation. Credentials are referenced by
+#   environment-variable name and never stored here.
+providers:
+  openai:
+    type: openai
+    base_url: ""
+    key_env: OPENAI_API_KEY
+    supports_image_edit: true
+  anthropic:
+    type: anthropic
+    base_url: ""
+    key_env: ANTHROPIC_API_KEY
+    auth_scheme: x-api-key
+    messages_path: /messages
 
 # Optional domain template selection.
 domain_template: null

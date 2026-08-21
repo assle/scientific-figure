@@ -57,7 +57,7 @@ def test_classify_schematic_only():
 
 def test_route_element():
     assert route_element({"type": "data_plot"}) == "python"
-    assert route_element({"type": "image_asset"}) == "ark_image"
+    assert route_element({"type": "image_asset"}) == "image_model"
     assert route_element({"type": "label"}) == "svg"
     assert route_element({"type": "equation"}) == "svg"
 
@@ -68,12 +68,12 @@ def test_create_figure_plan_conforms_to_schema():
     assert not list(Draft202012Validator(schema).iter_errors(plan))
 
 
-def test_plan_routes_data_plot_to_python_and_ai_to_ark():
+def test_plan_routes_data_plot_to_python_and_ai_to_image_model():
     plan = create_figure_plan(_request())
     by_id = {a["asset_id"]: a for a in plan["assets"]}
     assert by_id["curve"]["routing"] == "python"
     assert by_id["curve"]["type"] == "data_plot"
-    assert by_id["fiber"]["routing"] == "ark_image"
+    assert by_id["fiber"]["routing"] == "image_model"
     assert by_id["fiber"]["type"] == "image_asset"
     assert by_id["label-a"]["routing"] == "svg"
 
@@ -147,6 +147,20 @@ def test_collect_required_clarifications_empty_when_resolved():
                  language="en", style="default")
     )
     assert clarifications == []
+
+
+def test_clarification_questions_match_between_output_paths():
+    """create_figure_plan and collect_required_clarifications must derive the
+    same questions from REQUIRED_CLARIFICATIONS — no drift between the two
+    output shapes."""
+    req = _request()
+    plan = create_figure_plan(req)
+    from_plan = {q for q in plan["user_input_requirements"]
+                 if q.startswith("Confirm")}
+    from_collect = {c["question"]
+                    for c in collect_required_clarifications(req)}
+    assert from_plan == from_collect
+    assert len(from_plan) == 4
 
 
 def test_figure_width_overrides_canvas_dimensions():

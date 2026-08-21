@@ -1,7 +1,9 @@
-"""Ark transport abstraction (plan section 17).
+"""Provider transport abstraction (plan section 17).
 
 The transport layer is injectable so the client can be tested without paid
-calls. A real HTTP transport is finalized in Phase 7 against verified Ark docs.
+calls. A real HTTP transport is implemented by the provider adapters in
+``generic_transport``, which speak the OpenAI-compatible (``/responses`` +
+``/images/generations``) and Anthropic-compatible (``/messages``) dialects.
 """
 
 from __future__ import annotations
@@ -11,16 +13,39 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
+ROLE_TO_MODEL_CONFIG = {
+    "generation": "image_generate",
+    "edits": "image_edit",
+    "reference_analysis": "vision_analyze",
+    "validations": "vision_validate",
+    "final_validation": "vision_validate",
+}
 
-class ArkError(Exception):
+
+def model_config_for_role(
+    models: dict[str, dict[str, Any]], role: str,
+) -> tuple[str, dict[str, Any]] | None:
+    config_role = ROLE_TO_MODEL_CONFIG.get(role)
+    if config_role is None:
+        return None
+    model_config = models.get(config_role)
+    if model_config is None and config_role == "image_edit":
+        config_role = "image_generate"
+        model_config = models.get(config_role)
+    if model_config is None:
+        return None
+    return config_role, model_config
+
+
+class ProviderError(Exception):
     pass
 
 
-class RateLimitError(ArkError):
+class RateLimitError(ProviderError):
     pass
 
 
-class ArkTransport:
+class ProviderTransport:
     def post(
         self,
         role: str,
@@ -42,7 +67,7 @@ def _transparent_circle_png(size: int = 1024) -> bytes:
     return buf.getvalue()
 
 
-class MockArkTransport(ArkTransport):
+class MockProviderTransport(ProviderTransport):
     """Deterministic, no-network transport for tests and offline runs."""
 
     def __init__(self, fail_once_roles: set[str] | None = None) -> None:
@@ -98,4 +123,4 @@ class MockArkTransport(ArkTransport):
                 ],
                 "blocking": False,
             }
-        raise ArkError(f"unknown role {role!r}")
+        raise ProviderError(f"unknown role {role!r}")

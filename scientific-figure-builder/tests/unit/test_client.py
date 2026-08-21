@@ -1,6 +1,6 @@
-"""Ark client tests: budget, cache, secrets, rate-limit, analysis, validation.
+"""Provider client tests: budget, cache, secrets, rate-limit, analysis, validation.
 
-All tests use MockArkTransport - no paid calls (plan section 15, Phase 4).
+All tests use MockProviderTransport - no paid calls (plan section 15, Phase 4).
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from figure_tools.ark.auth import get_api_key, redact
-from figure_tools.ark.client import ArkClient
-from figure_tools.ark.transport import MockArkTransport
+from figure_tools.providers.auth import get_api_key, redact
+from figure_tools.providers.client import ProviderClient
+from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.state import BudgetExceeded, Cache, RunState
 
 MODELS = {
@@ -27,11 +27,11 @@ BUDGET = {"reference_analysis": 1, "generation": 2, "edits": 1,
 
 
 def _client(tmp_path: Path, transport=None, api_key=None, state=None, cache=None):
-    transport = transport or MockArkTransport()
+    transport = transport or MockProviderTransport()
     state = state or RunState("run-1", budget=BUDGET)
     cache = cache or Cache(tmp_path / "cache")
-    client = ArkClient(MODELS, transport, api_key=api_key, state=state,
-                       cache=cache, output_dir=tmp_path)
+    client = ProviderClient(MODELS, transport, api_key=api_key, state=state,
+                            cache=cache, output_dir=tmp_path)
     return client, state, cache
 
 
@@ -50,7 +50,7 @@ def _save_rgba(path: Path):
 
 # --- auth ----------------------------------------------------------------
 def test_get_api_key_from_env(monkeypatch):
-    monkeypatch.setenv("ARK_API_KEY", "sk-test")
+    monkeypatch.setenv("SCIENTIFIC_FIGURE_API_KEY", "sk-test")
     assert get_api_key() == "sk-test"
 
 
@@ -126,7 +126,7 @@ def test_analyze_respects_budget(tmp_path: Path):
 
 # --- rate limit ----------------------------------------------------------
 def test_rate_limit_retry_succeeds(tmp_path: Path):
-    transport = MockArkTransport(fail_once_roles={"generation"})
+    transport = MockProviderTransport(fail_once_roles={"generation"})
     client, state, _ = _client(tmp_path, transport=transport)
     out = tmp_path / "a.png"
     client.generate_image_asset("p", {}, output_path=out)
@@ -164,7 +164,7 @@ def test_validate_image_asset_combines_checks(tmp_path: Path):
     report = client.validate_image_asset(img, physical_size_mm=(80, 80))
     check_ids = {c["check_id"] for c in report["checks"]}
     assert "alpha_channel" in check_ids  # deterministic
-    assert "multimodal_semantic" in check_ids  # from Ark
+    assert "multimodal_semantic" in check_ids  # from provider
     assert report["summary"]["blocking"] is False
 
 
@@ -190,7 +190,7 @@ def test_validate_detects_missing_alpha(tmp_path: Path):
 
 
 def test_edit_produces_child_with_parent(tmp_path: Path):
-    from figure_tools.ark.client import file_hash
+    from figure_tools.providers.client import file_hash
 
     client, _, _ = _client(tmp_path)
     parent = tmp_path / "parent.png"
@@ -201,3 +201,42 @@ def test_edit_produces_child_with_parent(tmp_path: Path):
     assert out.is_file()
     assert meta["parent_asset_id"] == "asset-1"
     assert meta["reference_hashes"] == [file_hash(parent)]
+
+
+def test_edit_reuses_generation_model_when_override_is_absent(tmp_path: Path):
+    models = {key: value for key, value in MODELS.items() if key != "image_edit"}
+    transport = MockProviderTransport()
+    client = ProviderClient(
+        models,
+        transport,
+        state=RunState("run-1", budget=BUDGET),
+        cache=Cache(tmp_path / "cache"),
+        output_dir=tmp_path,
+    )
+    parent = tmp_path / "parent.png"
+    _save_rgba(parent)
+
+    meta = client.edit_image_asset(
+        parent, "make it blue", {}, output_path=tmp_path / "edited.png",
+    )
+
+    assert meta["model"] == "ep-gen"
+    assert transport.calls == [("edits", "ep-gen")]
+
+
+def test_edit_without_override_consumes_generation_budget(tmp_path: Path):
+    models = {key: value for key, value in MODELS.items() if key != "image_edit"}
+    client = ProviderClient(
+        models,
+        MockProviderTransport(),
+        state=RunState("run-1", budget={"generation": 0}),
+        cache=Cache(tmp_path / "cache"),
+        output_dir=tmp_path,
+    )
+    parent = tmp_path / "parent.png"
+    _save_rgba(parent)
+
+    with pytest.raises(BudgetExceeded, match="generation"):
+        client.edit_image_asset(
+            parent, "make it blue", {}, output_path=tmp_path / "edited.png",
+        )

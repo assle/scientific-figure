@@ -14,6 +14,11 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+try:
+    from .provider_environment import PROVIDER_ENV_VARS
+except ImportError:  # Direct execution from install.sh.
+    from provider_environment import PROVIDER_ENV_VARS
+
 DEFAULT_MCP_NAME = "scientific-figure"
 
 
@@ -91,15 +96,7 @@ def codex_mcp_entry(runtime_python: str | Path, runtime_dir: str | Path) -> dict
 
 
 def _env_vars_from_environment() -> list[str]:
-    names = (
-        "ARK_API_KEY",
-        "ARK_API_KEY_CODING",
-        "ARK_IMAGE_GENERATE",
-        "ARK_IMAGE_EDIT",
-        "ARK_VISION_ANALYZE",
-        "ARK_VISION_VALIDATE",
-    )
-    return list(names)
+    return list(PROVIDER_ENV_VARS)
 
 
 def _render_parent_table(entry: dict[str, Any], env_vars: list[str]) -> str:
