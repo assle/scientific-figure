@@ -219,24 +219,32 @@ class GuiController(QObject):
         }
         if field not in allowed:
             return
+        if str(self._provider_view(self._selected_provider).get(field, "")) == value:
+            return
         self._provider_drafts.setdefault(self._selected_provider, {})[field] = value
         self._mark_dirty()
 
     @Slot(str, bool)
     def updateProviderBool(self, field: str, value: bool) -> None:  # noqa: N802
         if self._selected_provider and field == "supports_image_edit":
+            if bool(self._provider_view(self._selected_provider).get(field, False)) == bool(value):
+                return
             self._provider_drafts.setdefault(self._selected_provider, {})[field] = bool(value)
             self._mark_dirty()
 
     @Slot(str, str, str)
     def updateRole(self, role: str, field: str, value: str) -> None:  # noqa: N802
         if role in self._role_state and field in {"provider", "model"}:
+            if str(self._role_state[role][field]) == value:
+                return
             self._role_state[role][field] = value
             self._mark_dirty()
 
     @Slot(str, bool)
     def setRoleInheritance(self, role: str, inherited: bool) -> None:  # noqa: N802
         if role == "image_edit":
+            if bool(self._role_state[role]["inherit"]) == bool(inherited):
+                return
             self._role_state[role]["inherit"] = bool(inherited)
             self._mark_dirty()
 

@@ -198,7 +198,7 @@ scientific-figure gui
 # 或：python -m figure_tools gui
 ```
 
-窗口支持新增、重命名和删除 Provider、编辑 OpenAI/Anthropic 高级字段、
+Providers 页面负责端点增删改、协议和模型能力；独立的“凭据与连接”页面负责
 安全保存 API Key，以及为当前未保存草稿主动测试连接。连接测试只在用户
 点击后执行，视觉路径使用最小确定性图片；生成路径可能产生 Provider 费用，
 会在执行前确认。`image_edit` 省略时继承 `image_generate`，不要求重复配置。

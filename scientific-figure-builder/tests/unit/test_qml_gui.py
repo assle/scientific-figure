@@ -85,3 +85,39 @@ def test_gui_entrypoint_uses_qml(monkeypatch):
     monkeypatch.setattr(qml_gui, "run_qml_gui", lambda argv=None: calls.append(argv) or 0)
     assert gui.run_gui(["--manual-test"]) == 0
     assert calls == [["--manual-test"]]
+
+
+def test_same_value_updates_do_not_mark_draft_dirty(tmp_path: Path, app):
+    controller, _editor, _store = _controller(tmp_path)
+    controller.addProvider("demo_provider")
+    controller.updateRole("vision_analyze", "provider", "demo_provider")
+    controller.updateRole("vision_analyze", "model", "vision-model")
+    assert controller.save() is True
+    assert controller.dirty is False
+    role = controller.roles[0]
+    provider = controller.selectedProvider
+    controller.updateRole("vision_analyze", "provider", role["provider"])
+    controller.updateRole("vision_analyze", "model", role["model"])
+    controller.updateProvider("base_url", provider["base_url"])
+    controller.updateProviderBool(
+        "supports_image_edit", provider["supports_image_edit"]
+    )
+    assert controller.dirty is False
+
+
+def test_qml_separates_provider_and_credential_pages(tmp_path: Path, app):
+    controller, _editor, _store = _controller(tmp_path)
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("appController", controller)
+    qml_path = files("figure_tools.resources").joinpath("qml/Main.qml")
+    engine.load(QUrl.fromLocalFile(str(qml_path)))
+    root = engine.rootObjects()[0]
+    providers_page = root.findChild(QObject, "providersPage")
+    credentials_page = root.findChild(QObject, "credentialsPage")
+    assert providers_page is not None
+    assert credentials_page is not None
+    assert providers_page is not credentials_page
+    assert root.findChild(QObject, "emptyProviderAction") is not None
+    assert root.property("providerSelectionAvailable") is False
+    assert root.findChild(QObject, "emptyProviderRouteAction") is not None
+    root.setProperty("visible", False)

@@ -211,11 +211,11 @@ local server. Provider API keys remain in the operating-system credential store;
 headless and CI use continues
 to work with `key_env` environment variables.
 
-The Provider page supports add/rename/delete, OpenAI and Anthropic advanced
-fields, and password-mode API Key updates. “Test connection” is explicitly
-user-triggered, uses the current unsaved draft and a deterministic minimal image,
-and prefers a bound vision role. A generation-only test shows a cost warning
-first. Omitting `image_edit` inherits `image_generate`.
+The Providers page handles endpoint CRUD, protocol fields, and capabilities.
+The separate Credentials & Connection page handles password-mode API Key
+updates and explicit connection testing with the current unsaved draft and a
+deterministic minimal image. It prefers a bound vision role; a generation-only
+test shows a cost warning first. Omitting `image_edit` inherits `image_generate`.
 
 The interface uses a compact sidebar, route cards, inline status badges, and a
 fixed save bar. QML is only the presentation layer; configuration, Keyring,

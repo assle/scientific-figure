@@ -14,8 +14,10 @@ ApplicationWindow {
     color: theme.canvas
 
     Theme { id: theme }
+    property bool providerSelectionAvailable: appController.providerIds.length > 0
     property int pageIndex: appController.page === "models" ? 0
-                            : appController.page === "about" ? 2 : 1
+                            : appController.page === "providers" ? 1
+                            : appController.page === "credentials" ? 2 : 3
 
     onClosing: function(close) {
         if (appController.dirty) {
@@ -127,7 +129,8 @@ ApplicationWindow {
                     Text {
                         text: appController.page === "models" ? "为每个模型角色选择 Provider 和模型 ID"
                               : appController.page === "about" ? "本地、安全、Provider-neutral"
-                              : "管理端点、能力和系统凭据"
+                              : appController.page === "credentials" ? "管理系统凭据与连接测试"
+                              : "管理端点、协议和模型能力"
                         color: theme.textMuted
                         font.pixelSize: 13
                     }
@@ -216,12 +219,24 @@ ApplicationWindow {
                                     }
                                 }
                                 Text { text: "Provider"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
-                                AppComboBox {
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    enabled: !modelData.inherit
-                                    model: appController.providerIds
-                                    currentIndex: appController.providerIds.indexOf(modelData.provider)
-                                    onActivated: appController.updateRole(modelData.role, "provider", currentText)
+                                    AppComboBox {
+                                        objectName: "providerCombo_" + modelData.role
+                                        Layout.fillWidth: true
+                                        enabled: !modelData.inherit && root.providerSelectionAvailable
+                                        model: appController.providerIds
+                                        displayText: !root.providerSelectionAvailable
+                                                     ? "请先新增 Provider" : currentText
+                                        currentIndex: appController.providerIds.indexOf(modelData.provider)
+                                        onActivated: appController.updateRole(modelData.role, "provider", currentText)
+                                    }
+                                    AppButton {
+                                        objectName: "emptyProviderRouteAction_" + modelData.role
+                                        visible: !root.providerSelectionAvailable && !modelData.inherit
+                                        text: "前往新增"
+                                        onClicked: appController.setPage("providers")
+                                    }
                                 }
                                 Text { text: "模型 ID"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
                                 AppTextField {
@@ -231,6 +246,27 @@ ApplicationWindow {
                                     placeholderText: "输入固定模型或 Endpoint ID"
                                     onEditingFinished: appController.updateRole(modelData.role, "model", text)
                                 }
+                            }
+                        }
+                    }
+                    SectionCard {
+                        visible: !root.providerSelectionAvailable
+                        Layout.columnSpan: routeGrid.columns
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 74
+                        RowLayout {
+                            anchors.fill: parent
+                            Text {
+                                Layout.fillWidth: true
+                                text: "模型路由需要先创建 Provider"
+                                color: theme.textMuted
+                                font.pixelSize: 12
+                            }
+                            AppButton {
+                                objectName: "emptyProviderRouteAction"
+                                text: "前往新增 Provider"
+                                kind: "primary"
+                                onClicked: appController.setPage("providers")
                             }
                         }
                     }
@@ -332,7 +368,7 @@ ApplicationWindow {
                                 Column {
                                     Layout.fillWidth: true
                                     Text { text: appController.selectedProviderId; color: theme.text; font.pixelSize: 19; font.bold: true }
-                                    Text { text: appController.selectedProvider.credential_status || "未配置"; color: theme.textMuted; font.pixelSize: 12 }
+                                    Text { text: "端点与能力"; color: theme.textMuted; font.pixelSize: 12 }
                                 }
                                 AppButton { text: "重命名"; onClicked: renameDialog.open() }
                                 AppButton { text: "删除"; kind: "danger"; onClicked: deleteDialog.open() }
@@ -351,38 +387,6 @@ ApplicationWindow {
                                 placeholderText: "https://api.example.com/v1"
                                 onEditingFinished: appController.updateProvider("base_url", text)
                             }
-                            Text { text: "环境变量回退"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
-                            AppTextField {
-                                Layout.fillWidth: true
-                                text: appController.selectedProvider.key_env || ""
-                                placeholderText: "PROVIDER_API_KEY"
-                                onEditingFinished: appController.updateProvider("key_env", text)
-                            }
-                            Text { text: "API Key"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
-                            AppTextField {
-                                Layout.fillWidth: true
-                                text: appController.selectedProvider.api_key || ""
-                                echoMode: TextInput.Password
-                                placeholderText: "留空保留现有凭据"
-                                onEditingFinished: appController.updateProvider("api_key", text)
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                AppButton {
-                                    text: appController.connectionRunning ? "测试中…" : "测试连接"
-                                    enabled: !appController.connectionRunning
-                                    kind: "primary"
-                                    onClicked: appController.testConnection()
-                                }
-                                AppButton {
-                                    visible: appController.connectionRunning
-                                    text: "取消"
-                                    onClicked: appController.cancelConnection()
-                                }
-                                Item { Layout.fillWidth: true }
-                                AppButton { text: "移除凭据"; onClicked: appController.clearCredential() }
-                            }
-                            Rectangle { Layout.fillWidth: true; height: 1; color: theme.border; Layout.topMargin: 6; Layout.bottomMargin: 4 }
                             Text { text: "高级设置"; color: theme.text; font.pixelSize: 14; font.bold: true }
                             Text { text: "认证方式"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
                             AppComboBox {
@@ -428,15 +432,228 @@ ApplicationWindow {
                         }
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "配置端点、模型能力和系统凭据"
+                            text: "配置端点、协议和模型能力"
+                            color: theme.textMuted
+                            font.pixelSize: 12
+                        }
+                        AppButton {
+                            objectName: "emptyProviderAction"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "+ 新增 Provider"
+                            kind: "primary"
+                            onClicked: addDialog.open()
+                        }
+                    }
+                }
+            }
+
+            // Credentials and connection testing
+            RowLayout {
+                objectName: "credentialsPage"
+                spacing: 16
+                Layout.leftMargin: 32
+                Layout.rightMargin: 32
+                Layout.bottomMargin: 24
+
+                SectionCard {
+                    Layout.preferredWidth: 290
+                    Layout.fillHeight: true
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
+                        Text {
+                            text: "选择 Provider"
+                            color: theme.text
+                            font.pixelSize: 15
+                            font.bold: true
+                        }
+                        Text {
+                            text: "凭据按 Provider 独立保存"
+                            color: theme.textMuted
+                            font.pixelSize: 11
+                        }
+                        ListView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            Layout.topMargin: 6
+                            spacing: 6
+                            clip: true
+                            model: appController.providers
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: ListView.view.width
+                                height: 66
+                                onClicked: appController.selectProvider(modelData.id)
+                                background: Rectangle {
+                                    radius: 9
+                                    color: modelData.id === appController.selectedProviderId
+                                           ? theme.primarySoft
+                                           : parent.hovered ? theme.surfaceMuted : "transparent"
+                                }
+                                contentItem: Column {
+                                    spacing: 4
+                                    Text { text: modelData.id; color: theme.text; font.pixelSize: 13; font.bold: true }
+                                    Text { text: modelData.credential_status; color: theme.textMuted; font.pixelSize: 11 }
+                                }
+                            }
+                        }
+                        AppButton {
+                            visible: appController.providers.length === 0
+                            Layout.fillWidth: true
+                            text: "前往新增 Provider"
+                            onClicked: appController.setPage("providers")
+                        }
+                    }
+                }
+
+                SectionCard {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: appController.selectedProviderId.length > 0
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 12
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Column {
+                                Layout.fillWidth: true
+                                spacing: 3
+                                Text {
+                                    text: appController.selectedProviderId
+                                    color: theme.text
+                                    font.pixelSize: 19
+                                    font.bold: true
+                                }
+                                Text {
+                                    text: appController.selectedProvider.credential_status || "未配置"
+                                    color: appController.selectedProvider.credential_id
+                                           ? theme.success : theme.textMuted
+                                    font.pixelSize: 12
+                                }
+                            }
+                            Rectangle {
+                                radius: 10
+                                implicitWidth: credentialBadge.implicitWidth + 18
+                                implicitHeight: 26
+                                color: appController.selectedProvider.credential_id
+                                       ? theme.successSoft : theme.surfaceMuted
+                                Text {
+                                    id: credentialBadge
+                                    anchors.centerIn: parent
+                                    text: appController.selectedProvider.credential_id
+                                          ? "系统 Keyring" : "环境变量兼容"
+                                    color: appController.selectedProvider.credential_id
+                                           ? theme.success : theme.textMuted
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+                        Text { text: "环境变量回退"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
+                        AppTextField {
+                            Layout.fillWidth: true
+                            text: appController.selectedProvider.key_env || ""
+                            placeholderText: "PROVIDER_API_KEY"
+                            onEditingFinished: appController.updateProvider("key_env", text)
+                        }
+                        Text { text: "Credential ID"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 40
+                            radius: 8
+                            color: theme.surfaceMuted
+                            Text {
+                                anchors.fill: parent
+                                anchors.margins: 11
+                                text: appController.selectedProvider.credential_id || "尚未创建"
+                                color: theme.textMuted
+                                font.pixelSize: 12
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        Text { text: "API Key"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
+                        AppTextField {
+                            Layout.fillWidth: true
+                            text: appController.selectedProvider.api_key || ""
+                            echoMode: TextInput.Password
+                            placeholderText: "留空保留现有凭据"
+                            onEditingFinished: appController.updateProvider("api_key", text)
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "API Key 只在保存时写入系统 Keyring，配置文件不会保存明文。"
+                            color: theme.textMuted
+                            font.pixelSize: 11
+                            wrapMode: Text.Wrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            AppButton {
+                                text: appController.connectionRunning ? "测试中…" : "测试连接"
+                                enabled: !appController.connectionRunning
+                                kind: "primary"
+                                onClicked: appController.testConnection()
+                            }
+                            AppButton {
+                                visible: appController.connectionRunning
+                                text: "取消"
+                                onClicked: appController.cancelConnection()
+                            }
+                            Item { Layout.fillWidth: true }
+                            AppButton {
+                                text: "移除凭据"
+                                kind: "danger"
+                                onClicked: appController.clearCredential()
+                            }
+                        }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: connectionHint.implicitHeight + 24
+                            Layout.topMargin: 6
+                            radius: 9
+                            color: theme.primarySoft
+                            Text {
+                                id: connectionHint
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                text: "连接测试使用当前未保存草稿，并优先选择视觉角色。普通保存不会联网。"
+                                color: "#3158B4"
+                                font.pixelSize: 11
+                                wrapMode: Text.Wrap
+                            }
+                        }
+                        Item { Layout.fillHeight: true }
+                    }
+                }
+
+                SectionCard {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    visible: appController.selectedProviderId.length === 0
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "尚无可管理的凭据"
+                            color: theme.text
+                            font.pixelSize: 18
+                            font.bold: true
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "请先在 Providers 页面创建端点"
                             color: theme.textMuted
                             font.pixelSize: 12
                         }
                         AppButton {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "+ 新增 Provider"
+                            text: "前往 Providers"
                             kind: "primary"
-                            onClicked: addDialog.open()
+                            onClicked: appController.setPage("providers")
                         }
                     }
                 }
