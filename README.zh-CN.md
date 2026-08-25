@@ -191,7 +191,7 @@ Keyring；服务器、CI 和无桌面环境仍可只使用 `key_env` 环境变�
 
 ### 配置模型接口（可选）
 
-也可以直接运行原生中文配置窗口：
+也可以直接运行原生 Qt Quick/QML 中文配置窗口：
 
 ```bash
 scientific-figure gui
@@ -202,6 +202,8 @@ scientific-figure gui
 安全保存 API Key，以及为当前未保存草稿主动测试连接。连接测试只在用户
 点击后执行，视觉路径使用最小确定性图片；生成路径可能产生 Provider 费用，
 会在执行前确认。`image_edit` 省略时继承 `image_generate`，不要求重复配置。
+界面采用紧凑侧栏、路由卡片、状态徽标和固定保存栏；QML 只负责展示，配置、
+Keyring、校验和连接测试仍复用现有 Python 服务。
 
 每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
 在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在

@@ -203,11 +203,12 @@ directories can be restored by re-running `./install.sh`.
 
 ### Configure model providers (optional)
 
-For a native configuration window, run `python -m figure_tools gui` from the
-installed runtime (or `uv run --extra gui --directory scientific-figure-builder
-python -m figure_tools gui` from this checkout). It edits the user-scoped models and
-providers file without starting a browser or local server. Provider API keys
-remain in the operating-system credential store; headless and CI use continues
+For a native Qt Quick/QML configuration window, run `python -m figure_tools
+gui` from the installed runtime (or `uv run --extra gui --directory
+scientific-figure-builder python -m figure_tools gui` from this checkout). It
+edits the user-scoped models and providers file without starting a browser or
+local server. Provider API keys remain in the operating-system credential store;
+headless and CI use continues
 to work with `key_env` environment variables.
 
 The Provider page supports add/rename/delete, OpenAI and Anthropic advanced
@@ -215,6 +216,10 @@ fields, and password-mode API Key updates. “Test connection” is explicitly
 user-triggered, uses the current unsaved draft and a deterministic minimal image,
 and prefers a bound vision role. A generation-only test shows a cost warning
 first. Omitting `image_edit` inherits `image_generate`.
+
+The interface uses a compact sidebar, route cards, inline status badges, and a
+fixed save bar. QML is only the presentation layer; configuration, Keyring,
+validation, and connection testing remain in the existing Python services.
 
 Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`

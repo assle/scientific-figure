@@ -437,6 +437,7 @@ def verify_delivery(
         checks["gui_resources"] = (
             (paths.runtime_dir / "figure_tools" / "resources" / "gui.qss").is_file()
             and (paths.runtime_dir / "figure_tools" / "resources" / "icon.svg").is_file()
+            and (paths.runtime_dir / "figure_tools" / "resources" / "qml" / "Main.qml").is_file()
         )
     runtime_command: Path | None = None
 
@@ -477,7 +478,7 @@ def verify_delivery(
         )
         checks["cli_help"] = help_result.returncode == 0
         resource_result = subprocess.run(
-            [str(runtime_command), "-c", "from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss'); read_gui_resource('icon.svg')"],
+            [str(runtime_command), "-c", "from importlib.resources import files; from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss'); read_gui_resource('icon.svg'); files('figure_tools.resources').joinpath('qml/Main.qml').read_text(encoding='utf-8')"],
             cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
         )
         checks["gui_resource_import"] = resource_result.returncode == 0

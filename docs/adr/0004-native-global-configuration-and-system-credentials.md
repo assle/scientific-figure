@@ -6,6 +6,12 @@ status: accepted
 
 Scientific Figure Builder will provide a native PySide6 Configuration app that manages only Global configuration: Model routes, Providers, and Provider credentials. It will not configure the Calling Agent, edit Project configuration, or become a task-running console. Provider credentials entered through the app will be stored in the operating system's System credential store and referenced from configuration by a stable, non-secret `credential_id`; Environment-backed credentials remain supported for headless hosts, CI, existing installations, and portable project workflows.
 
+The presentation layer uses Qt Quick/QML with a thin Python `GuiController`.
+QML owns layout, styling, and interaction; existing Python modules remain the
+single implementation of configuration, credential, validation, and connection
+behavior. The controller uses Qt signals and slots in-process—there is no local
+HTTP backend or listening port.
+
 This decision extends ADR-0003's Provider-neutral routing. A Provider remains vendor-neutral and identified independently from its credential, so renaming a Provider ID does not require moving its Keyring-backed credential. Credential resolution prefers an available Keyring-backed credential and otherwise checks the existing Environment-backed source. The application refuses to save a new credential when no secure system backend is available rather than falling back to a plaintext file.
 
 ## Considered options

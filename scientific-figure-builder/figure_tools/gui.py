@@ -730,15 +730,14 @@ if QApplication is not None:
 
 
 def run_gui(argv: list[str] | None = None) -> int:
-    """Start the native configuration window and return its exit code."""
+    """Start the Qt Quick configuration window and return its exit code."""
 
     if QApplication is None:
         print("GUI requires the PySide6 optional dependency", file=sys.stderr)
         return 1
-    app = QApplication.instance() or QApplication(list(argv or []))
-    window = ConfigurationWindow()
-    window.show()
-    return app.exec()
+    from figure_tools.qml_gui import run_qml_gui
+
+    return run_qml_gui(argv)
 
 
 __all__ = ["ConfigurationWindow", "ROLE_LABELS", "run_gui"]
