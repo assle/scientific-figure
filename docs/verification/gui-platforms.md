@@ -18,7 +18,7 @@ Transport, launcher conflict protection, global/project install scope,
 Keyring-cleanup failure retention, MCP tool verification, CLI help, and wheel
 resource import. Tests do not access a real model endpoint or system Keyring.
 
-The recorded local run on 2026-08-25 at commit `d6fed40` completed with **368
+The recorded local run on 2026-08-25 at commit `fe379d3` completed with **369
 passed, 3 skipped** (`uv run --extra gui pytest -q`). The two skipped acceptance
 tests require an explicitly configured real Provider and the optional
 PowerPoint desktop E2E test; neither is part of the no-network CI gate.
