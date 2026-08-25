@@ -121,6 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/instal
 - Codex Skill：`~/.codex/skills/scientific-figure-builder`
 - Codex 配置：`~/.codex/config.toml`
 - Runtime：`~/.local/share/scientific-figure-builder`
+- 启动器：`~/.local/bin/scientific-figure`（若不在 `PATH`，安装器会提示）
 
 需要：Python 3.11+、[uv](https://docs.astral.sh/uv/)，以及你实际使用的
 [OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
@@ -151,10 +152,13 @@ curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/instal
 - 注册 MCP **服务条目**（用于启动 `figure_tools.server`）：
   - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
   - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
+- 默认安装包含 GUI extra、Keyring 支持和 GUI 资源；全局安装会创建
+  `scientific-figure` 启动器，项目级安装不会创建全局启动器。
 - 把配置好的供应商环境变量（各 provider 的 `key_env` 及 `SCI_FIG_*` 模型覆盖项）转发给 MCP 宿主。
 - 编辑已有配置前会先备份。
 
-不会把 API Key 写入磁盘；凭证始终走环境变量。要选择用哪些供应商，见下方“配置模型接口”。
+不会把 API Key 写入磁盘。GUI 中的 API Key 使用密码模式并保存到系统
+Keyring；服务器、CI 和无桌面环境仍可只使用 `key_env` 环境变量。
 
 ## 卸载
 
@@ -178,17 +182,32 @@ curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/instal
 - MCP 服务条目（只删 `scientific-figure`，其它服务器保留）：
   - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
   - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
+- 启动器：只删除本工具标记的 `scientific-figure`，无关同名文件会保留并警告。
 - 加 `--config`：删除用户配置目录 `~/.config/scientific-figure-builder/`
+  并先清理该配置引用的 Keyring 凭据；Keyring 清理失败时保留配置。
 - 加 `--project DIR`：删除该项目 `.opencode/` 与 `.codex/` 下的 skill、命令及 MCP 条目
 
 其它 agent 配置、项目和本仓库均不受影响。被删除的目录可通过重新执行 `./install.sh` 恢复。
 
 ### 配置模型接口（可选）
 
+也可以直接运行原生中文配置窗口：
+
+```bash
+scientific-figure gui
+# 或：python -m figure_tools gui
+```
+
+窗口支持新增、重命名和删除 Provider、编辑 OpenAI/Anthropic 高级字段、
+安全保存 API Key，以及为当前未保存草稿主动测试连接。连接测试只在用户
+点击后执行，视觉路径使用最小确定性图片；生成路径可能产生 Provider 费用，
+会在执行前确认。`image_edit` 省略时继承 `image_generate`，不要求重复配置。
+
 每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
 在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在
 `.scientific-figure/project.yaml` 做项目级覆盖；`SCI_FIG_*` 环境变量覆盖
-模型 id，各 provider 的 `key_env` 指定存放其凭证的环境变量名（优先级最高）。
+模型 id，各 provider 的 `key_env` 指定环境变量回退名；若存在 `credential_id`，
+系统 Keyring 凭据优先。
 
 Provider 只使用两种接口方言：`openai` — 生图走 `/images/generations`、视觉走
 `/responses`；`anthropic` — 仅视觉走 `/messages`。`base_url` 应填 API 根地址，

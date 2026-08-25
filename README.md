@@ -157,6 +157,9 @@ Target only one agent, or install into a specific project:
 - Registers the MCP **server entry** (launches `figure_tools.server`):
   - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
   - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- Global installs create `~/.local/bin/scientific-figure`; project installs do not
+  create a global launcher. If that directory is not on `PATH`, installation
+  prints the exact directory to add.
 - Forwards the configured provider environment variables (every provider's
   `key_env` plus the `SCI_FIG_*` model-role overrides) to the MCP host.
 - Backs up any existing config before editing.
@@ -188,7 +191,10 @@ repository or unrelated configuration:
 - The MCP server entries (only `scientific-figure`; other servers are preserved):
   - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
   - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- The launcher only when it carries the tool's marker; an unrelated same-name
+  file is never overwritten or removed.
 - With `--config`: the user config directory `~/.config/scientific-figure-builder/`
+  after attempting cleanup of only its referenced Keyring credentials.
 - With `--project DIR`: the per-project `.opencode/` and `.codex/` skill, command,
   and MCP entries for that project install
 
@@ -203,6 +209,12 @@ python -m figure_tools gui` from this checkout). It edits the user-scoped models
 providers file without starting a browser or local server. Provider API keys
 remain in the operating-system credential store; headless and CI use continues
 to work with `key_env` environment variables.
+
+The Provider page supports add/rename/delete, OpenAI and Anthropic advanced
+fields, and password-mode API Key updates. “Test connection” is explicitly
+user-triggered, uses the current unsaved draft and a deterministic minimal image,
+and prefers a bound vision role. A generation-only test shows a cost warning
+first. Omitting `image_edit` inherits `image_generate`.
 
 Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`

@@ -19,3 +19,25 @@
 - 是否已发生凭据或数据泄露。
 
 如果凭据可能泄露，请先在对应服务商处撤销或轮换凭据，不要等待代码修复。
+
+## 凭据与联网边界
+
+- GUI API Key 只进入操作系统 Keyring；全局 YAML 只保存稳定的
+  `credential_id`。服务器、CI 和无桌面环境可以只使用 `key_env` 环境变量。
+- Keyring 凭据优先于环境变量；Keyring 不可用时不会降级为明文文件。
+  配置编辑器在凭据准备、YAML 原子替换和旧凭据清理之间执行补偿操作。
+- Provider HTTP 正文、模型 JSON 解析异常、MCP 错误、日志和 prompt 产物都经过
+  多凭据脱敏；错误提示不显示完整 Key 或环境变量凭据末四位。
+- 连接测试只有用户点击后才联网，使用当前未保存草稿和确定性最小图片；视觉
+  测试优先，只有生成路径时才在请求前提示可能产生费用。测试输出在成功、失败
+  和取消后清理。
+- 单元、CI、offscreen GUI、安装和卸载测试使用 Fake Transport/Fake SecretStore，
+  不访问真实系统钥匙串或真实模型接口。真实 Provider 测试必须显式配置并可能产生费用。
+- Linux 的安全 Keyring 后端可能依赖桌面会话；无 DISPLAY 的 MCP 运行不导入 Qt，
+  应使用环境变量凭据。Windows 使用 Credential Manager 由 Python Keyring 后端提供。
+
+## 卸载清理
+
+普通卸载保留用户配置和 Keyring 凭据。`--config`/`--all` 只读取全局配置中列出的
+`credential_id`，按固定服务名清理对应条目；Keyring 清理失败时保留配置，不删除
+其他系统凭据。启动器只有包含 Scientific Figure Builder 标记时才会删除。
