@@ -13,6 +13,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox  # noqa: E402
 
 from figure_tools.config_editor import GlobalConfigEditor  # noqa: E402
+from figure_tools.connection_test import ConnectionTestService  # noqa: E402
 from figure_tools.gui import ConfigurationWindow  # noqa: E402
 from figure_tools.providers.auth import MemorySecretStore  # noqa: E402
 
@@ -129,4 +130,38 @@ def test_empty_api_key_preserves_existing_credential(tmp_path: Path, app):
     assert window.provider_api_key.text() == ""
     assert window.save_draft() is True
     assert store.values == {"fixed-id": "existing-secret"}
+    window.close()
+
+
+def test_connection_test_runs_in_background_with_fake_transport(tmp_path: Path, app):
+    calls = []
+
+    class FakeTransport:
+        def post(self, role, model, payload, image_paths=None):
+            calls.append((role, model, image_paths))
+            return {"checks": [], "blocking": False}
+
+    store = MemorySecretStore()
+    editor = GlobalConfigEditor(tmp_path / "config.yaml", secret_store=store)
+    window = ConfigurationWindow(editor=editor, draft=editor.load())
+    window.add_provider("demo_provider")
+    window.provider_base_url.setText("https://models.example/v1")
+    window.provider_key_env.setText("DEMO_API_KEY")
+    window.role_widgets["vision_analyze"]["provider"].setCurrentText("demo_provider")
+    window.role_widgets["vision_analyze"]["model"].setText("vision-model")
+    window.provider_api_key.setText("temporary-key")
+    window.connection_service_factory = lambda **kwargs: ConnectionTestService(
+        transport_factory=lambda *_args, **_kwargs: FakeTransport()
+    )
+    assert window.test_connection() is True
+    assert window.test_connection() is False
+    for _ in range(50):
+        app.processEvents()
+        if window._connection_thread is None:
+            break
+    assert window._connection_thread is None
+    assert calls and calls[0][0] == "reference_analysis"
+    assert "连接成功" in window.credential_status_label.text()
+    assert not (tmp_path / "config.yaml").exists()
+    window._set_dirty(False)
     window.close()

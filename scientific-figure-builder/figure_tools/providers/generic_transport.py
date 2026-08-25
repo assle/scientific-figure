@@ -67,6 +67,7 @@ def _request_json(
     body: dict[str, Any],
     opener: HTTP_OPENER,
     redactor: SecretRedactor | None = None,
+    timeout: float = 30.0,
 ) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
@@ -75,7 +76,14 @@ def _request_json(
         method=method,
     )
     try:
-        with opener(request) as response:
+        try:
+            response_context = opener(request, timeout=timeout)
+        except TypeError as exc:
+            # Injectable fake openers from CI often accept only Request.
+            if "timeout" not in str(exc):
+                raise
+            response_context = opener(request)
+        with response_context as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
@@ -96,6 +104,7 @@ class OpenAICompatibleTransport(ProviderTransport):
                  credential: str | ResolvedCredential | None = None,
                  credential_resolver: CredentialResolver | None = None,
                  redactor: SecretRedactor | None = None,
+                 timeout: float = 30.0,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = normalize_provider_base_url(config.get("base_url"))
@@ -111,6 +120,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             raise ProviderError(f"{self.key_env} is not set for provider {name!r}")
         self.api_key = api_key
         self.redactor = redactor or SecretRedactor([api_key] if api_key else [])
+        self.timeout = float(timeout)
         self._opener = opener
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +131,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             body=body,
             opener=self._opener,
             redactor=self.redactor,
+            timeout=self.timeout,
         )
 
     def post(
@@ -221,6 +232,7 @@ class AnthropicTransport(ProviderTransport):
                  credential: str | ResolvedCredential | None = None,
                  credential_resolver: CredentialResolver | None = None,
                  redactor: SecretRedactor | None = None,
+                 timeout: float = 30.0,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = normalize_provider_base_url(config.get("base_url"))
@@ -245,6 +257,7 @@ class AnthropicTransport(ProviderTransport):
             )
         self.api_key = api_key
         self.redactor = redactor or SecretRedactor([api_key] if api_key else [])
+        self.timeout = float(timeout)
         self._opener = opener
 
     def post(
@@ -289,6 +302,7 @@ class AnthropicTransport(ProviderTransport):
             },
             opener=self._opener,
             redactor=self.redactor,
+            timeout=self.timeout,
         )
         text = "".join(
             block.get("text", "")
@@ -307,6 +321,7 @@ class ProviderRouter(ProviderTransport):
                  provider_credentials: dict[str, str | ResolvedCredential] | None = None,
                  credential_resolver: CredentialResolver | None = None,
                  redactor: SecretRedactor | None = None,
+                 timeout: float = 30.0,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self._routes: dict[str, str] = {}
         self._transports: dict[str, ProviderTransport] = {}
@@ -320,6 +335,7 @@ class ProviderRouter(ProviderTransport):
             value.value if isinstance(value, ResolvedCredential) else str(value)
             for value in self._credentials.values()
         )
+        self._timeout = float(timeout)
         self._opener = opener
         for role in ROLE_TO_MODEL_CONFIG:
             resolved = model_config_for_role(models, role)
@@ -369,11 +385,13 @@ class ProviderRouter(ProviderTransport):
             transport = OpenAICompatibleTransport(
                 provider_name, provider, credential=credential,
                 redactor=self._redactor, opener=self._opener,
+                timeout=self._timeout,
             )
         elif provider_type == "anthropic":
             transport = AnthropicTransport(
                 provider_name, provider, credential=credential,
                 redactor=self._redactor, opener=self._opener,
+                timeout=self._timeout,
             )
         else:
             raise ProviderError(

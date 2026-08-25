@@ -22,7 +22,12 @@ from figure_tools.config_editor import (
     ProviderInUseError,
     validate_provider_id,
 )
+from figure_tools.connection_test import (
+    ConnectionTestResult,
+    ConnectionTestService,
+)
 from figure_tools.providers.auth import (
+    CredentialResolver,
     credential_status,
     default_secret_store,
     sanitize_error,
@@ -30,7 +35,7 @@ from figure_tools.providers.auth import (
 from figure_tools.providers.generic_transport import normalize_provider_base_url
 
 try:  # Keep import failure local to the GUI entry point.
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QThread, Qt, Signal
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -71,6 +76,21 @@ def _provider_type(provider: dict[str, Any]) -> str:
 
 if QApplication is not None:
 
+    class _ConnectionTestThread(QThread):
+        succeeded = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, service: ConnectionTestService, kwargs: dict[str, Any]) -> None:
+            super().__init__()
+            self.service = service
+            self.kwargs = kwargs
+
+        def run(self) -> None:
+            try:
+                self.succeeded.emit(self.service.run(**self.kwargs))
+            except Exception as exc:  # noqa: BLE001
+                self.failed.emit(str(exc))
+
     class ConfigurationWindow(QMainWindow):
         """Chinese-native editor for four model routes and their Providers."""
 
@@ -86,6 +106,8 @@ if QApplication is not None:
             self._dirty = False
             self._loading_provider_fields = False
             self._credential_clear_requested = False
+            self._connection_thread: _ConnectionTestThread | None = None
+            self.connection_service_factory: Any = ConnectionTestService
             self.role_widgets: dict[str, dict[str, QWidget]] = {}
             self.provider_widgets: dict[str, QLineEdit] = {}
             self.setWindowTitle("Scientific Figure Builder · 全局配置")
@@ -198,6 +220,16 @@ if QApplication is not None:
             self.provider_api_key = QLineEdit()
             self.provider_api_key.setEchoMode(QLineEdit.Password)
             self.provider_api_key.setPlaceholderText("留空表示保留现有凭据")
+            self.test_connection_button = QPushButton("测试连接")
+            self.cancel_connection_button = QPushButton("取消测试")
+            self.cancel_connection_button.setEnabled(False)
+            self.test_connection_button.clicked.connect(self.test_connection)
+            self.cancel_connection_button.clicked.connect(self.cancel_connection_test)
+            test_actions = QWidget()
+            test_layout = QHBoxLayout(test_actions)
+            test_layout.setContentsMargins(0, 0, 0, 0)
+            test_layout.addWidget(self.test_connection_button)
+            test_layout.addWidget(self.cancel_connection_button)
             self.credential_status_label = QLabel()
             self.clear_credential_button = QPushButton("移除已保存凭据")
             self.clear_credential_button.clicked.connect(self.clear_credential)
@@ -213,6 +245,7 @@ if QApplication is not None:
             form.addRow("环境变量名", self.provider_key_env)
             form.addRow("Credential ID", self.provider_credential_id)
             form.addRow("API Key（可选）", self.provider_api_key)
+            form.addRow("主动验证", test_actions)
             form.addRow("凭据状态", self.credential_status_label)
             form.addRow("", self.clear_credential_button)
             form.addRow("认证方式", self.provider_auth_scheme)
@@ -438,6 +471,92 @@ if QApplication is not None:
             self._credential_clear_requested = True
             self._set_dirty(True)
             return True
+
+        def _models_for_connection(self) -> dict[str, dict[str, Any]]:
+            models: dict[str, dict[str, Any]] = {
+                str(role): dict(route)
+                for role, route in self.draft.models.items()
+                if isinstance(route, Mapping)
+            }
+            for role, widgets in self.role_widgets.items():
+                if role == "image_edit" and widgets["inherit"].isChecked():  # type: ignore[attr-defined]
+                    models.pop(role, None)
+                    continue
+                models[role] = {
+                    "provider": widgets["provider"].currentText().strip(),  # type: ignore[attr-defined]
+                    "model": widgets["model"].text().strip(),  # type: ignore[attr-defined]
+                }
+            return models
+
+        def _connection_provider(self) -> tuple[str, dict[str, Any]]:
+            provider_id = self.provider_selector.currentText().strip()
+            if not provider_id:
+                raise ConnectionTestError("请先选择 Provider")
+            provider = copy.deepcopy(dict(self.draft.providers.get(provider_id, {})))
+            provider.update(self._provider_values())
+            return provider_id, provider
+
+        def test_connection(self) -> bool:
+            if self._connection_thread is not None and self._connection_thread.isRunning():
+                return False
+            try:
+                provider_id, provider = self._connection_provider()
+                models = self._models_for_connection()
+                selected = ConnectionTestService.select_role(models, provider_id)
+                if selected is None:
+                    raise ConnectionTestError("当前 Provider 没有可测试的模型路由")
+                if selected[0] == "generation":
+                    choice = QMessageBox.question(
+                        self, "可能产生费用", "当前只有图像生成路径可用，测试可能产生 Provider 费用。继续？",
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+                    )
+                    if choice != QMessageBox.Yes:
+                        return False
+                service = self.connection_service_factory(
+                    resolver=CredentialResolver(secret_store=self.editor.secret_store),
+                    transport_factory=getattr(self, "connection_transport_factory", None),
+                )
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.warning(self, "连接测试失败", sanitize_error(exc))
+                return False
+            self.test_connection_button.setEnabled(False)
+            self.cancel_connection_button.setEnabled(True)
+            self.credential_status_label.setText("正在后台测试…")
+            thread = _ConnectionTestThread(service, {
+                "provider_id": provider_id,
+                "provider": provider,
+                "models": models,
+                "temporary_credential": self.provider_api_key.text() or None,
+            })
+            thread.succeeded.connect(self._connection_succeeded)
+            thread.failed.connect(self._connection_failed)
+            thread.finished.connect(self._connection_finished)
+            self._connection_thread = thread
+            thread.start()
+            return True
+
+        def cancel_connection_test(self) -> None:
+            if self._connection_thread is not None and self._connection_thread.isRunning():
+                self._connection_thread.requestInterruption()
+                self.credential_status_label.setText("正在取消测试…")
+                self.cancel_connection_button.setEnabled(False)
+
+        def _connection_succeeded(self, result: ConnectionTestResult) -> None:
+            self.credential_status_label.setText(
+                f"连接成功：{result.role} / {result.model}（未保存草稿）"
+            )
+
+        def _connection_failed(self, message: str) -> None:
+            self.credential_status_label.setText("连接失败")
+            QMessageBox.warning(self, "连接测试失败", sanitize_error(message))
+
+        def _connection_finished(self) -> None:
+            thread = self._connection_thread
+            self._connection_thread = None
+            self.test_connection_button.setEnabled(True)
+            self.cancel_connection_button.setEnabled(False)
+            if thread is not None:
+                thread.deleteLater()
 
         def _provider_for_warning(self, provider_id: str) -> Mapping[str, Any] | None:
             """Return the current Provider-page draft, even before Save."""
