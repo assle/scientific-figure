@@ -1,21 +1,174 @@
-"""Provider credential helpers (plan section 5).
+"""Provider credential resolution and secret-safe error handling.
 
-The API key is read from an environment variable or a user-private file and is
-never written to a repository, report, prompt log, or run manifest.
+This module is the only place that knows how a configured Provider obtains a
+credential. HTTP transports receive the resolved value explicitly; they do
+not inspect ``os.environ`` themselves. The interfaces are also injectable for
+headless tests and the future GUI workflow.
 """
 
 from __future__ import annotations
 
 import os
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Iterable, Mapping, Protocol
 
 REDACTED = "***REDACTED***"
+KEYRING_SERVICE = "scientific-figure-builder"
+
+
+class SecretStore(Protocol):
+    """Minimal secret-store seam used by the resolver and config editor."""
+
+    def get(self, credential_id: str) -> str | None: ...
+    def set(self, credential_id: str, value: str) -> None: ...
+    def delete(self, credential_id: str) -> None: ...
+
+
+class CredentialError(RuntimeError):
+    """Base class for non-secret credential failures."""
+
+
+class SecretStoreUnavailable(CredentialError):
+    """Raised when a secure store cannot be used for a requested write."""
+
+
+class SecretStoreReadError(CredentialError):
+    """A secure store exists but could not be read."""
+
+
+@dataclass(frozen=True)
+class ResolvedCredential:
+    """A credential value plus non-secret provenance metadata."""
+
+    value: str
+    source: str
+    provider_name: str
+    key_env: str
+    credential_id: str | None = None
+
+
+def provider_key_env(name: str, config: Mapping[str, Any]) -> str:
+    """Return the configured env-var name, preserving legacy derivation."""
+
+    configured = config.get("key_env")
+    if configured is not None and str(configured).strip():
+        return str(configured)
+    provider_type = config.get("type")
+    if provider_type is None and config.get("protocol") == "anthropic":
+        provider_type = "anthropic"
+    if provider_type == "anthropic":
+        return "ANTHROPIC_API_KEY"
+    return f"{name.upper()}_API_KEY"
+
+
+class CredentialResolver:
+    """Resolve Keyring-backed credentials before environment credentials."""
+
+    def __init__(
+        self,
+        secret_store: SecretStore | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> None:
+        self.secret_store = secret_store
+        self.environ = os.environ if environ is None else environ
+        self.last_warning: CredentialError | None = None
+
+    def resolve(
+        self,
+        provider_name: str,
+        config: Mapping[str, Any],
+    ) -> ResolvedCredential | None:
+        key_env = provider_key_env(provider_name, config)
+        credential_id = config.get("credential_id")
+        self.last_warning = None
+        if credential_id and self.secret_store is not None:
+            try:
+                value = self.secret_store.get(str(credential_id))
+            except Exception:  # noqa: BLE001 - adapters expose backend errors
+                # A read failure must not prevent a headless environment
+                # fallback. The warning deliberately contains no backend text.
+                value = None
+                self.last_warning = SecretStoreReadError(
+                    f"secure credential store unavailable for {provider_name!r}"
+                )
+            if value:
+                return ResolvedCredential(
+                    value=str(value), source="keyring",
+                    provider_name=provider_name, key_env=key_env,
+                    credential_id=str(credential_id),
+                )
+        value = self.environ.get(key_env)
+        if value:
+            return ResolvedCredential(
+                value=str(value), source="environment",
+                provider_name=provider_name, key_env=key_env,
+                credential_id=str(credential_id) if credential_id else None,
+            )
+        return None
+
+    def resolve_all(
+        self,
+        providers: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, ResolvedCredential]:
+        resolved: dict[str, ResolvedCredential] = {}
+        for name, config in providers.items():
+            credential = self.resolve(str(name), config)
+            if credential is not None:
+                resolved[str(name)] = credential
+        return resolved
+
+
+def resolve_provider_credentials(
+    providers: Mapping[str, Mapping[str, Any]],
+    *,
+    secret_store: SecretStore | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, ResolvedCredential]:
+    """Resolve all configured providers through the single auth seam."""
+
+    return CredentialResolver(secret_store, environ=environ).resolve_all(providers)
+
+
+class SecretRedactor:
+    """Replace every configured secret in text and exception messages."""
+
+    def __init__(self, secrets: Iterable[str] = ()) -> None:
+        unique = {str(secret) for secret in secrets if secret}
+        # Longer values first prevents a short shared prefix from exposing the
+        # suffix of a longer credential.
+        self.secrets = tuple(sorted(unique, key=len, reverse=True))
+
+    def redact_text(self, text: str) -> str:
+        safe = str(text)
+        for secret in self.secrets:
+            safe = safe.replace(secret, REDACTED)
+        return safe
+
+    def safe_exception(self, error: BaseException) -> str:
+        return self.redact_text(f"{type(error).__name__}: {error}")
+
+    def __call__(self, text: str) -> str:
+        return self.redact_text(text)
+
+
+def sanitize_error(error: BaseException | str, secrets: Iterable[str] = ()) -> str:
+    """Return an independently testable, secret-safe error message."""
+
+    redactor = SecretRedactor(secrets)
+    if isinstance(error, BaseException):
+        return redactor.safe_exception(error)
+    return redactor.redact_text(str(error))
 
 
 def get_api_key(
     env_var: str = "SCIENTIFIC_FIGURE_API_KEY",
     file_path: str | Path | None = None,
 ) -> str | None:
+    """Backward-compatible helper for legacy callers."""
+
     if env_var in os.environ:
         return os.environ[env_var]
     if file_path is not None:
@@ -26,6 +179,20 @@ def get_api_key(
 
 
 def redact(text: str, key: str | None) -> str:
-    if key and key in text:
-        return text.replace(key, REDACTED)
-    return text
+    """Backward-compatible single-secret redaction helper."""
+
+    return SecretRedactor([key] if key else []).redact_text(text)
+
+
+def looks_like_secret(value: str) -> bool:
+    """Conservative helper for config/snapshot safety checks."""
+
+    return bool(re.search(r"(?:sk-|api[_-]?key|secret|token)", value, re.I))
+
+
+__all__ = [
+    "KEYRING_SERVICE", "REDACTED", "CredentialError", "CredentialResolver",
+    "ResolvedCredential", "SecretRedactor", "SecretStore", "SecretStoreReadError",
+    "SecretStoreUnavailable", "get_api_key", "looks_like_secret", "provider_key_env",
+    "redact", "resolve_provider_credentials", "sanitize_error",
+]

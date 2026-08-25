@@ -5,11 +5,17 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
-import os
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
+
+from figure_tools.providers.auth import (
+    CredentialResolver,
+    ResolvedCredential,
+    SecretRedactor,
+    provider_key_env,
+)
 
 from figure_tools.providers.contracts import (
     extract_json,
@@ -40,18 +46,6 @@ def _api_root(value: Any) -> str:
     return root
 
 
-def provider_key_env(name: str, config: dict[str, Any]) -> str:
-    configured = config.get("key_env")
-    if configured is not None:
-        return str(configured)
-    provider_type = config.get("type")
-    if provider_type is None and config.get("protocol") == "anthropic":
-        provider_type = "anthropic"
-    if provider_type == "anthropic":
-        return "ANTHROPIC_API_KEY"
-    return f"{name.upper()}_API_KEY"
-
-
 def _data_url(path: str | Path) -> str:
     path = Path(path)
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -66,6 +60,7 @@ def _request_json(
     headers: dict[str, str],
     body: dict[str, Any],
     opener: HTTP_OPENER,
+    redactor: SecretRedactor | None = None,
 ) -> dict[str, Any]:
     request = urllib.request.Request(
         url,
@@ -78,28 +73,38 @@ def _request_json(
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
+        if redactor is not None:
+            detail = redactor.redact_text(detail)
         if exc.code == 429 or exc.code >= 500:
             raise RateLimitError(f"provider HTTP {exc.code}: {detail}") from exc
         raise ProviderError(f"provider HTTP {exc.code}: {detail}") from exc
     except (urllib.error.URLError, TimeoutError) as exc:
-        raise RateLimitError(f"transient provider error: {exc}") from exc
+        detail = redactor.redact_text(str(exc)) if redactor else str(exc)
+        raise RateLimitError(f"transient provider error: {detail}") from exc
 
 
 class OpenAICompatibleTransport(ProviderTransport):
     """OpenAI-compatible Images generation and Responses vision transport."""
 
     def __init__(self, name: str, config: dict[str, Any], *,
+                 credential: str | ResolvedCredential | None = None,
+                 credential_resolver: CredentialResolver | None = None,
+                 redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = _api_root(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
-        api_key = os.environ.get(self.key_env)
+        if credential is None:
+            resolver = credential_resolver or CredentialResolver()
+            credential = resolver.resolve(name, config)
+        api_key = credential.value if isinstance(credential, ResolvedCredential) else credential
         self.supports_image_edit = bool(config.get("supports_image_edit", False))
         if not self.base_url:
             raise ProviderError(f"provider {name!r} requires base_url")
         if not api_key:
             raise ProviderError(f"{self.key_env} is not set for provider {name!r}")
         self.api_key = api_key
+        self.redactor = redactor or SecretRedactor([api_key] if api_key else [])
         self._opener = opener
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -109,6 +114,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             headers={"Authorization": f"Bearer {self.api_key}"},
             body=body,
             opener=self._opener,
+            redactor=self.redactor,
         )
 
     def post(
@@ -152,7 +158,9 @@ class OpenAICompatibleTransport(ProviderTransport):
             body["image"] = _data_url(image_paths[0])
         response = self._post("/images/generations", body)
         if response.get("error"):
-            raise ProviderError(f"provider image error: {response['error']}")
+            raise ProviderError(
+                f"provider image error: {self.redactor.redact_text(str(response['error']))}"
+            )
         data = response.get("data") or []
         encoded = data[0].get("b64_json") if data else None
         if not encoded:
@@ -204,11 +212,17 @@ class AnthropicTransport(ProviderTransport):
     """Anthropic Messages-compatible vision transport."""
 
     def __init__(self, name: str, config: dict[str, Any], *,
+                 credential: str | ResolvedCredential | None = None,
+                 credential_resolver: CredentialResolver | None = None,
+                 redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
         self.base_url = _api_root(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
-        api_key = os.environ.get(self.key_env)
+        if credential is None:
+            resolver = credential_resolver or CredentialResolver()
+            credential = resolver.resolve(name, config)
+        api_key = credential.value if isinstance(credential, ResolvedCredential) else credential
         self.version = str(config.get("anthropic_version", "2023-06-01"))
         self.auth_scheme = str(config.get("auth_scheme", "x-api-key")).lower()
         self.messages_path = "/" + str(
@@ -224,6 +238,7 @@ class AnthropicTransport(ProviderTransport):
                 f"{self.auth_scheme!r}; expected x-api-key or bearer"
             )
         self.api_key = api_key
+        self.redactor = redactor or SecretRedactor([api_key] if api_key else [])
         self._opener = opener
 
     def post(
@@ -267,6 +282,7 @@ class AnthropicTransport(ProviderTransport):
                 "messages": [{"role": "user", "content": content}],
             },
             opener=self._opener,
+            redactor=self.redactor,
         )
         text = "".join(
             block.get("text", "")
@@ -281,10 +297,20 @@ class ProviderRouter(ProviderTransport):
 
     def __init__(self, models: dict[str, dict[str, Any]],
                  providers: dict[str, dict[str, Any]], *,
+                 credentials: dict[str, str | ResolvedCredential] | None = None,
+                 credential_resolver: CredentialResolver | None = None,
+                 redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self._routes: dict[str, str] = {}
         self._transports: dict[str, ProviderTransport] = {}
         self._providers = providers
+        self._explicit_credentials = credentials is not None
+        self._credentials = dict(credentials or {})
+        self._credential_resolver = credential_resolver
+        self._redactor = redactor or SecretRedactor(
+            value.value if isinstance(value, ResolvedCredential) else str(value)
+            for value in self._credentials.values()
+        )
         self._opener = opener
         for role in ROLE_TO_MODEL_CONFIG:
             resolved = model_config_for_role(models, role)
@@ -308,20 +334,30 @@ class ProviderRouter(ProviderTransport):
         }.get(legacy_protocol)
 
     def _transport_for(self, provider_name: str) -> ProviderTransport:
-        transport = self._transports.get(provider_name)
-        if transport is not None:
-            return transport
         provider = self._providers.get(provider_name)
         if provider is None:
             raise ProviderError(f"unknown provider {provider_name!r}")
+        credential = self._credentials.get(provider_name)
+        if self._credential_resolver is not None:
+            credential = self._credential_resolver.resolve(provider_name, provider)
+        elif self._explicit_credentials and credential is None:
+            # An explicit credential map is authoritative. Passing an empty
+            # value keeps the transport from silently reaching into env.
+            credential = ""
+        transport = self._transports.get(provider_name)
+        current_value = credential.value if isinstance(credential, ResolvedCredential) else credential
+        if transport is not None and getattr(transport, "api_key", None) == current_value:
+            return transport
         provider_type = self._provider_type(provider)
         if provider_type == "openai":
             transport = OpenAICompatibleTransport(
-                provider_name, provider, opener=self._opener,
+                provider_name, provider, credential=credential,
+                redactor=self._redactor, opener=self._opener,
             )
         elif provider_type == "anthropic":
             transport = AnthropicTransport(
-                provider_name, provider, opener=self._opener,
+                provider_name, provider, credential=credential,
+                redactor=self._redactor, opener=self._opener,
             )
         else:
             raise ProviderError(

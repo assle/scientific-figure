@@ -11,7 +11,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from figure_tools.providers.auth import get_api_key, redact
+from figure_tools.providers.auth import (
+    CredentialResolver,
+    SecretRedactor,
+    get_api_key,
+    redact,
+)
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.state import BudgetExceeded, Cache, RunState
@@ -56,6 +61,33 @@ def test_get_api_key_from_env(monkeypatch):
 
 def test_redact_replaces_key():
     assert redact("hello sk-test world", "sk-test") == "hello ***REDACTED*** world"
+
+
+def test_credential_resolver_uses_configured_environment_name(monkeypatch):
+    monkeypatch.setenv("CUSTOM_PROVIDER_KEY", "custom-secret")
+    resolved = CredentialResolver().resolve(
+        "custom", {"type": "openai", "key_env": "CUSTOM_PROVIDER_KEY"}
+    )
+    assert resolved is not None
+    assert resolved.value == "custom-secret"
+    assert resolved.source == "environment"
+    assert resolved.key_env == "CUSTOM_PROVIDER_KEY"
+
+
+def test_credential_resolver_derives_legacy_environment_name(monkeypatch):
+    monkeypatch.setenv("CUSTOM_API_KEY", "custom-secret")
+    resolved = CredentialResolver().resolve("custom", {"type": "openai"})
+    assert resolved is not None
+    assert resolved.value == "custom-secret"
+    assert resolved.key_env == "CUSTOM_API_KEY"
+
+
+def test_secret_redactor_handles_multiple_credentials_and_exceptions():
+    redactor = SecretRedactor(["first-secret", "second-secret"])
+    message = redactor.redact_text("first-secret/second-secret")
+    assert message == "***REDACTED***/***REDACTED***"
+    error = RuntimeError("second-secret failed")
+    assert redactor.safe_exception(error) == "RuntimeError: ***REDACTED*** failed"
 
 
 # --- generation ----------------------------------------------------------

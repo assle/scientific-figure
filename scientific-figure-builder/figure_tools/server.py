@@ -16,7 +16,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from figure_tools.providers.client import ProviderClient
-from figure_tools.providers.generic_transport import ProviderRouter, provider_key_env
+from figure_tools.providers.auth import (
+    CredentialResolver,
+    SecretRedactor,
+    resolve_provider_credentials,
+    sanitize_error,
+)
+from figure_tools.providers.generic_transport import ProviderRouter
 from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.config import configured_models, configured_providers, initialize_project
@@ -64,26 +70,30 @@ def _client(output_dir: str | Path | None = None,
     resolved_project_dir = project_dir or _project_dir_for_paths(output_dir)
     models = configured_models(resolved_project_dir)
     providers = configured_providers(resolved_project_dir)
+    credentials = resolve_provider_credentials(providers)
     provider_names = {
         name
         for model_cfg in (models or {}).values()
         if (name := model_cfg.get("provider"))
     }
-    has_live_provider = any(
-        (provider := providers.get(name)) is not None
-        and bool(os.environ.get(provider_key_env(name, provider)))
-        for name in provider_names
-    )
+    live_credentials = {
+        name: credential for name, credential in credentials.items()
+        if name in provider_names
+    }
+    has_live_provider = bool(live_credentials)
     if models and has_live_provider:
-        transport = ProviderRouter(models, providers)
-        api_keys = [
-            value
-            for name in provider_names
-            if (provider := providers.get(name)) is not None
-            if (value := os.environ.get(
-                provider_key_env(name, provider)
-            )) is not None
-        ]
+        try:
+            transport = ProviderRouter(
+                models, providers, credentials=live_credentials,
+            )
+        except TypeError as exc:
+            # Keep third-party/test adapters written against the pre-injection
+            # two-argument constructor working while the built-in router uses
+            # the explicit credential map.
+            if "credentials" not in str(exc):
+                raise
+            transport = ProviderRouter(models, providers)
+        api_keys = [credential.value for credential in live_credentials.values()]
         api_key = api_keys[0] if api_keys else None
         budget = dict(_DEFAULT_BUDGET)
         if "image_edit" not in models:
@@ -102,6 +112,7 @@ def _client(output_dir: str | Path | None = None,
 
     return ProviderClient(
         models, transport, api_key=api_key, api_keys=api_keys,
+        redactor=SecretRedactor(api_keys),
         state=RunState("mcp", budget=budget),
         cache=Cache(_CACHE_DIR), output_dir=Path(output_dir) if output_dir else None,
     )
@@ -340,9 +351,21 @@ def serve_stdio() -> int:
                 data = dispatch(name, arguments)
                 result = {"content": [{"type": "text", "text": json.dumps(data, default=str)}]}
             except Exception as e:  # noqa: BLE001
+                # Dispatch handlers do not guess which exceptions are safe to
+                # retry. The protocol boundary performs one consistent,
+                # multi-credential redaction pass before returning details.
+                try:
+                    providers = configured_providers(
+                        _project_dir_for_paths(arguments.get("project_dir"))
+                    )
+                    secrets = [
+                        item.value for item in resolve_provider_credentials(providers).values()
+                    ]
+                except Exception:  # noqa: BLE001
+                    secrets = []
                 sys.stdout.write(json.dumps(
                     {"jsonrpc": "2.0", "id": mid,
-                     "error": {"code": -32603, "message": f"{type(e).__name__}: {e}"}}) + "\n")
+                     "error": {"code": -32603, "message": sanitize_error(e, secrets)}}) + "\n")
                 sys.stdout.flush()
                 continue
         else:

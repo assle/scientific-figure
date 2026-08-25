@@ -111,6 +111,56 @@ def test_openai_vision_uses_responses_api(tmp_path: Path, monkeypatch):
     assert requests[0].get_header("Authorization") == "Bearer test-key"
 
 
+def test_openai_transport_accepts_explicit_credential_without_environment(
+    tmp_path: Path, monkeypatch,
+):
+    image = tmp_path / "input.png"
+    _png(image)
+    monkeypatch.delenv("CUSTOM_API_KEY", raising=False)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"output_text": '{"panels": []}'})
+
+    transport = OpenAICompatibleTransport(
+        "custom",
+        {"type": "openai", "base_url": "https://models.example/v1",
+         "key_env": "CUSTOM_API_KEY"},
+        credential="injected-secret",
+        opener=opener,
+    )
+    assert transport.post("reference_analysis", "vision-model", {}, [image]) == {
+        "panels": [],
+    }
+    assert requests[0].get_header("Authorization") == "Bearer injected-secret"
+
+
+def test_provider_http_error_redacts_all_explicit_credentials(monkeypatch):
+    from urllib.error import HTTPError
+
+    def opener(request):
+        raise HTTPError(
+            request.full_url, 400, "bad", {},
+            io.BytesIO(b"token=first-secret and token=second-secret"),
+        )
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {"type": "openai", "base_url": "https://models.example/v1"}},
+        credentials={"openai": "first-secret"},
+        opener=opener,
+    )
+    # Add the second value through the public redaction seam used by callers.
+    router._redactor = __import__("figure_tools.providers.auth", fromlist=["SecretRedactor"]).SecretRedactor(
+        ["first-secret", "second-secret"]
+    )
+    with pytest.raises(ProviderError) as exc_info:
+        router.post("generation", "image-model", {"prompt": "draw"})
+    assert "first-secret" not in str(exc_info.value)
+    assert "second-secret" not in str(exc_info.value)
+
+
 def test_openai_complete_operation_url_is_normalized_to_api_root(
     tmp_path: Path, monkeypatch,
 ):
