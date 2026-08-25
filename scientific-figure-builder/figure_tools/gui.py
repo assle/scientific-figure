@@ -112,6 +112,12 @@ if QApplication is not None:
             self.provider_widgets: dict[str, QLineEdit] = {}
             self.setWindowTitle("Scientific Figure Builder · 全局配置")
             self.resize(780, 620)
+            try:
+                from figure_tools.resources_loader import read_gui_resource
+
+                self.setStyleSheet(read_gui_resource("gui.qss"))
+            except (FileNotFoundError, ModuleNotFoundError):
+                pass
             self._build_ui()
             self._populate()
             self._refresh_warnings()
