@@ -196,6 +196,13 @@ directories can be restored by re-running `./install.sh`.
 
 ### Configure model providers (optional)
 
+For a native configuration window, run `python -m figure_tools gui` from the
+installed runtime (or `uv run --directory scientific-figure-builder python -m
+figure_tools gui` from this checkout). It edits the user-scoped models and
+providers file without starting a browser or local server. Provider API keys
+remain in the operating-system credential store; headless and CI use continues
+to work with `key_env` environment variables.
+
 Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`
 and override per project in `.scientific-figure/project.yaml`. The `SCI_FIG_*`

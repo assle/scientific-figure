@@ -7,8 +7,10 @@ Load the `scientific-figure-builder` skill, then perform the requested
 subcommand from `$ARGUMENTS`:
 
 - `init` - initialize project configuration (`.scientific-figure/`) with no
-  secrets. Provider credentials come from configured environment variables;
-  never write them anywhere.
+  secrets. Provider credentials come from the system credential store or the
+  configured environment variable; never write values into configuration.
+- `gui` - open the native Chinese global model/provider configuration window;
+  it does not start a browser, server, or network connection.
 - `plan` - inspect the request and local inputs, then **ask for every unresolved
   required clarification**: output target (`general` vs `ppt`), figure width
   (half-column 6.5 cm or full-column 14 cm), text language (Chinese vs English),

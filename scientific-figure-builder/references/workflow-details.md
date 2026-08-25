@@ -11,9 +11,12 @@ Configuration, approval, budget, and resume behavior (plan sections 5 and 12).
 
 ## Secrets
 
-Provider credentials are read only from configured environment variables.
+Provider credentials prefer the system credential store entry referenced by a
+stable `credential_id`, then fall back to the configured environment variable.
 Never write them to a repository, report, prompt log, or run manifest. Project
-config must contain no secrets.
+and global config must contain no secret values. Use `python -m figure_tools
+gui` to edit global model/provider routes; the native window writes only YAML
+metadata and keeps credential values in the system store.
 
 ## Model roles
 
