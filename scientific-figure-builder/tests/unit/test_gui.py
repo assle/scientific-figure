@@ -182,3 +182,19 @@ def test_switching_provider_preserves_unsaved_provider_fields(tmp_path: Path, ap
     assert window.provider_api_key.text() == "temporary-first"
     window._set_dirty(False)
     window.close()
+
+
+def test_saving_after_switch_persists_all_provider_drafts(tmp_path: Path, app):
+    editor = GlobalConfigEditor(tmp_path / "config.yaml")
+    window = ConfigurationWindow(editor=editor, draft=editor.load())
+    window.add_provider("first_provider")
+    window.add_provider("second_provider")
+    window.provider_selector.setCurrentText("first_provider")
+    window.provider_base_url.setText("https://first.example/v1")
+    window.provider_selector.setCurrentText("second_provider")
+    window.provider_base_url.setText("https://second.example/v1")
+    assert window.save_draft() is True
+    saved = editor.load().providers
+    assert saved["first_provider"]["base_url"] == "https://first.example/v1"
+    assert saved["second_provider"]["base_url"] == "https://second.example/v1"
+    window.close()

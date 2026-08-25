@@ -406,6 +406,34 @@ if QApplication is not None:
                 "supports_image_edit": self.provider_supports_edit.isChecked(),
             }
 
+        def _normalized_provider_values(self, raw: Mapping[str, Any]) -> dict[str, Any]:
+            base_url = self._validate_base_url(str(raw.get("base_url", "")))
+            return {
+                "type": str(raw.get("type", "openai")),
+                "base_url": base_url,
+                "key_env": str(raw.get("key_env", "")).strip(),
+                "auth_scheme": str(raw.get("auth_scheme", "x-api-key")),
+                "messages_path": str(raw.get("messages_path", "/messages")).strip() or "/messages",
+                "anthropic_version": str(raw.get("anthropic_version", "2023-06-01")).strip() or "2023-06-01",
+                "supports_image_edit": bool(raw.get("supports_image_edit", False)),
+            }
+
+        def _commit_provider_draft(self, provider_id: str, raw: Mapping[str, Any]) -> None:
+            self.editor.set_provider(
+                self.draft, provider_id, self._normalized_provider_values(raw)
+            )
+            api_key = str(raw.get("api_key", ""))
+            if api_key:
+                existing = self.draft.providers.get(provider_id, {})
+                credential_id = (
+                    str(existing.get("credential_id"))
+                    if isinstance(existing, Mapping) and existing.get("credential_id")
+                    else None
+                )
+                self.editor.set_credential(
+                    self.draft, provider_id, api_key, credential_id=credential_id,
+                )
+
         def _refresh_provider_choices(self) -> None:
             provider_ids = [str(item) for item in self.draft.providers]
             for widgets in self.role_widgets.values():
@@ -651,19 +679,13 @@ if QApplication is not None:
 
         def _collect_draft(self) -> None:
             provider_id = self.provider_selector.currentText().strip()
+            for pending_id, raw in list(self._provider_ui_drafts.items()):
+                if pending_id != provider_id and pending_id in self.draft.providers:
+                    self._commit_provider_draft(pending_id, raw)
             if provider_id:
-                self.editor.set_provider(self.draft, provider_id, self._provider_values())
-                api_key = self.provider_api_key.text()
-                if api_key:
-                    existing = self.draft.providers.get(provider_id, {})
-                    credential_id = (
-                        str(existing.get("credential_id"))
-                        if isinstance(existing, Mapping) and existing.get("credential_id")
-                        else None
-                    )
-                    self.editor.set_credential(
-                        self.draft, provider_id, api_key, credential_id=credential_id,
-                    )
+                self._commit_provider_draft(provider_id, {
+                    **self._provider_values(), "api_key": self.provider_api_key.text(),
+                })
             for role, widgets in self.role_widgets.items():
                 if role == "image_edit" and widgets["inherit"].isChecked():  # type: ignore[attr-defined]
                     self.editor.remove_model(self.draft, role)
@@ -682,7 +704,7 @@ if QApplication is not None:
                 return False
             self._saved_hash = self.draft.source_hash
             self.path_label.setText(self._path_text())
-            self._provider_ui_drafts.pop(self.provider_selector.currentText(), None)
+            self._provider_ui_drafts.clear()
             self.provider_api_key.clear()
             self._credential_clear_requested = False
             self._load_provider_fields(self.provider_selector.currentText())
