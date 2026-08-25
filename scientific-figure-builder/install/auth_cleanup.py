@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 SERVICE = "scientific-figure-builder"
@@ -23,14 +24,28 @@ def _ids(config_path: Path) -> list[str]:
     }) if isinstance(providers, dict) else []
 
 
-def cleanup_keyring_credentials(config_path: Path, *, dry_run: bool = False) -> tuple[bool, str | None]:
+def cleanup_keyring_credentials(
+    config_path: Path, *, dry_run: bool = False, runtime_dir: Path | None = None,
+) -> tuple[bool, str | None]:
     ids = _ids(config_path)
     if dry_run or not ids:
         return True, None
     try:
         import keyring
     except Exception:
-        return False, "Keyring backend unavailable; no credentials were removed"
+        keyring = None
+        if runtime_dir is not None:
+            candidates = sorted((runtime_dir / ".venv" / "lib").glob("python*/site-packages"))
+            for candidate in candidates:
+                if str(candidate) not in sys.path:
+                    sys.path.insert(0, str(candidate))
+            try:
+                import keyring as runtime_keyring
+            except Exception:
+                runtime_keyring = None
+            keyring = runtime_keyring
+        if keyring is None:
+            return False, "Keyring backend unavailable; no credentials were removed"
     for credential_id in ids:
         try:
             keyring.delete_password(SERVICE, credential_id)

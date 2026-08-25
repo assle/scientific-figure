@@ -124,7 +124,7 @@ def uninstall(
         if include_config:
             user_config = config_home / NAME / "config.yaml"
             ok, cleanup_warning = cleanup_keyring_credentials(
-                user_config, dry_run=dry_run,
+                user_config, dry_run=dry_run, runtime_dir=paths.runtime_dir,
             )
             if cleanup_warning:
                 warnings.append(cleanup_warning)
@@ -136,7 +136,7 @@ def uninstall(
         targets = [paths.skill_dir, paths.command_file, paths.codex_skill_dir]
         config_candidates = [
             project_dir / ".opencode" / name for name in ("opencode.json", "opencode.jsonc")
-        ] + [project_dir / ".codex" / "config.toml"]
+        ] + [project_dir / ".codex" / "config.toml", paths.config_file, paths.codex_config_file]
 
     for target in targets:
         if remove_path(target, dry_run=dry_run):
