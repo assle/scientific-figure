@@ -98,3 +98,26 @@ def test_keyring_failure_retains_user_config(tmp_path: Path, monkeypatch):
     )
     assert config_dir.exists()
     assert any("retained" in warning for warning in result["warnings"])
+
+
+def test_unreadable_global_config_is_retained_for_safety(tmp_path: Path, monkeypatch):
+    class FakeKeyring:
+        @staticmethod
+        def delete_password(*_args):
+            raise AssertionError("must not delete with unreadable config")
+
+    monkeypatch.setitem(sys.modules, "keyring", FakeKeyring)
+    paths = delivery_paths(
+        config_home=tmp_path / "config", data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
+    )
+    _seed(paths, tmp_path)
+    config_dir = tmp_path / "config" / "scientific-figure-builder"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.yaml").write_text("providers: [broken", encoding="utf-8")
+    result = uninstall(
+        config_home=tmp_path / "config", data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex", include_config=True, bin_dir=tmp_path / "bin",
+    )
+    assert config_dir.exists()
+    assert any("could not be read" in warning for warning in result["warnings"])

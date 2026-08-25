@@ -147,7 +147,7 @@ def launcher_text(runtime_python: Path) -> str:
     if os.name == "nt":
         return (
             "@echo off\r\n"
-            f"{runtime_python} -m figure_tools %*\r\n"
+            f'"{runtime_python}" -m figure_tools %*\r\n'
             f"{LAUNCHER_MARKER}\r\n"
         )
     return (
@@ -436,6 +436,7 @@ def verify_delivery(
         )
         checks["gui_resources"] = (
             (paths.runtime_dir / "figure_tools" / "resources" / "gui.qss").is_file()
+            and (paths.runtime_dir / "figure_tools" / "resources" / "icon.svg").is_file()
         )
     runtime_command: Path | None = None
 
@@ -476,7 +477,7 @@ def verify_delivery(
         )
         checks["cli_help"] = help_result.returncode == 0
         resource_result = subprocess.run(
-            [str(runtime_command), "-c", "from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss')"],
+            [str(runtime_command), "-c", "from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss'); read_gui_resource('icon.svg')"],
             cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
         )
         checks["gui_resource_import"] = resource_result.returncode == 0

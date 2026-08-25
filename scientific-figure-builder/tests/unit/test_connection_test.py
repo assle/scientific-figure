@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -89,3 +90,15 @@ def test_service_can_resolve_keyring_credential_without_writing_it():
     )
     assert result.provider_id == "demo"
     assert [item[0] for item in store.operations] == ["get"]
+
+
+def test_service_honors_cancellation_before_network_call():
+    calls = []
+    event = threading.Event()
+    event.set()
+    with pytest.raises(ConnectionTestError, match="已取消"):
+        _service(calls).run(
+            "demo", PROVIDER, MODELS,
+            temporary_credential="temporary-key", cancel_event=event,
+        )
+    assert calls == []

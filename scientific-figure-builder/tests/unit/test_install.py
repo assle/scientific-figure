@@ -264,8 +264,9 @@ def test_windows_launcher_rendering_is_controlled(monkeypatch):
     import install.install_delivery as delivery
 
     monkeypatch.setattr(delivery.os, "name", "nt")
-    text = delivery.launcher_text(Path("C:/runtime/.venv/Scripts/python.exe"))
+    text = delivery.launcher_text(Path("C:/Program Files/Scientific Figure/.venv/Scripts/python.exe"))
     assert text.startswith("@echo off")
+    assert '"C:\\Program Files\\Scientific Figure\\.venv\\Scripts\\python.exe"' in text
     assert "%*" in text
     assert delivery.LAUNCHER_MARKER in text
 

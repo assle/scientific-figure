@@ -8,7 +8,6 @@ import os
 import re
 import shutil
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -60,25 +59,6 @@ def remove_codex_mcp(path: Path) -> bool:
     del lines[start:end]
     path.write_text("".join(lines), encoding="utf-8")
     return True
-
-
-def _credential_ids(config_path: Path) -> list[str]:
-    if not config_path.is_file():
-        return []
-    try:
-        import yaml
-
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-    providers = data.get("providers", {}) if isinstance(data, dict) else {}
-    if not isinstance(providers, dict):
-        return []
-    return sorted({
-        str(provider["credential_id"])
-        for provider in providers.values()
-        if isinstance(provider, dict) and provider.get("credential_id")
-    })
 
 
 def remove_path(path: Path, *, dry_run: bool) -> bool:

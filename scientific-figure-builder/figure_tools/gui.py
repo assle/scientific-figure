@@ -8,8 +8,8 @@ importing PySide6; only ``python -m figure_tools gui`` reaches this module.
 from __future__ import annotations
 
 import copy
-import re
 import sys
+import threading
 from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
@@ -84,10 +84,16 @@ if QApplication is not None:
             super().__init__()
             self.service = service
             self.kwargs = kwargs
+            self.cancel_event = threading.Event()
+
+        def cancel(self) -> None:
+            self.cancel_event.set()
 
         def run(self) -> None:
             try:
-                self.succeeded.emit(self.service.run(**self.kwargs))
+                self.succeeded.emit(
+                    self.service.run(**self.kwargs, cancel_event=self.cancel_event)
+                )
             except Exception as exc:  # noqa: BLE001
                 self.failed.emit(str(exc))
 
@@ -106,6 +112,8 @@ if QApplication is not None:
             self._dirty = False
             self._loading_provider_fields = False
             self._credential_clear_requested = False
+            self._provider_ui_drafts: dict[str, dict[str, Any]] = {}
+            self._active_provider_id = ""
             self._connection_thread: _ConnectionTestThread | None = None
             self.connection_service_factory: Any = ConnectionTestService
             self.role_widgets: dict[str, dict[str, QWidget]] = {}
@@ -305,6 +313,8 @@ if QApplication is not None:
         def _on_field_changed(self, *_args: object) -> None:
             if self._loading_provider_fields:
                 return
+            if self._active_provider_id:
+                self._provider_ui_drafts[self._active_provider_id] = self._raw_provider_values()
             self._set_dirty(True)
             self._refresh_warnings()
 
@@ -317,16 +327,25 @@ if QApplication is not None:
             )
 
         def _load_provider_fields(self, provider_id: str) -> None:
+            if (
+                not self._loading_provider_fields
+                and self._active_provider_id
+                and self._active_provider_id != provider_id
+            ):
+                self._provider_ui_drafts[self._active_provider_id] = self._raw_provider_values()
             self._loading_provider_fields = True
             try:
                 provider = self.draft.providers.get(provider_id, {})
                 if not isinstance(provider, Mapping):
                     provider = {}
+                pending = self._provider_ui_drafts.get(provider_id)
+                if pending is not None:
+                    provider = {**dict(provider), **pending}
                 self.provider_type.setCurrentText(_provider_type(provider) or "openai")
                 self.provider_base_url.setText(str(provider.get("base_url", "")))
                 self.provider_key_env.setText(str(provider.get("key_env", "")))
                 self.provider_credential_id.setText(str(provider.get("credential_id", "")))
-                self.provider_api_key.clear()
+                self.provider_api_key.setText(str(provider.get("api_key", "")))
                 self.provider_auth_scheme.setCurrentText(
                     str(provider.get("auth_scheme", "x-api-key"))
                 )
@@ -350,8 +369,21 @@ if QApplication is not None:
                 else:
                     self.credential_status_label.setText("未配置")
                 self._credential_clear_requested = False
+                self._active_provider_id = provider_id
             finally:
                 self._loading_provider_fields = False
+
+        def _raw_provider_values(self) -> dict[str, Any]:
+            return {
+                "type": self.provider_type.currentText(),
+                "base_url": self.provider_base_url.text(),
+                "key_env": self.provider_key_env.text(),
+                "auth_scheme": self.provider_auth_scheme.currentText(),
+                "messages_path": self.provider_messages_path.text(),
+                "anthropic_version": self.provider_anthropic_version.text(),
+                "supports_image_edit": self.provider_supports_edit.isChecked(),
+                "api_key": self.provider_api_key.text(),
+            }
 
         @staticmethod
         def _validate_base_url(value: str) -> str:
@@ -430,6 +462,8 @@ if QApplication is not None:
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.warning(self, "重命名失败", sanitize_error(exc))
                 return False
+            if old_id in self._provider_ui_drafts:
+                self._provider_ui_drafts[new_id] = self._provider_ui_drafts.pop(old_id)
             renamed_roles = [
                 role for role, widgets in self.role_widgets.items()
                 if widgets["provider"].currentText() == old_id  # type: ignore[attr-defined]
@@ -462,6 +496,7 @@ if QApplication is not None:
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.warning(self, "删除失败", sanitize_error(exc))
                 return False
+            self._provider_ui_drafts.pop(provider_id, None)
             self._refresh_provider_choices()
             self._load_provider_fields(self.provider_selector.currentText())
             self._set_dirty(True)
@@ -549,7 +584,7 @@ if QApplication is not None:
 
         def cancel_connection_test(self) -> None:
             if self._connection_thread is not None and self._connection_thread.isRunning():
-                self._connection_thread.requestInterruption()
+                self._connection_thread.cancel()
                 self.credential_status_label.setText("正在取消测试…")
                 self.cancel_connection_button.setEnabled(False)
 
@@ -560,7 +595,10 @@ if QApplication is not None:
 
         def _connection_failed(self, message: str) -> None:
             self.credential_status_label.setText("连接失败")
-            QMessageBox.warning(self, "连接测试失败", sanitize_error(message))
+            if "已取消" in message:
+                self.credential_status_label.setText("连接测试已取消")
+            else:
+                QMessageBox.warning(self, "连接测试失败", sanitize_error(message))
 
         def _connection_finished(self) -> None:
             thread = self._connection_thread
@@ -644,6 +682,7 @@ if QApplication is not None:
                 return False
             self._saved_hash = self.draft.source_hash
             self.path_label.setText(self._path_text())
+            self._provider_ui_drafts.pop(self.provider_selector.currentText(), None)
             self.provider_api_key.clear()
             self._credential_clear_requested = False
             self._load_provider_fields(self.provider_selector.currentText())

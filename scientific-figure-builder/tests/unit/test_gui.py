@@ -166,3 +166,19 @@ def test_connection_test_runs_in_background_with_fake_transport(tmp_path: Path, 
     assert not (tmp_path / "config.yaml").exists()
     window._set_dirty(False)
     window.close()
+
+
+def test_switching_provider_preserves_unsaved_provider_fields(tmp_path: Path, app):
+    editor = GlobalConfigEditor(tmp_path / "config.yaml")
+    window = ConfigurationWindow(editor=editor, draft=editor.load())
+    window.add_provider("first_provider")
+    window.add_provider("second_provider")
+    window.provider_selector.setCurrentText("first_provider")
+    window.provider_base_url.setText("https://first.example/v1")
+    window.provider_api_key.setText("temporary-first")
+    window.provider_selector.setCurrentText("second_provider")
+    window.provider_selector.setCurrentText("first_provider")
+    assert window.provider_base_url.text() == "https://first.example/v1"
+    assert window.provider_api_key.text() == "temporary-first"
+    window._set_dirty(False)
+    window.close()

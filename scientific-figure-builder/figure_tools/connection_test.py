@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import tempfile
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -24,7 +25,7 @@ from figure_tools.providers.generic_transport import (
     AnthropicTransport,
     OpenAICompatibleTransport,
 )
-from figure_tools.providers.transport import ProviderError, ProviderTransport
+from figure_tools.providers.transport import ProviderTransport
 
 _MINIMAL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
@@ -104,7 +105,10 @@ class ConnectionTestService:
         models: Mapping[str, Mapping[str, Any]],
         *,
         temporary_credential: str | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> ConnectionTestResult:
+        if cancel_event is not None and cancel_event.is_set():
+            raise ConnectionTestError("连接测试已取消")
         selected = self.select_role(models, provider_id)
         if selected is None:
             raise ConnectionTestError("当前 Provider 没有已绑定且有模型 ID 的路由")
@@ -141,6 +145,8 @@ class ConnectionTestService:
                         {"prompt": "connection test; return a compact JSON response"},
                         [str(image_path)],
                     )
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ConnectionTestError("连接测试已取消")
         except Exception as exc:  # noqa: BLE001
             if isinstance(exc, ConnectionTestError):
                 raise
