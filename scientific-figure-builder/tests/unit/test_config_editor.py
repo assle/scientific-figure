@@ -106,6 +106,39 @@ def test_deleting_unreferenced_provider_cleans_its_credential(tmp_path: Path):
     assert store.values == {}
 
 
+def test_preparing_multiple_credentials_rolls_back_partial_keyring_write(tmp_path: Path):
+    class FailingStore(MemorySecretStore):
+        def set(self, credential_id, value):
+            if credential_id == "second":
+                raise RuntimeError("backend unavailable")
+            super().set(credential_id, value)
+
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n  one: {type: openai}\n  two: {type: openai}\n",
+        encoding="utf-8",
+    )
+    store = FailingStore()
+    editor = _editor(path, store)
+    draft = editor.load()
+    editor.set_credential(draft, "one", "first", credential_id="first")
+    editor.set_credential(draft, "two", "second-value", credential_id="second")
+    with pytest.raises(Exception, match="secure system credential"):
+        editor.save(draft)
+    assert store.values == {}
+
+
+def test_secret_value_in_unknown_field_is_rejected_and_scrubbed_from_snapshot(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n  p: {type: openai, notes: sk-live-value}\n", encoding="utf-8"
+    )
+    draft = _editor(path).load()
+    assert "sk-live-value" not in str(draft.public_snapshot())
+    with pytest.raises(Exception, match="secure system store"):
+        _editor(path).save(draft)
+
+
 def test_legacy_protocol_is_migrated_on_read_with_warning(tmp_path: Path):
     path = tmp_path / "config.yaml"
     path.write_text(

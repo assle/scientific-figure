@@ -2,8 +2,9 @@
 
 Tool handlers wrap the deterministic engines and the provider client. The stdio
 JSON-RPC loop lets OpenCode discover and invoke the tools. When configured
-provider credentials are present in the environment, real paid calls
-are made under a run budget; otherwise a mock transport is used (safe default).
+provider credentials resolve from the system store or environment, real paid
+calls are made under a run budget; otherwise a mock transport is used (safe
+default).
 """
 
 from __future__ import annotations
@@ -361,7 +362,9 @@ def serve_stdio() -> int:
                         _project_dir_for_paths(arguments.get("project_dir"))
                     )
                     secrets = [
-                        item.value for item in resolve_provider_credentials(providers).values()
+                        item.value for item in resolve_provider_credentials(
+                            providers, secret_store=default_secret_store(),
+                        ).values()
                     ]
                 except Exception:  # noqa: BLE001
                     secrets = []

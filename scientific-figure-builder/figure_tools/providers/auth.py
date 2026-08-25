@@ -306,7 +306,13 @@ def redact(text: str, key: str | None) -> str:
 def looks_like_secret(value: str) -> bool:
     """Conservative helper for config/snapshot safety checks."""
 
-    return bool(re.search(r"(?:sk-|api[_-]?key|secret|token)", value, re.I))
+    normalized = value.strip().lower()
+    if normalized in {"credential_id", "key_env"}:
+        return False
+    return bool(re.search(
+        r"(?:sk-|api[_-]?key|access[_-]?key|private[_-]?key|secret|token|password|credential)",
+        value, re.I,
+    ))
 
 
 __all__ = [

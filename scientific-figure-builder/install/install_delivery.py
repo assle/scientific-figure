@@ -194,7 +194,10 @@ def sync_runtime(runtime_dir: Path) -> Path:
         raise RuntimeError(
             "`uv` is required. Install it first from https://docs.astral.sh/uv/."
         )
-    command = [uv, "sync", "--frozen", "--no-dev", "--directory", str(runtime_dir)]
+    command = [
+        uv, "sync", "--frozen", "--no-dev", "--extra", "gui",
+        "--directory", str(runtime_dir),
+    ]
     subprocess.run(command, check=True)
     candidates = (
         runtime_dir / ".venv" / "bin" / "python",
@@ -502,7 +505,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if install_codex:
         agents.append("Codex")
     print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
-    print("Provider credentials stay in environment variables and were not written to disk.")
+    print(
+        "Provider credentials use the system credential store when configured; "
+        "environment-backed values were not written to disk."
+    )
     return 0
 
 

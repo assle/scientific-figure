@@ -7,6 +7,7 @@ importing PySide6; only ``python -m figure_tools gui`` reaches this module.
 
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 from collections.abc import Mapping
@@ -230,17 +231,33 @@ if QApplication is not None:
             self.provider_key_env.setText(str(provider.get("key_env", "")))
             self.provider_credential_id.setText(str(provider.get("credential_id", "")))
 
+        def _provider_for_warning(self, provider_id: str) -> Mapping[str, Any] | None:
+            """Return the current Provider-page draft, even before Save."""
+
+            provider = self.draft.providers.get(provider_id)
+            if not isinstance(provider, Mapping):
+                return None
+            if provider_id != self.provider_selector.currentText().strip():
+                return provider
+            pending = copy.deepcopy(dict(provider))
+            pending.update({
+                "type": self.provider_type.currentText(),
+                "base_url": self.provider_base_url.text().strip(),
+                "key_env": self.provider_key_env.text().strip(),
+            })
+            return pending
+
         def _refresh_warnings(self) -> None:
             warnings: list[str] = []
             for role, widgets in self.role_widgets.items():
                 if role == "image_edit" and widgets["inherit"].isChecked():  # type: ignore[attr-defined]
                     generation = self.role_widgets["image_generate"]["provider"].currentText().strip()  # type: ignore[attr-defined]
-                    inherited_provider = self.draft.providers.get(generation)
+                    inherited_provider = self._provider_for_warning(generation)
                     if isinstance(inherited_provider, Mapping) and not inherited_provider.get("supports_image_edit", False):
                         warnings.append("图像编辑继承图像生成 Provider，但该 Provider 未声明参考图编辑能力；生成用途不受影响。")
                     continue
                 provider_id = widgets["provider"].currentText().strip()  # type: ignore[attr-defined]
-                provider = self.draft.providers.get(provider_id)
+                provider = self._provider_for_warning(provider_id)
                 if not isinstance(provider, Mapping):
                     if provider_id:
                         warnings.append(f"{ROLE_LABELS[role]}：Provider“{provider_id}”尚未配置。")

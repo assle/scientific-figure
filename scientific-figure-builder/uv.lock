@@ -1939,13 +1939,15 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
-    { name = "pyside6" },
     { name = "python-pptx" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
 ]
 
 [package.optional-dependencies]
+gui = [
+    { name = "pyside6" },
+]
 qa = [
     { name = "opencv-python-headless" },
 ]
@@ -1967,12 +1969,12 @@ requires-dist = [
     { name = "opencv-python-headless", marker = "extra == 'qa'" },
     { name = "paddleocr", marker = "extra == 'qa-ocr'" },
     { name = "pandas", specifier = ">=2.0" },
-    { name = "pyside6", specifier = ">=6.7" },
+    { name = "pyside6", marker = "extra == 'gui'", specifier = ">=6.7" },
     { name = "python-pptx", specifier = ">=0.6.23" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
 ]
-provides-extras = ["qa", "qa-ocr"]
+provides-extras = ["gui", "qa", "qa-ocr"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]

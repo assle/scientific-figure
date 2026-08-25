@@ -67,3 +67,18 @@ def test_inherited_edit_route_shows_capability_warning(tmp_path: Path, app):
     assert "参考图编辑能力" in window.warning_label.text()
     window._set_dirty(False)
     window.close()
+
+
+def test_unsaved_provider_type_is_reflected_in_compatibility_warning(tmp_path: Path, app):
+    editor = GlobalConfigEditor(tmp_path / "config.yaml")
+    draft = editor.load()
+    editor.set_provider(draft, "shared", {
+        "type": "openai", "base_url": "https://models.example/v1",
+    })
+    window = ConfigurationWindow(editor=editor, draft=draft)
+    window.role_widgets["image_generate"]["provider"].setCurrentText("shared")
+    window.provider_selector.setCurrentText("shared")
+    window.provider_type.setCurrentText("anthropic")
+    assert "不支持图像生成" in window.warning_label.text()
+    window._set_dirty(False)
+    window.close()

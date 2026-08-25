@@ -343,6 +343,13 @@ class ProviderRouter(ProviderTransport):
         credential = self._credentials.get(provider_name)
         if self._credential_resolver is not None:
             credential = self._credential_resolver.resolve(provider_name, provider)
+            if isinstance(credential, ResolvedCredential):
+                # Resolver-backed credentials can rotate while a Router is
+                # alive. Keep the shared redactor in sync before checking the
+                # transport cache so HTTP errors cannot expose the new value.
+                self._redactor = SecretRedactor(
+                    (*self._redactor.secrets, credential.value)
+                )
         elif self._explicit_credentials and credential is None:
             # An explicit credential map is authoritative. Passing an empty
             # value keeps the transport from silently reaching into env.

@@ -161,7 +161,8 @@ Target only one agent, or install into a specific project:
   `key_env` plus the `SCI_FIG_*` model-role overrides) to the MCP host.
 - Backs up any existing config before editing.
 
-No API keys are written to disk; credentials stay in environment variables.
+No API keys are written to disk; credentials use the operating-system
+credential store when configured and otherwise stay in environment variables.
 Choose which providers to use under "Configure model providers" below.
 
 ## Uninstall
@@ -197,8 +198,8 @@ directories can be restored by re-running `./install.sh`.
 ### Configure model providers (optional)
 
 For a native configuration window, run `python -m figure_tools gui` from the
-installed runtime (or `uv run --directory scientific-figure-builder python -m
-figure_tools gui` from this checkout). It edits the user-scoped models and
+installed runtime (or `uv run --extra gui --directory scientific-figure-builder
+python -m figure_tools gui` from this checkout). It edits the user-scoped models and
 providers file without starting a browser or local server. Provider API keys
 remain in the operating-system credential store; headless and CI use continues
 to work with `key_env` environment variables.

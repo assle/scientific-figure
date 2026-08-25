@@ -22,6 +22,7 @@ from typing import Any, Mapping
 from figure_tools.config import user_config_path
 from figure_tools.providers.auth import (
     CredentialError,
+    REDACTED,
     SecretStore,
     SecretStoreUnavailable,
     looks_like_secret,
@@ -80,15 +81,17 @@ class GlobalConfigDraft:
     def public_snapshot(self) -> dict[str, Any]:
         """Return a copy suitable for diagnostics without secret values."""
 
-        def scrub(value: Any) -> Any:
+        def scrub(value: Any, *, allow_reference: bool = False) -> Any:
             if isinstance(value, Mapping):
                 return {
-                    str(key): scrub(item)
+                    str(key): scrub(item, allow_reference=str(key) == "key_env")
                     for key, item in value.items()
                     if not looks_like_secret(str(key))
                 }
             if isinstance(value, list):
-                return [scrub(item) for item in value]
+                return [scrub(item, allow_reference=allow_reference) for item in value]
+            if isinstance(value, str) and not allow_reference and looks_like_secret(value):
+                return REDACTED
             return copy.deepcopy(value)
 
         return scrub(self.data)
@@ -182,17 +185,21 @@ class GlobalConfigEditor:
 
     @staticmethod
     def _assert_non_secret(values: Mapping[str, Any]) -> None:
-        def walk(value: Any) -> None:
+        def walk(value: Any, *, allow_reference: bool = False) -> None:
             if isinstance(value, Mapping):
                 for key, item in value.items():
                     if looks_like_secret(str(key)):
                         raise ConfigEditorError(
                             "provider credentials must be stored in the secure system store"
                         )
-                    walk(item)
+                    walk(item, allow_reference=str(key) == "key_env")
             elif isinstance(value, list):
                 for item in value:
-                    walk(item)
+                    walk(item, allow_reference=allow_reference)
+            elif isinstance(value, str) and not allow_reference and looks_like_secret(value):
+                raise ConfigEditorError(
+                    "provider credentials must be stored in the secure system store"
+                )
         walk(values)
 
     def rename_provider(self, draft: GlobalConfigDraft, old_id: str, new_id: str) -> None:
@@ -267,16 +274,18 @@ class GlobalConfigEditor:
                 "secure system credential backend is required to save a credential"
             )
         previous: dict[str, str | None] = {}
-        for provider_id, (credential_id, value) in draft.credential_updates.items():
-            try:
+        try:
+            for provider_id, (credential_id, value) in draft.credential_updates.items():
                 previous[credential_id] = self.secret_store.get(credential_id)
                 self.secret_store.set(credential_id, value)
-            except CredentialError:
-                raise
-            except Exception as exc:  # noqa: BLE001
-                raise SecretStoreUnavailable(
-                    "secure system credential backend could not prepare the credential"
-                ) from exc
+        except CredentialError:
+            self._rollback_credentials(previous)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._rollback_credentials(previous)
+            raise SecretStoreUnavailable(
+                "secure system credential backend could not prepare the credential"
+            ) from exc
         return previous
 
     def _rollback_credentials(self, previous: Mapping[str, str | None]) -> None:

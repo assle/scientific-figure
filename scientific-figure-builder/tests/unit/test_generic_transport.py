@@ -406,6 +406,31 @@ def test_provider_router_refreshes_keyring_value_on_next_call(monkeypatch):
     assert headers == ["Bearer first-secret", "Bearer second-secret"]
 
 
+def test_keyring_only_http_error_redacts_resolved_credential(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+    from urllib.error import HTTPError
+
+    store = MemorySecretStore({"credential-id": "keyring-secret"})
+
+    def opener(request):
+        raise HTTPError(
+            request.full_url, 400, "bad", {},
+            io.BytesIO(b"provider echoed keyring-secret"),
+        )
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "credential_id": "credential-id",
+        }},
+        credential_resolver=CredentialResolver(store), opener=opener,
+    )
+    with pytest.raises(ProviderError) as exc_info:
+        router.post("generation", "image-model", {"prompt": "draw"})
+    assert "keyring-secret" not in str(exc_info.value)
+
+
 def test_configured_provider_instance_may_be_named_ark(monkeypatch):
     encoded = base64.b64encode(b"image").decode("ascii")
     monkeypatch.setenv("CUSTOM_API_KEY", "custom-key")
