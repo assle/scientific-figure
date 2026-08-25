@@ -109,6 +109,7 @@ def test_provider_lifecycle_and_keyring_credential_save_from_empty_config(
 
     assert window.rename_provider("renamed_provider") is True
     assert window.draft.models["image_generate"]["provider"] == "renamed_provider"
+    assert window.role_widgets["image_generate"]["provider"].currentText() == "renamed_provider"
     assert window.delete_provider("renamed_provider", confirm=False) is False
     window.editor.remove_model(window.draft, "image_generate")
     assert window.delete_provider("renamed_provider", confirm=False) is True

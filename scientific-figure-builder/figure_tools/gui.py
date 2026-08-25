@@ -430,7 +430,13 @@ if QApplication is not None:
             except Exception as exc:  # noqa: BLE001
                 QMessageBox.warning(self, "重命名失败", sanitize_error(exc))
                 return False
+            renamed_roles = [
+                role for role, widgets in self.role_widgets.items()
+                if widgets["provider"].currentText() == old_id  # type: ignore[attr-defined]
+            ]
             self._refresh_provider_choices()
+            for role in renamed_roles:
+                self.role_widgets[role]["provider"].setCurrentText(new_id)  # type: ignore[attr-defined]
             self.provider_selector.setCurrentText(new_id)
             self._load_provider_fields(new_id)
             self._set_dirty(True)
