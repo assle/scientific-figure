@@ -63,7 +63,6 @@ def test_rename_provider_updates_routes_and_delete_rejects_references(tmp_path: 
     assert draft.models["a"]["provider"] == "new"
     with pytest.raises(ProviderInUseError):
         editor.delete_provider(draft, "new")
-    editor.delete_provider(draft, "new", force=True)
 
 
 def test_external_change_is_detected_even_when_file_was_initially_missing(tmp_path: Path):
@@ -92,6 +91,19 @@ def test_credentials_are_prepared_before_yaml_and_old_credential_cleaned_last(tm
     ]
     assert "new-secret" not in path.read_text(encoding="utf-8")
     assert path.with_name("config.yaml.bak").is_file()
+
+
+def test_deleting_unreferenced_provider_cleans_its_credential(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "providers:\n  p: {type: openai, credential_id: old-id}\n", encoding="utf-8"
+    )
+    store = MemorySecretStore({"old-id": "old-secret"})
+    editor = _editor(path, store)
+    draft = editor.load()
+    editor.delete_provider(draft, "p")
+    editor.save(draft)
+    assert store.values == {}
 
 
 def test_legacy_protocol_is_migrated_on_read_with_warning(tmp_path: Path):

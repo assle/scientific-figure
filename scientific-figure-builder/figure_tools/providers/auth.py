@@ -108,6 +108,11 @@ class MemorySecretStore:
         self.values.pop(credential_id, None)
 
 
+# Public test seam name used by integration callers; it is deliberately an
+# in-memory implementation and is never selected as a production fallback.
+FakeSecretStore = MemorySecretStore
+
+
 def new_credential_id() -> str:
     """Return the stable UUID reference stored in global configuration."""
 
@@ -147,6 +152,12 @@ class ResolvedCredential:
     provider_name: str
     key_env: str
     credential_id: str | None = None
+
+    @property
+    def credential(self) -> str:
+        """Compatibility spelling for callers that use credential terminology."""
+
+        return self.value
 
 
 def provider_key_env(name: str, config: Mapping[str, Any]) -> str:
@@ -220,6 +231,14 @@ class CredentialResolver:
                 resolved[str(name)] = credential
         return resolved
 
+    resolve_provider = resolve
+    resolve_for_provider = resolve
+
+    def resolve_values(
+        self, providers: Mapping[str, Mapping[str, Any]]
+    ) -> dict[str, str]:
+        return {name: item.value for name, item in self.resolve_all(providers).items()}
+
 
 def resolve_provider_credentials(
     providers: Mapping[str, Mapping[str, Any]],
@@ -292,7 +311,7 @@ def looks_like_secret(value: str) -> bool:
 
 __all__ = [
     "KEYRING_SERVICE", "REDACTED", "CredentialError", "CredentialResolver",
-    "KeyringSecretStore", "MemorySecretStore",
+    "FakeSecretStore", "KeyringSecretStore", "MemorySecretStore",
     "ResolvedCredential", "SecretRedactor", "SecretStore", "SecretStoreReadError",
     "SecretStoreUnavailable", "credential_status", "default_secret_store",
     "get_api_key", "looks_like_secret", "new_credential_id", "provider_key_env",

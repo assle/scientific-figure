@@ -205,13 +205,12 @@ class GlobalConfigEditor:
             if isinstance(model, Mapping) and model.get("provider") == old_id:
                 model["provider"] = new_id
 
-    def delete_provider(self, draft: GlobalConfigDraft, provider_id: str,
-                        *, force: bool = False) -> None:
+    def delete_provider(self, draft: GlobalConfigDraft, provider_id: str) -> None:
         references = [
             role for role, model in draft.models.items()
             if isinstance(model, Mapping) and model.get("provider") == provider_id
         ]
-        if references and not force:
+        if references:
             raise ProviderInUseError(
                 f"provider {provider_id!r} is referenced by model roles: {', '.join(references)}"
             )

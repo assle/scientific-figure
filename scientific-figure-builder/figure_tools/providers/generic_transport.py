@@ -298,12 +298,15 @@ class ProviderRouter(ProviderTransport):
     def __init__(self, models: dict[str, dict[str, Any]],
                  providers: dict[str, dict[str, Any]], *,
                  credentials: dict[str, str | ResolvedCredential] | None = None,
+                 provider_credentials: dict[str, str | ResolvedCredential] | None = None,
                  credential_resolver: CredentialResolver | None = None,
                  redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self._routes: dict[str, str] = {}
         self._transports: dict[str, ProviderTransport] = {}
         self._providers = providers
+        if credentials is None:
+            credentials = provider_credentials
         self._explicit_credentials = credentials is not None
         self._credentials = dict(credentials or {})
         self._credential_resolver = credential_resolver
