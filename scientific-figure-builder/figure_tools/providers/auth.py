@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Protocol
 
@@ -147,7 +147,7 @@ def credential_status(
 class ResolvedCredential:
     """A credential value plus non-secret provenance metadata."""
 
-    value: str
+    value: str = field(repr=False)
     source: str
     provider_name: str
     key_env: str
