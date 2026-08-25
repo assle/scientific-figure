@@ -304,13 +304,23 @@ def redact(text: str, key: str | None) -> str:
 
 
 def looks_like_secret(value: str) -> bool:
-    """Conservative helper for config/snapshot safety checks."""
+    """Detect recognizable secret *values*, not ordinary model IDs."""
+
+    return bool(re.search(
+        r"(?:^sk-[A-Za-z0-9_-]{8,}$|(?:api|access|private)[_-]?key\s*[=:]|"
+        r"(?:bearer|secret|token|password)\s*[=:])",
+        value.strip(), re.I,
+    ))
+
+
+def looks_like_secret_field(value: str) -> bool:
+    """Detect secret-bearing field names while allowing ``credential_id``."""
 
     normalized = value.strip().lower()
     if normalized in {"credential_id", "key_env"}:
         return False
     return bool(re.search(
-        r"(?:sk-|api[_-]?key|access[_-]?key|private[_-]?key|secret|token|password|credential)",
+        r"(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|token|password|credential)",
         value, re.I,
     ))
 
@@ -320,6 +330,7 @@ __all__ = [
     "FakeSecretStore", "KeyringSecretStore", "MemorySecretStore",
     "ResolvedCredential", "SecretRedactor", "SecretStore", "SecretStoreReadError",
     "SecretStoreUnavailable", "credential_status", "default_secret_store",
-    "get_api_key", "looks_like_secret", "new_credential_id", "provider_key_env",
+    "get_api_key", "looks_like_secret", "looks_like_secret_field",
+    "new_credential_id", "provider_key_env",
     "redact", "resolve_provider_credentials", "sanitize_error",
 ]

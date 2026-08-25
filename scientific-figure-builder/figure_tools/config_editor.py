@@ -26,6 +26,7 @@ from figure_tools.providers.auth import (
     SecretStore,
     SecretStoreUnavailable,
     looks_like_secret,
+    looks_like_secret_field,
     new_credential_id,
 )
 
@@ -86,7 +87,7 @@ class GlobalConfigDraft:
                 return {
                     str(key): scrub(item, allow_reference=str(key) == "key_env")
                     for key, item in value.items()
-                    if not looks_like_secret(str(key))
+                    if not looks_like_secret_field(str(key))
                 }
             if isinstance(value, list):
                 return [scrub(item, allow_reference=allow_reference) for item in value]
@@ -121,6 +122,9 @@ class GlobalConfigEditor:
     def __init__(self, path: str | Path | None = None,
                  *, secret_store: SecretStore | None = None) -> None:
         self.path = Path(path) if path is not None else user_config_path()
+        # Do not touch the real system keychain merely by opening a draft.
+        # Callers that want production cleanup inject the adapter explicitly;
+        # deletion uses a lazy default adapter only after a confirmed save.
         self.secret_store = secret_store
 
     def load(self) -> GlobalConfigDraft:
@@ -188,7 +192,7 @@ class GlobalConfigEditor:
         def walk(value: Any, *, allow_reference: bool = False) -> None:
             if isinstance(value, Mapping):
                 for key, item in value.items():
-                    if looks_like_secret(str(key)):
+                    if looks_like_secret_field(str(key)):
                         raise ConfigEditorError(
                             "provider credentials must be stored in the secure system store"
                         )
@@ -338,10 +342,15 @@ class GlobalConfigEditor:
 
         # Deleting old credentials is intentionally last. A cleanup failure
         # does not invalidate the committed YAML; report a safe warning.
-        if self.secret_store is not None:
+        cleanup_store = self.secret_store
+        if cleanup_store is None and draft.credential_deletes:
+            from figure_tools.providers.auth import default_secret_store
+
+            cleanup_store = default_secret_store()
+        if cleanup_store is not None:
             for credential_id in sorted(draft.credential_deletes):
                 try:
-                    self.secret_store.delete(credential_id)
+                    cleanup_store.delete(credential_id)
                 except Exception:  # noqa: BLE001
                     warnings.warn(
                         "a retired system credential could not be removed",

@@ -139,6 +139,46 @@ def test_secret_value_in_unknown_field_is_rejected_and_scrubbed_from_snapshot(tm
         _editor(path).save(draft)
 
 
+def test_model_id_is_free_text_even_when_it_contains_security_words(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    editor = _editor(path)
+    draft = editor.load()
+    editor.set_model(draft, "vision_analyze", {"model": "token-model"})
+    editor.save(draft)
+    assert "token-model" in path.read_text(encoding="utf-8")
+
+
+def test_successful_save_preserves_posix_mode(tmp_path: Path):
+    path = tmp_path / "config.yaml"
+    path.write_text("models: {}\n", encoding="utf-8")
+    path.chmod(0o640)
+    editor = _editor(path)
+    draft = editor.load()
+    editor.set_model(draft, "vision_analyze", {"model": "m"})
+    editor.save(draft)
+    assert path.stat().st_mode & 0o777 == 0o640
+
+
+def test_replace_failure_restores_original_file_and_prepared_credentials(
+    tmp_path: Path, monkeypatch,
+):
+    path = tmp_path / "config.yaml"
+    path.write_text("providers:\n  p: {type: openai}\n", encoding="utf-8")
+    store = MemorySecretStore()
+    editor = _editor(path, store)
+    draft = editor.load()
+    editor.set_credential(draft, "p", "new-secret", credential_id="new-id")
+    original = path.read_bytes()
+    def crash(*_args):
+        raise OSError("crash")
+
+    monkeypatch.setattr("figure_tools.config_editor.os.replace", crash)
+    with pytest.raises(Exception, match="atomically save"):
+        editor.save(draft)
+    assert path.read_bytes() == original
+    assert store.values == {}
+
+
 def test_legacy_protocol_is_migrated_on_read_with_warning(tmp_path: Path):
     path = tmp_path / "config.yaml"
     path.write_text(
