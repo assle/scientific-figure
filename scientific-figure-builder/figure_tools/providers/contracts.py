@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from figure_tools.providers.transport import ProviderError
 
@@ -32,7 +32,11 @@ DEFAULT_VALIDATION_INSTRUCTION = (
 )
 
 
-def extract_json(text: str) -> dict[str, Any]:
+def extract_json(
+    text: str,
+    *,
+    redactor: Callable[[str], str] | None = None,
+) -> dict[str, Any]:
     text = text.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fence:
@@ -42,10 +46,17 @@ def extract_json(text: str) -> dict[str, Any]:
     except json.JSONDecodeError:
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
-            value = json.loads(match.group(0))
+            try:
+                value = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                safe = redactor(text[:200]) if redactor else text[:200]
+                raise ProviderError(
+                    f"could not parse JSON from model response: {safe}"
+                ) from None
         else:
+            safe = redactor(text[:200]) if redactor else text[:200]
             raise ProviderError(
-                f"could not parse JSON from model response: {text[:200]}"
+                f"could not parse JSON from model response: {safe}"
             )
     if not isinstance(value, dict):
         raise ProviderError("model response JSON must be an object")

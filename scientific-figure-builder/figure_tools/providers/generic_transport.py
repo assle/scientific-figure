@@ -190,7 +190,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             "max_output_tokens": 4096,
             "text": {"format": {"type": "json_object"}},
         })
-        return extract_json(_responses_text(response))
+        return extract_json(_responses_text(response), redactor=self.redactor)
 
 
 def _responses_text(response: dict[str, Any]) -> str:
@@ -289,7 +289,7 @@ class AnthropicTransport(ProviderTransport):
             for block in response.get("content", [])
             if block.get("type") == "text"
         )
-        return extract_json(text)
+        return extract_json(text, redactor=self.redactor)
 
 
 class ProviderRouter(ProviderTransport):
