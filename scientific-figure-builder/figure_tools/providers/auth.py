@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Protocol
@@ -36,6 +37,105 @@ class SecretStoreUnavailable(CredentialError):
 
 class SecretStoreReadError(CredentialError):
     """A secure store exists but could not be read."""
+
+
+class KeyringSecretStore:
+    """Adapter for the optional ``keyring`` package.
+
+    Importing this class is safe on servers without Keyring installed. The
+    package is loaded only when an instance is created, and all backend errors
+    are converted to our secret-free application errors.
+    """
+
+    def __init__(self, *, service: str = KEYRING_SERVICE, backend: Any = None) -> None:
+        self.service = service
+        if backend is None:
+            try:
+                import keyring  # type: ignore[import-not-found]
+            except Exception as exc:  # noqa: BLE001
+                raise SecretStoreUnavailable(
+                    "secure system credential backend is unavailable"
+                ) from exc
+            backend = keyring
+        self.backend = backend
+
+    def get(self, credential_id: str) -> str | None:
+        try:
+            return self.backend.get_password(self.service, credential_id)
+        except Exception as exc:  # noqa: BLE001
+            raise SecretStoreReadError(
+                "secure system credential backend could not read the credential"
+            ) from exc
+
+    def set(self, credential_id: str, value: str) -> None:
+        try:
+            self.backend.set_password(self.service, credential_id, value)
+        except Exception as exc:  # noqa: BLE001
+            raise SecretStoreUnavailable(
+                "secure system credential backend could not save the credential"
+            ) from exc
+
+    def delete(self, credential_id: str) -> None:
+        try:
+            self.backend.delete_password(self.service, credential_id)
+        except Exception as exc:  # noqa: BLE001
+            # Deleting an already absent credential is idempotent for config
+            # cleanup; other backend failures remain explicit.
+            if type(exc).__name__ in {"PasswordDeleteError", "NotFoundError"}:
+                return
+            raise SecretStoreUnavailable(
+                "secure system credential backend could not delete the credential"
+            ) from exc
+
+
+class MemorySecretStore:
+    """In-memory SecretStore for unit/integration tests; never a persistence backend."""
+
+    def __init__(self, initial: Mapping[str, str] | None = None) -> None:
+        self.values = dict(initial or {})
+        self.operations: list[tuple[str, str]] = []
+
+    def get(self, credential_id: str) -> str | None:
+        self.operations.append(("get", credential_id))
+        return self.values.get(credential_id)
+
+    def set(self, credential_id: str, value: str) -> None:
+        self.operations.append(("set", credential_id))
+        self.values[credential_id] = value
+
+    def delete(self, credential_id: str) -> None:
+        self.operations.append(("delete", credential_id))
+        self.values.pop(credential_id, None)
+
+
+def new_credential_id() -> str:
+    """Return the stable UUID reference stored in global configuration."""
+
+    return str(uuid.uuid4())
+
+
+def default_secret_store() -> SecretStore | None:
+    """Best-effort system-store adapter for desktop-capable callers."""
+
+    try:
+        return KeyringSecretStore()
+    except SecretStoreUnavailable:
+        return None
+
+
+def credential_status(
+    credential: ResolvedCredential | None,
+    *,
+    configured: bool = False,
+) -> dict[str, Any]:
+    """Return non-secret status suitable for CLI/GUI diagnostics."""
+
+    return {
+        "configured": bool(configured or credential is not None),
+        "source": credential.source if credential is not None else None,
+        "credential_id": credential.credential_id if credential is not None else None,
+        "key_env": credential.key_env if credential is not None else None,
+    }
 
 
 @dataclass(frozen=True)
@@ -192,7 +292,9 @@ def looks_like_secret(value: str) -> bool:
 
 __all__ = [
     "KEYRING_SERVICE", "REDACTED", "CredentialError", "CredentialResolver",
+    "KeyringSecretStore", "MemorySecretStore",
     "ResolvedCredential", "SecretRedactor", "SecretStore", "SecretStoreReadError",
-    "SecretStoreUnavailable", "get_api_key", "looks_like_secret", "provider_key_env",
+    "SecretStoreUnavailable", "credential_status", "default_secret_store",
+    "get_api_key", "looks_like_secret", "new_credential_id", "provider_key_env",
     "redact", "resolve_provider_credentials", "sanitize_error",
 ]

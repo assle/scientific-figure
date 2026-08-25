@@ -13,7 +13,11 @@ from PIL import Image
 
 from figure_tools.providers.auth import (
     CredentialResolver,
+    KeyringSecretStore,
+    MemorySecretStore,
     SecretRedactor,
+    credential_status,
+    new_credential_id,
     get_api_key,
     redact,
 )
@@ -88,6 +92,64 @@ def test_secret_redactor_handles_multiple_credentials_and_exceptions():
     assert message == "***REDACTED***/***REDACTED***"
     error = RuntimeError("second-secret failed")
     assert redactor.safe_exception(error) == "RuntimeError: ***REDACTED*** failed"
+
+
+def test_keyring_credential_wins_over_environment(monkeypatch):
+    credential_id = new_credential_id()
+    store = MemorySecretStore({credential_id: "keyring-secret"})
+    monkeypatch.setenv("CUSTOM_PROVIDER_KEY", "environment-secret")
+    resolved = CredentialResolver(store).resolve(
+        "custom", {
+            "type": "openai", "key_env": "CUSTOM_PROVIDER_KEY",
+            "credential_id": credential_id,
+        }
+    )
+    assert resolved is not None
+    assert resolved.value == "keyring-secret"
+    assert resolved.source == "keyring"
+    assert credential_status(resolved) == {
+        "configured": True, "source": "keyring",
+        "credential_id": credential_id, "key_env": "CUSTOM_PROVIDER_KEY",
+    }
+
+
+def test_keyring_read_failure_falls_back_without_secret_in_warning(monkeypatch):
+    class BrokenStore(MemorySecretStore):
+        def get(self, credential_id):
+            raise RuntimeError("backend echoed environment-secret")
+
+    monkeypatch.setenv("CUSTOM_PROVIDER_KEY", "environment-secret")
+    resolver = CredentialResolver(BrokenStore())
+    resolved = resolver.resolve(
+        "custom", {"type": "openai", "key_env": "CUSTOM_PROVIDER_KEY",
+                    "credential_id": new_credential_id()}
+    )
+    assert resolved is not None and resolved.value == "environment-secret"
+    assert resolver.last_warning is not None
+    assert "environment-secret" not in str(resolver.last_warning)
+
+
+def test_keyring_adapter_uses_fixed_service_and_translates_backend_errors():
+    class Backend:
+        def __init__(self):
+            self.calls = []
+
+        def get_password(self, service, user):
+            self.calls.append(("get", service, user))
+            return "secret"
+
+        def set_password(self, service, user, value):
+            self.calls.append(("set", service, user, value))
+
+        def delete_password(self, service, user):
+            self.calls.append(("delete", service, user))
+
+    backend = Backend()
+    store = KeyringSecretStore(backend=backend)
+    store.set("id", "secret")
+    assert store.get("id") == "secret"
+    store.delete("id")
+    assert all(call[1] == "scientific-figure-builder" for call in backend.calls)
 
 
 # --- generation ----------------------------------------------------------

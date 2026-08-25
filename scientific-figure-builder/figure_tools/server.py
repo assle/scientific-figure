@@ -17,8 +17,8 @@ from typing import Any, Callable
 
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.auth import (
-    CredentialResolver,
     SecretRedactor,
+    default_secret_store,
     resolve_provider_credentials,
     sanitize_error,
 )
@@ -70,7 +70,9 @@ def _client(output_dir: str | Path | None = None,
     resolved_project_dir = project_dir or _project_dir_for_paths(output_dir)
     models = configured_models(resolved_project_dir)
     providers = configured_providers(resolved_project_dir)
-    credentials = resolve_provider_credentials(providers)
+    credentials = resolve_provider_credentials(
+        providers, secret_store=default_secret_store(),
+    )
     provider_names = {
         name
         for model_cfg in (models or {}).values()

@@ -351,6 +351,61 @@ def test_provider_router_does_not_require_unused_provider_credentials(
     assert result["image_bytes"] == b"image"
 
 
+def test_provider_router_can_call_with_only_keyring_credential(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+
+    encoded = base64.b64encode(b"image").decode("ascii")
+    credential_id = "3d6f5f6e-3d1a-4f0b-a1e8-2d2c3f4a5b6c"
+    store = MemorySecretStore({credential_id: "keyring-secret"})
+    monkeypatch.delenv("KEYRING_ONLY", raising=False)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    resolver = CredentialResolver(store)
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "key_env": "KEYRING_ONLY", "credential_id": credential_id,
+        }},
+        credential_resolver=resolver,
+        opener=opener,
+    )
+    assert router.post("generation", "image-model", {"prompt": "draw"})[
+        "image_bytes"
+    ] == b"image"
+    assert requests[0].get_header("Authorization") == "Bearer keyring-secret"
+
+
+def test_provider_router_refreshes_keyring_value_on_next_call(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+
+    encoded = base64.b64encode(b"image").decode("ascii")
+    store = MemorySecretStore({"credential-id": "first-secret"})
+    monkeypatch.delenv("ROTATING_KEY", raising=False)
+    headers = []
+
+    def opener(request):
+        headers.append(request.get_header("Authorization"))
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "key_env": "ROTATING_KEY", "credential_id": "credential-id",
+        }},
+        credential_resolver=CredentialResolver(store), opener=opener,
+    )
+    router.post("generation", "image-model", {"prompt": "one"})
+    store.set("credential-id", "second-secret")
+    router.post("generation", "image-model", {"prompt": "two"})
+    assert headers == ["Bearer first-secret", "Bearer second-secret"]
+
+
 def test_configured_provider_instance_may_be_named_ark(monkeypatch):
     encoded = base64.b64encode(b"image").decode("ascii")
     monkeypatch.setenv("CUSTOM_API_KEY", "custom-key")
