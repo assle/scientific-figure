@@ -208,7 +208,8 @@ Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`
 and override per project in `.scientific-figure/project.yaml`. The `SCI_FIG_*`
 environment variables override model ids; each provider's `key_env` names the
-environment variable holding its credential (highest precedence).
+environment fallback for its credential. A configured `credential_id` in the
+system store takes precedence over that fallback.
 
 A provider speaks one of two wire dialects: `openai` — `/images/generations`
 for generation plus `/responses` for vision; `anthropic` — `/messages` for

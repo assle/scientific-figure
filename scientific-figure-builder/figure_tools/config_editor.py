@@ -303,12 +303,16 @@ class GlobalConfigEditor:
     def save(self, draft: GlobalConfigDraft) -> GlobalConfigDraft:
         self._check_conflict(draft)
         rendered = self._render(draft)
-        previous = self._prepare_credentials(draft)
-        parent = self.path.parent
-        parent.mkdir(parents=True, exist_ok=True)
-        backup = self.path.with_name(self.path.name + ".bak")
-        mode = 0o600
+        previous: dict[str, str | None] = {}
         try:
+            # Keep directory creation, backup, and replacement in the same
+            # compensation scope as credential preparation. A filesystem
+            # failure after a successful Keyring write must restore it.
+            previous = self._prepare_credentials(draft)
+            parent = self.path.parent
+            parent.mkdir(parents=True, exist_ok=True)
+            backup = self.path.with_name(self.path.name + ".bak")
+            mode = 0o600
             if self.path.exists():
                 shutil.copy2(self.path, backup)
                 mode = self.path.stat().st_mode & 0o777
@@ -325,6 +329,9 @@ class GlobalConfigEditor:
             finally:
                 if os.path.exists(temporary_name):
                     os.unlink(temporary_name)
+        except CredentialError:
+            self._rollback_credentials(previous)
+            raise
         except Exception:
             self._rollback_credentials(previous)
             raise ConfigEditorError("could not atomically save global configuration") from None
