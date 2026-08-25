@@ -46,6 +46,12 @@ def _api_root(value: Any) -> str:
     return root
 
 
+def normalize_provider_base_url(value: Any) -> str:
+    """Normalize complete operation URLs to the Provider API root."""
+
+    return _api_root(value)
+
+
 def _data_url(path: str | Path) -> str:
     path = Path(path)
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -92,7 +98,7 @@ class OpenAICompatibleTransport(ProviderTransport):
                  redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
-        self.base_url = _api_root(config.get("base_url"))
+        self.base_url = normalize_provider_base_url(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
         if credential is None:
             resolver = credential_resolver or CredentialResolver()
@@ -217,7 +223,7 @@ class AnthropicTransport(ProviderTransport):
                  redactor: SecretRedactor | None = None,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self.name = name
-        self.base_url = _api_root(config.get("base_url"))
+        self.base_url = normalize_provider_base_url(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
         if credential is None:
             resolver = credential_resolver or CredentialResolver()

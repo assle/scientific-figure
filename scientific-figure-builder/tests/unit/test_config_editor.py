@@ -8,8 +8,10 @@ import pytest
 
 from figure_tools.config_editor import (
     ConfigConflictError,
+    ConfigEditorError,
     GlobalConfigEditor,
     ProviderInUseError,
+    validate_provider_id,
 )
 from figure_tools.providers.auth import MemorySecretStore
 
@@ -177,6 +179,12 @@ def test_replace_failure_restores_original_file_and_prepared_credentials(
         editor.save(draft)
     assert path.read_bytes() == original
     assert store.values == {}
+
+
+def test_provider_ids_and_types_are_validated():
+    assert validate_provider_id("demo_provider-1") == "demo_provider-1"
+    with pytest.raises(ConfigEditorError):
+        validate_provider_id("Bad Provider")
 
 
 def test_legacy_protocol_is_migrated_on_read_with_warning(tmp_path: Path):

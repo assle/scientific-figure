@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import warnings
@@ -52,6 +53,21 @@ class ProviderInUseError(ConfigEditorError):
 
 class ConfigSerializationError(ConfigEditorError):
     """The round-trip document could not be serialized safely."""
+
+
+PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+
+
+def validate_provider_id(provider_id: str) -> str:
+    """Validate and normalize the stable, non-secret Provider ID."""
+
+    normalized = str(provider_id).strip()
+    if not PROVIDER_ID_PATTERN.fullmatch(normalized):
+        raise ConfigEditorError(
+            "Provider ID must start with a lowercase letter and contain only "
+            "lowercase letters, digits, '_' or '-' (1-64 characters)"
+        )
+    return normalized
 
 
 @dataclass
@@ -184,6 +200,10 @@ class GlobalConfigEditor:
 
     def set_provider(self, draft: GlobalConfigDraft, provider_id: str,
                      values: Mapping[str, Any]) -> None:
+        provider_id = validate_provider_id(provider_id)
+        provider_type = values.get("type")
+        if provider_type is not None and provider_type not in {"openai", "anthropic"}:
+            raise ConfigEditorError("Provider type must be openai or anthropic")
         self._assert_non_secret(values)
         draft.providers[provider_id] = _merge(draft.providers.get(provider_id), values)
 
@@ -207,6 +227,8 @@ class GlobalConfigEditor:
         walk(values)
 
     def rename_provider(self, draft: GlobalConfigDraft, old_id: str, new_id: str) -> None:
+        old_id = validate_provider_id(old_id)
+        new_id = validate_provider_id(new_id)
         if old_id not in draft.providers:
             raise ConfigEditorError(f"unknown provider {old_id!r}")
         if new_id in draft.providers:
@@ -217,6 +239,7 @@ class GlobalConfigEditor:
                 model["provider"] = new_id
 
     def delete_provider(self, draft: GlobalConfigDraft, provider_id: str) -> None:
+        provider_id = validate_provider_id(provider_id)
         references = [
             role for role, model in draft.models.items()
             if isinstance(model, Mapping) and model.get("provider") == provider_id
@@ -233,6 +256,7 @@ class GlobalConfigEditor:
                        value: str, *, credential_id: str | None = None) -> str:
         if not str(value):
             raise ConfigEditorError("credential value must not be empty")
+        provider_id = validate_provider_id(provider_id)
         provider = draft.providers.get(provider_id)
         if not isinstance(provider, Mapping):
             raise ConfigEditorError(f"unknown provider {provider_id!r}")
@@ -243,6 +267,18 @@ class GlobalConfigEditor:
         if old_id and str(old_id) != new_id:
             draft.credential_deletes.add(str(old_id))
         return new_id
+
+    def clear_credential(self, draft: GlobalConfigDraft, provider_id: str) -> None:
+        """Remove only the Keyring reference; leave ``key_env`` untouched."""
+
+        provider_id = validate_provider_id(provider_id)
+        provider = draft.providers.get(provider_id)
+        if not isinstance(provider, Mapping):
+            raise ConfigEditorError(f"unknown provider {provider_id!r}")
+        credential_id = provider.pop("credential_id", None)
+        draft.credential_updates.pop(provider_id, None)
+        if credential_id:
+            draft.credential_deletes.add(str(credential_id))
 
     def _render(self, draft: GlobalConfigDraft) -> bytes:
         self._assert_non_secret(draft.data)
@@ -373,7 +409,7 @@ def load_global_config(path: str | Path | None = None,
 __all__ = [
     "ConfigConflictError", "ConfigEditorError", "ConfigSerializationError",
     "ConfigDraft", "ConfigurationEditor", "GlobalConfigDraft", "GlobalConfigEditor",
-    "ProviderInUseError",
+    "ProviderInUseError", "validate_provider_id",
     "load_global_config",
 ]
 

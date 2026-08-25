@@ -10,10 +10,11 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox  # noqa: E402
 
 from figure_tools.config_editor import GlobalConfigEditor  # noqa: E402
 from figure_tools.gui import ConfigurationWindow  # noqa: E402
+from figure_tools.providers.auth import MemorySecretStore  # noqa: E402
 
 
 @pytest.fixture
@@ -81,4 +82,51 @@ def test_unsaved_provider_type_is_reflected_in_compatibility_warning(tmp_path: P
     window.provider_type.setCurrentText("anthropic")
     assert "不支持图像生成" in window.warning_label.text()
     window._set_dirty(False)
+    window.close()
+
+
+def test_provider_lifecycle_and_keyring_credential_save_from_empty_config(
+    tmp_path: Path, app, monkeypatch,
+):
+    monkeypatch.setattr(QMessageBox, "warning", lambda *_args: QMessageBox.Ok)
+    store = MemorySecretStore()
+    editor = GlobalConfigEditor(tmp_path / "config.yaml", secret_store=store)
+    window = ConfigurationWindow(editor=editor, draft=editor.load())
+    assert window.add_provider("demo_provider") is True
+    window.provider_base_url.setText("https://models.example/v1/responses")
+    window.provider_key_env.setText("DEMO_API_KEY")
+    window.provider_api_key.setText("demo-secret-value")
+    assert window.provider_api_key.echoMode() == QLineEdit.EchoMode.Password
+    window.role_widgets["image_generate"]["provider"].setCurrentText("demo_provider")
+    window.role_widgets["image_generate"]["model"].setText("image-model")
+    assert window.save_draft() is True
+    draft = editor.load()
+    credential_id = draft.providers["demo_provider"]["credential_id"]
+    assert store.values[credential_id] == "demo-secret-value"
+    assert draft.providers["demo_provider"]["base_url"] == "https://models.example/v1"
+    assert window.provider_api_key.text() == ""
+
+    assert window.rename_provider("renamed_provider") is True
+    assert window.draft.models["image_generate"]["provider"] == "renamed_provider"
+    assert window.delete_provider("renamed_provider", confirm=False) is False
+    window.editor.remove_model(window.draft, "image_generate")
+    assert window.delete_provider("renamed_provider", confirm=False) is True
+    window._set_dirty(False)
+    window.close()
+
+
+def test_empty_api_key_preserves_existing_credential(tmp_path: Path, app):
+    store = MemorySecretStore({"fixed-id": "existing-secret"})
+    editor = GlobalConfigEditor(tmp_path / "config.yaml", secret_store=store)
+    draft = editor.load()
+    editor.set_provider(draft, "demo_provider", {
+        "type": "openai", "base_url": "https://models.example/v1",
+        "key_env": "DEMO_API_KEY", "credential_id": "fixed-id",
+    })
+    editor.save(draft)
+    window = ConfigurationWindow(editor=editor, draft=editor.load())
+    window.provider_selector.setCurrentText("demo_provider")
+    assert window.provider_api_key.text() == ""
+    assert window.save_draft() is True
+    assert store.values == {"fixed-id": "existing-secret"}
     window.close()
