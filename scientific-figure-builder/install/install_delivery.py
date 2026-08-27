@@ -20,7 +20,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Callable, Sequence
 
 try:
@@ -141,10 +141,15 @@ def delivery_paths(
 LAUNCHER_MARKER = "# scientific-figure-builder launcher"
 
 
-def launcher_text(runtime_python: Path) -> str:
+def launcher_text(
+    runtime_python: PurePath,
+    *,
+    platform_name: str | None = None,
+) -> str:
     """Render a stable launcher without embedding secrets or config values."""
 
-    if os.name == "nt":
+    target_platform = os.name if platform_name is None else platform_name
+    if target_platform == "nt":
         return (
             "@echo off\r\n"
             f'"{runtime_python}" -m figure_tools %*\r\n'

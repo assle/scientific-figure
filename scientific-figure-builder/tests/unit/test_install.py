@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -260,11 +260,13 @@ def test_launcher_target_validation_allows_our_marker(tmp_path: Path):
     validate_launcher_target(launcher)
 
 
-def test_windows_launcher_rendering_is_controlled(monkeypatch):
+def test_windows_launcher_rendering_is_controlled():
     import install.install_delivery as delivery
 
-    monkeypatch.setattr(delivery.os, "name", "nt")
-    text = delivery.launcher_text(Path("C:/Program Files/Scientific Figure/.venv/Scripts/python.exe"))
+    text = delivery.launcher_text(
+        PureWindowsPath("C:/Program Files/Scientific Figure/.venv/Scripts/python.exe"),
+        platform_name="nt",
+    )
     assert text.startswith("@echo off")
     assert '"C:\\Program Files\\Scientific Figure\\.venv\\Scripts\\python.exe"' in text
     assert "%*" in text
