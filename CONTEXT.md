@@ -1,6 +1,6 @@
 # Scientific Figure Builder
 
-Scientific Figure Builder turns a clarified scientific-figure request into reproducible assets, an assembled figure, validation evidence, and exportable outputs. This glossary defines the stable language shared by planning, model routing, configuration, validation, and export.
+Scientific Figure Builder turns a clarified scientific-figure request into reproducible assets, an assembled figure, validation evidence, and exportable outputs. This glossary defines the stable language shared by planning, model routing, configuration, delivery, validation, and export.
 
 ## Planning
 
@@ -50,6 +50,10 @@ _Avoid_: Provider type, assumed support, model feature
 The state in which the optional `image_edit` Model route is absent and editing reuses the `image_generate` Model route.
 _Avoid_: edit fallback, duplicate route, automatic capability
 
+**Route compatibility**:
+Whether a Model route's Provider type and declared Provider capabilities can fulfil its Model role.
+_Avoid_: connection status, Provider health, model availability
+
 ## Configuration and credentials
 
 **Global configuration**:
@@ -63,6 +67,14 @@ _Avoid_: global config, machine config, GUI config
 **Effective configuration**:
 The resolved configuration used for a run after defaults, Global configuration, Project configuration, and explicit run-time overrides have been combined.
 _Avoid_: saved config, GUI state, source file
+
+**Configuration draft**:
+An editable, unsaved representation of Global configuration used by the Configuration app until the user saves or discards it.
+_Avoid_: effective configuration, GUI state, temporary config
+
+**Configuration conflict**:
+An external change to Global configuration made after a Configuration draft was opened, requiring the draft to be reloaded before it can be saved.
+_Avoid_: validation error, merge conflict, save failure
 
 **Provider credential**:
 The secret used to authenticate a Provider; it is never part of configuration, logs, artifacts, manifests, or error details.
@@ -88,6 +100,10 @@ _Avoid_: keyring file, YAML secret, encrypted config
 A Provider credential supplied by the environment variable named by `key_env` or by the Provider's established environment convention.
 _Avoid_: Keyring-backed credential, config secret, environment name
 
+**Temporary credential**:
+A Provider credential supplied only to a Connection test and discarded without becoming a Credential reference or Keyring-backed credential.
+_Avoid_: draft credential, unsaved API Key, Environment-backed credential
+
 **System credential store**:
 The operating-system facility that protects Keyring-backed credentials for the current user.
 _Avoid_: secrets file, YAML store, application database
@@ -100,17 +116,35 @@ _Avoid_: credential migration, Provider routing, silent plaintext fallback
 A non-secret summary of whether a Provider credential is configured and which source supplies it, without exposing the full credential.
 _Avoid_: API Key value, credential preview, connection status
 
+**Credential replacement**:
+Changing the Provider credential located by an existing `credential_id` while keeping that Credential reference stable.
+_Avoid_: credential creation, Provider rename, key migration
+
+**Credential removal**:
+Retiring a Keyring-backed credential and its `credential_id` while leaving any `key_env` Environment-backed credential reference unchanged.
+_Avoid_: Provider deletion, credential replacement, environment cleanup
+
 **Configuration app**:
 The native desktop interface for managing Global configuration, Model routes, Providers, and Keyring-backed credentials; it does not configure the Calling Agent or run figure-building tasks.
 _Avoid_: task console, project editor, Agent settings, web dashboard
 
 **Connection test**:
-A user-initiated, minimal Provider invocation that checks the current configuration draft and may incur Provider cost.
+A user-initiated, minimal Provider invocation that checks the current Configuration draft, optionally with a Temporary credential, and may incur Provider cost.
 _Avoid_: health check, automatic probe, benchmark, task run
 
 **Calling Agent**:
 The Agent that invokes Scientific Figure Builder and remains responsible for the surrounding conversation and workflow.
 _Avoid_: configured Agent, main model role, Scientific Figure Builder Agent
+
+## Delivery
+
+**Global installation**:
+A user-scoped delivery of the Configuration app and Calling Agent integrations that can be used across projects.
+_Avoid_: Global configuration, system installation, project setup
+
+**Project installation**:
+A delivery of Calling Agent integrations for one project that does not own the Global configuration or global Configuration app launcher.
+_Avoid_: Project configuration, local environment, per-run setup
 
 ## Validation
 
