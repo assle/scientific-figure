@@ -19,6 +19,7 @@ from figure_tools.config_editor import (
     ConfigEditorError,
     GlobalConfigDraft,
     GlobalConfigEditor,
+    PROVIDER_TYPE_FIELD_DEFAULTS,
     validate_provider_id,
 )
 from figure_tools.connection_test import ConnectionTestResult, ConnectionTestService
@@ -330,21 +331,29 @@ class GuiController(QObject):
             parsed = urlparse(base_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ConfigEditorError("Base URL 必须是 http:// 或 https:// 地址")
-        return {
-            "type": str(provider.get("type", "openai")),
+        provider_type = str(provider.get("type", "openai"))
+        normalized: dict[str, Any] = {
+            "type": provider_type,
             "base_url": base_url,
             "key_env": str(provider.get("key_env", "")).strip(),
-            "auth_scheme": str(provider.get("auth_scheme", "x-api-key")),
-            "messages_path": str(provider.get("messages_path", "/messages")).strip() or "/messages",
-            "anthropic_version": str(provider.get("anthropic_version", "2023-06-01")).strip() or "2023-06-01",
-            "supports_image_edit": bool(provider.get("supports_image_edit", False)),
         }
+        for field, default in PROVIDER_TYPE_FIELD_DEFAULTS.get(
+            provider_type, {}
+        ).items():
+            value = provider.get(field, default)
+            normalized[field] = (
+                bool(value)
+                if isinstance(default, bool)
+                else str(value).strip() or default
+            )
+        return normalized
 
     def _commit_drafts(self) -> None:
         for provider_id in self.providerIds:
             view = self._provider_view(provider_id)
+            normalized = self._normalized_provider(view)
             self.editor.set_provider(
-                self.draft, provider_id, self._normalized_provider(view)
+                self.draft, provider_id, normalized
             )
             if view.get("api_key"):
                 credential_id = view.get("credential_id") or None
