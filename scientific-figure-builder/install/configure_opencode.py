@@ -111,9 +111,9 @@ def mcp_entry_for_python(runtime_python: str | Path) -> dict[str, Any]:
 def mcp_entry_for(package_dir: str | Path) -> dict[str, Any]:
     """Build the local MCP server entry that launches the bundled server via uv.
 
-    The server reads Ark credentials/model IDs from the environment (user-local
-    private config, plan section 5); these references are expanded by OpenCode
-    from the user's shell environment. No secret values are stored in the config.
+    The server reads provider credentials from the system credential store or
+    the environment (user-local private config, plan section 5). No secret
+    values are stored in the config.
     """
     return {
         "type": "local",

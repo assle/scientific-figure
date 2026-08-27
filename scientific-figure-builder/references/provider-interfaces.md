@@ -15,7 +15,10 @@ A **provider** is a named endpoint described by:
 
 - `type`: `openai` (Responses + Images) or `anthropic` (Messages).
 - `base_url`: the API root; the adapter appends the operation path.
-- `key_env`: the name of the environment variable holding the credential.
+- `key_env`: the name of the environment variable holding the credential when
+  no Keyring-backed `credential_id` is available.
+- optional `credential_id`: a stable UUID locating the credential in the
+  operating system credential store.
 - optional per-provider flags (`supports_image_edit`, `auth_scheme`,
   `messages_path`, `anthropic_version`).
 
@@ -84,11 +87,14 @@ built-in default. For Ark vision, use the `anthropic` dialect
 
 ## Credentials & security
 
-- Credentials are read only from the environment variables named by `key_env`,
-  never stored in config, artifacts, prompt logs, or run manifests.
+- Credentials prefer the system credential store entry named by
+  `credential_id`, then fall back to the environment variable named by
+  `key_env`; the value is never stored in config, artifacts, prompt logs, or
+  run manifests.
 - The installer forwards the default env vars plus every `key_env` declared in
   the user config, so proxies/agents pass provider keys through to the MCP server.
-- `redact()` strips configured keys from any logged prompt text.
+- `SecretRedactor` strips all configured keys from logged prompts, provider
+  errors, MCP errors, and diagnostics.
 
 ## Role mapping (internal paid-call role -> config model key)
 

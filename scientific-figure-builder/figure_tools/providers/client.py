@@ -18,7 +18,7 @@ from typing import Any
 
 from PIL import Image
 
-from figure_tools.providers.auth import redact
+from figure_tools.providers.auth import SecretRedactor, sanitize_error
 from figure_tools.providers.transport import (
     ProviderError,
     ProviderTransport,
@@ -46,6 +46,7 @@ class ProviderClient:
         transport: ProviderTransport,
         api_key: str | None = None,
         api_keys: Iterable[str] | None = None,
+        redactor: SecretRedactor | None = None,
         state: RunState | None = None,
         cache: Cache | None = None,
         output_dir: str | Path | None = None,
@@ -56,6 +57,7 @@ class ProviderClient:
         self.api_keys = tuple(dict.fromkeys(
             key for key in (api_key, *(api_keys or ())) if key
         ))
+        self.redactor = redactor or SecretRedactor(self.api_keys)
         self.state = state
         self.cache = cache
         self.output_dir = Path(output_dir) if output_dir else None
@@ -89,10 +91,17 @@ class ProviderClient:
             return
         prompts_dir = self.output_dir / "prompts"
         prompts_dir.mkdir(parents=True, exist_ok=True)
-        safe = prompt
-        for api_key in self.api_keys:
-            safe = redact(safe, api_key)
+        safe = self.redactor.redact_text(prompt)
         (prompts_dir / f"{role}_{_sha(prompt)[:16]}.txt").write_text(safe, encoding="utf-8")
+
+    def clean_error(self, error: BaseException | str) -> str:
+        """Return a safe message without changing exception propagation.
+
+        Callers decide whether an exception should be retried, surfaced, or
+        converted to a protocol error; this method only performs redaction.
+        """
+
+        return sanitize_error(error, self.redactor.secrets)
 
     def _post(self, role: str, payload: dict, image_paths: list[str] | None = None,
               max_transient: int = 5) -> dict:

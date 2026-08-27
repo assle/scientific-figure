@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -55,6 +56,8 @@ RUNTIME_ITEMS = (
     "references",
     "commands",
     "install/install_delivery.py",
+    "install/uninstall_delivery.py",
+    "install/auth_cleanup.py",
     "install/configure_opencode.py",
     "install/configure_codex.py",
     "install/provider_environment.py",
@@ -76,6 +79,7 @@ class DeliveryPaths:
     config_file: Path
     codex_skill_dir: Path
     codex_config_file: Path
+    launcher_file: Path | None = None
 
 
 def default_config_home() -> Path:
@@ -96,6 +100,7 @@ def delivery_paths(
     data_home: Path,
     project_dir: Path | None = None,
     codex_home: Path | None = None,
+    bin_dir: Path | None = None,
 ) -> DeliveryPaths:
     if project_dir is None:
         opencode_home = config_home / "opencode"
@@ -106,6 +111,9 @@ def delivery_paths(
             jsonc_file if jsonc_file.exists() and not json_file.exists() else json_file
         )
         codex_config_file = codex_home / "config.toml"
+        launcher_file = (bin_dir or (Path.home() / ".local" / "bin")) / (
+            "scientific-figure.cmd" if os.name == "nt" else "scientific-figure"
+        )
     else:
         project_dir = project_dir.resolve()
         opencode_home = project_dir / ".opencode"
@@ -118,6 +126,7 @@ def delivery_paths(
         )
         config_file = next((path for path in candidates if path.exists()), candidates[0])
         codex_config_file = codex_home / "config.toml"
+        launcher_file = None
     return DeliveryPaths(
         runtime_dir=data_home / SKILL_NAME,
         skill_dir=opencode_home / "skills" / SKILL_NAME,
@@ -125,7 +134,53 @@ def delivery_paths(
         config_file=config_file,
         codex_skill_dir=codex_home / "skills" / SKILL_NAME,
         codex_config_file=codex_config_file,
+        launcher_file=launcher_file,
     )
+
+
+LAUNCHER_MARKER = "# scientific-figure-builder launcher"
+
+
+def launcher_text(runtime_python: Path) -> str:
+    """Render a stable launcher without embedding secrets or config values."""
+
+    if os.name == "nt":
+        return (
+            "@echo off\r\n"
+            f'"{runtime_python}" -m figure_tools %*\r\n'
+            f"{LAUNCHER_MARKER}\r\n"
+        )
+    return (
+        "#!/bin/sh\n"
+        f"{LAUNCHER_MARKER}\n"
+        f"exec {shlex.quote(str(runtime_python))} -m figure_tools \"$@\"\n"
+    )
+
+
+def install_launcher(runtime_python: Path, launcher_file: Path | None) -> Path | None:
+    """Install only our launcher; refuse to overwrite an unrelated file."""
+
+    if launcher_file is None:
+        return None
+    launcher_file.parent.mkdir(parents=True, exist_ok=True)
+    if launcher_file.exists():
+        existing = launcher_file.read_text(encoding="utf-8", errors="replace")
+        if LAUNCHER_MARKER not in existing:
+            raise RuntimeError(f"refusing to overwrite unrelated launcher: {launcher_file}")
+    temporary = launcher_file.with_name(f".{launcher_file.name}.tmp-{uuid.uuid4().hex[:8]}")
+    temporary.write_text(launcher_text(runtime_python), encoding="utf-8")
+    if os.name != "nt":
+        os.chmod(temporary, 0o755)
+    os.replace(temporary, launcher_file)
+    return launcher_file
+
+
+def validate_launcher_target(launcher_file: Path | None) -> None:
+    if launcher_file is None or not launcher_file.exists():
+        return
+    existing = launcher_file.read_text(encoding="utf-8", errors="replace")
+    if LAUNCHER_MARKER not in existing:
+        raise RuntimeError(f"refusing to overwrite unrelated launcher: {launcher_file}")
 
 
 def validate_source(source_dir: Path) -> None:
@@ -194,7 +249,10 @@ def sync_runtime(runtime_dir: Path) -> Path:
         raise RuntimeError(
             "`uv` is required. Install it first from https://docs.astral.sh/uv/."
         )
-    command = [uv, "sync", "--frozen", "--no-dev", "--directory", str(runtime_dir)]
+    command = [
+        uv, "sync", "--frozen", "--no-dev", "--extra", "gui",
+        "--directory", str(runtime_dir),
+    ]
     subprocess.run(command, check=True)
     candidates = (
         runtime_dir / ".venv" / "bin" / "python",
@@ -259,6 +317,7 @@ def install_delivery(
             import tomllib
 
             tomllib.loads(codex_config_text)
+    validate_launcher_target(paths.launcher_file)
 
     paths.runtime_dir.parent.mkdir(parents=True, exist_ok=True)
     if install_opencode:
@@ -308,6 +367,16 @@ def install_delivery(
             )
 
     command_backup = None
+    launcher = install_launcher(runtime_python, paths.launcher_file)
+    launcher_warning = None
+    if launcher is not None:
+        path_entries = {
+            Path(item).expanduser().resolve()
+            for item in os.environ.get("PATH", "").split(os.pathsep)
+            if item
+        }
+        if launcher.parent.resolve() not in path_entries:
+            launcher_warning = f"Add {launcher.parent} to PATH to use `scientific-figure`."
     config_result = {"backup": None}
     if install_opencode:
         command_backup = _replace_file(source_dir / COMMAND_SOURCE, paths.command_file)
@@ -344,6 +413,8 @@ def install_delivery(
         "codex_config": str(paths.codex_config_file),
         "codex_config_backup": codex_config_result["backup"],
         "mcp_tools": 15,
+        "launcher": str(launcher) if launcher else None,
+        "launcher_warning": launcher_warning,
     }
 
 
@@ -356,6 +427,18 @@ def verify_delivery(
     checks: dict[str, bool] = {
         "runtime": (paths.runtime_dir / "figure_tools" / "server.py").is_file(),
     }
+    if paths.launcher_file is not None:
+        checks["launcher"] = (
+            paths.launcher_file.is_file()
+            and LAUNCHER_MARKER in paths.launcher_file.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        )
+        checks["gui_resources"] = (
+            (paths.runtime_dir / "figure_tools" / "resources" / "gui.qss").is_file()
+            and (paths.runtime_dir / "figure_tools" / "resources" / "icon.svg").is_file()
+            and (paths.runtime_dir / "figure_tools" / "resources" / "qml" / "Main.qml").is_file()
+        )
     runtime_command: Path | None = None
 
     if verify_opencode:
@@ -387,6 +470,18 @@ def verify_delivery(
             command = parsed["mcp_servers"][DEFAULT_MCP_NAME].get("command")
             if command:
                 runtime_command = Path(command)
+
+    if runtime_command is not None and runtime_command.is_file():
+        help_result = subprocess.run(
+            [str(runtime_command), "-m", "figure_tools", "--help"],
+            cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
+        )
+        checks["cli_help"] = help_result.returncode == 0
+        resource_result = subprocess.run(
+            [str(runtime_command), "-c", "from importlib.resources import files; from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss'); read_gui_resource('icon.svg'); files('figure_tools.resources').joinpath('qml/Main.qml').read_text(encoding='utf-8')"],
+            cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
+        )
+        checks["gui_resource_import"] = resource_result.returncode == 0
 
     if not all(checks.values()):
         failed = ", ".join(name for name, passed in checks.items() if not passed)
@@ -496,13 +591,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     if install_codex:
         print(f"  Codex skill:      {result['codex_skill']}")
         print(f"  Codex config:     {result['codex_config']}")
+    if result.get("launcher"):
+        print(f"  Launcher:         {result['launcher']}")
+    if result.get("launcher_warning"):
+        print(f"  PATH warning:     {result['launcher_warning']}")
     agents = []
     if install_opencode:
         agents.append("OpenCode")
     if install_codex:
         agents.append("Codex")
     print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
-    print("Provider credentials stay in environment variables and were not written to disk.")
+    print(
+        "Provider credentials use the system credential store when configured; "
+        "environment-backed values were not written to disk."
+    )
     return 0
 
 

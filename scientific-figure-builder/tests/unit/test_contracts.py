@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from figure_tools.providers.contracts import DEFAULT_VALIDATION_INSTRUCTION, extract_json
+from figure_tools.providers.auth import SecretRedactor
 
 
 def test_extract_json_plain():
@@ -15,6 +16,18 @@ def test_extract_json_fenced():
 
 def test_extract_json_with_prose():
     assert extract_json('Here is the result: {"a": 1} done') == {"a": 1}
+
+
+def test_extract_json_redacts_secrets_in_parse_errors():
+    import pytest
+    from figure_tools.providers.transport import ProviderError
+
+    with pytest.raises(ProviderError) as exc_info:
+        extract_json(
+            "not-json keyring-secret",
+            redactor=SecretRedactor(["keyring-secret"]),
+        )
+    assert "keyring-secret" not in str(exc_info.value)
 
 
 def test_validation_instruction_includes_layout_checks():

@@ -17,9 +17,14 @@ dependencies = [
     "pandas>=2.0",
     "matplotlib>=3.8",
     "python-pptx>=0.6.23",
+    "ruamel.yaml>=0.18",
+    "keyring>=25.6",
 ]
 
 [project.optional-dependencies]
+gui = [
+    "PySide6>=6.7",
+]
 qa = [
     "opencv-python-headless",
 ]
@@ -43,9 +48,12 @@ packages = ["figure_tools"]
 "commands" = "scientific_figure_builder_skill/commands"
 "install.sh" = "scientific_figure_builder_skill/install.sh"
 "install/install_delivery.py" = "scientific_figure_builder_skill/install/install_delivery.py"
+"install/uninstall_delivery.py" = "scientific_figure_builder_skill/install/uninstall_delivery.py"
+"install/auth_cleanup.py" = "scientific_figure_builder_skill/install/auth_cleanup.py"
 "install/configure_opencode.py" = "scientific_figure_builder_skill/install/configure_opencode.py"
 "install/configure_codex.py" = "scientific_figure_builder_skill/install/configure_codex.py"
 "install/provider_environment.py" = "scientific_figure_builder_skill/install/provider_environment.py"
+"figure_tools/resources" = "scientific_figure_builder_data/resources"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

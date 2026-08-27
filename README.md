@@ -157,11 +157,15 @@ Target only one agent, or install into a specific project:
 - Registers the MCP **server entry** (launches `figure_tools.server`):
   - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
   - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- Global installs create `~/.local/bin/scientific-figure`; project installs do not
+  create a global launcher. If that directory is not on `PATH`, installation
+  prints the exact directory to add.
 - Forwards the configured provider environment variables (every provider's
   `key_env` plus the `SCI_FIG_*` model-role overrides) to the MCP host.
 - Backs up any existing config before editing.
 
-No API keys are written to disk; credentials stay in environment variables.
+No API keys are written to disk; credentials use the operating-system
+credential store when configured and otherwise stay in environment variables.
 Choose which providers to use under "Configure model providers" below.
 
 ## Uninstall
@@ -187,7 +191,10 @@ repository or unrelated configuration:
 - The MCP server entries (only `scientific-figure`; other servers are preserved):
   - Codex: `[mcp_servers.scientific-figure]` in `~/.codex/config.toml`
   - OpenCode: `mcp.scientific-figure` in `~/.config/opencode/opencode.json`
+- The launcher only when it carries the tool's marker; an unrelated same-name
+  file is never overwritten or removed.
 - With `--config`: the user config directory `~/.config/scientific-figure-builder/`
+  after attempting cleanup of only its referenced Keyring credentials.
 - With `--project DIR`: the per-project `.opencode/` and `.codex/` skill, command,
   and MCP entries for that project install
 
@@ -196,11 +203,34 @@ directories can be restored by re-running `./install.sh`.
 
 ### Configure model providers (optional)
 
+For a native Qt Quick/QML configuration window, run `python -m figure_tools
+gui` from the installed runtime (or `uv run --extra gui --directory
+scientific-figure-builder python -m figure_tools gui` from this checkout). It
+edits the user-scoped models and providers file without starting a browser or
+local server. Provider API keys remain in the operating-system credential store;
+headless and CI use continue to work with `key_env` environment variables.
+
+The Providers page handles endpoint CRUD, protocol fields, and capabilities.
+The separate Credentials & Connection page handles password-mode API Key
+updates and explicit connection testing with the current unsaved draft and a
+deterministic minimal image. It prefers a bound vision role; a generation-only
+test shows a cost warning first. Omitting `image_edit` inherits `image_generate`.
+
+The interface uses a compact sidebar, route cards, inline status badges, and a
+fixed save bar. QML is only the presentation layer; configuration, Keyring,
+validation, and connection testing remain in the existing Python services.
+
+On first use, create a Provider before configuring Model roles. When no
+Provider exists, route selectors are disabled and link directly to the
+Providers page instead of showing an empty dropdown. Moving focus between
+unchanged fields does not create a false unsaved state.
+
 Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`
 and override per project in `.scientific-figure/project.yaml`. The `SCI_FIG_*`
 environment variables override model ids; each provider's `key_env` names the
-environment variable holding its credential (highest precedence).
+environment fallback for its credential. A configured `credential_id` in the
+system store takes precedence over that fallback.
 
 A provider speaks one of two wire dialects: `openai` — `/images/generations`
 for generation plus `/responses` for vision; `anthropic` — `/messages` for

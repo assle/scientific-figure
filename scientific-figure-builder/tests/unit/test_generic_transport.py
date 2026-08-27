@@ -111,6 +111,56 @@ def test_openai_vision_uses_responses_api(tmp_path: Path, monkeypatch):
     assert requests[0].get_header("Authorization") == "Bearer test-key"
 
 
+def test_openai_transport_accepts_explicit_credential_without_environment(
+    tmp_path: Path, monkeypatch,
+):
+    image = tmp_path / "input.png"
+    _png(image)
+    monkeypatch.delenv("CUSTOM_API_KEY", raising=False)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"output_text": '{"panels": []}'})
+
+    transport = OpenAICompatibleTransport(
+        "custom",
+        {"type": "openai", "base_url": "https://models.example/v1",
+         "key_env": "CUSTOM_API_KEY"},
+        credential="injected-secret",
+        opener=opener,
+    )
+    assert transport.post("reference_analysis", "vision-model", {}, [image]) == {
+        "panels": [],
+    }
+    assert requests[0].get_header("Authorization") == "Bearer injected-secret"
+
+
+def test_provider_http_error_redacts_all_explicit_credentials(monkeypatch):
+    from urllib.error import HTTPError
+
+    def opener(request):
+        raise HTTPError(
+            request.full_url, 400, "bad", {},
+            io.BytesIO(b"token=first-secret and token=second-secret"),
+        )
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {"type": "openai", "base_url": "https://models.example/v1"}},
+        credentials={"openai": "first-secret"},
+        opener=opener,
+    )
+    # Add the second value through the public redaction seam used by callers.
+    router._redactor = __import__("figure_tools.providers.auth", fromlist=["SecretRedactor"]).SecretRedactor(
+        ["first-secret", "second-secret"]
+    )
+    with pytest.raises(ProviderError) as exc_info:
+        router.post("generation", "image-model", {"prompt": "draw"})
+    assert "first-secret" not in str(exc_info.value)
+    assert "second-secret" not in str(exc_info.value)
+
+
 def test_openai_complete_operation_url_is_normalized_to_api_root(
     tmp_path: Path, monkeypatch,
 ):
@@ -299,6 +349,86 @@ def test_provider_router_does_not_require_unused_provider_credentials(
     result = router.post("generation", "image-model", {"prompt": "draw"})
 
     assert result["image_bytes"] == b"image"
+
+
+def test_provider_router_can_call_with_only_keyring_credential(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+
+    encoded = base64.b64encode(b"image").decode("ascii")
+    credential_id = "3d6f5f6e-3d1a-4f0b-a1e8-2d2c3f4a5b6c"
+    store = MemorySecretStore({credential_id: "keyring-secret"})
+    monkeypatch.delenv("KEYRING_ONLY", raising=False)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    resolver = CredentialResolver(store)
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "key_env": "KEYRING_ONLY", "credential_id": credential_id,
+        }},
+        credential_resolver=resolver,
+        opener=opener,
+    )
+    assert router.post("generation", "image-model", {"prompt": "draw"})[
+        "image_bytes"
+    ] == b"image"
+    assert requests[0].get_header("Authorization") == "Bearer keyring-secret"
+
+
+def test_provider_router_refreshes_keyring_value_on_next_call(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+
+    encoded = base64.b64encode(b"image").decode("ascii")
+    store = MemorySecretStore({"credential-id": "first-secret"})
+    monkeypatch.delenv("ROTATING_KEY", raising=False)
+    headers = []
+
+    def opener(request):
+        headers.append(request.get_header("Authorization"))
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "key_env": "ROTATING_KEY", "credential_id": "credential-id",
+        }},
+        credential_resolver=CredentialResolver(store), opener=opener,
+    )
+    router.post("generation", "image-model", {"prompt": "one"})
+    store.set("credential-id", "second-secret")
+    router.post("generation", "image-model", {"prompt": "two"})
+    assert headers == ["Bearer first-secret", "Bearer second-secret"]
+
+
+def test_keyring_only_http_error_redacts_resolved_credential(monkeypatch):
+    from figure_tools.providers.auth import CredentialResolver, MemorySecretStore
+    from urllib.error import HTTPError
+
+    store = MemorySecretStore({"credential-id": "keyring-secret"})
+
+    def opener(request):
+        raise HTTPError(
+            request.full_url, 400, "bad", {},
+            io.BytesIO(b"provider echoed keyring-secret"),
+        )
+
+    router = ProviderRouter(
+        {"image_generate": {"model": "image-model", "provider": "openai"}},
+        {"openai": {
+            "type": "openai", "base_url": "https://models.example/v1",
+            "credential_id": "credential-id",
+        }},
+        credential_resolver=CredentialResolver(store), opener=opener,
+    )
+    with pytest.raises(ProviderError) as exc_info:
+        router.post("generation", "image-model", {"prompt": "draw"})
+    assert "keyring-secret" not in str(exc_info.value)
 
 
 def test_configured_provider_instance_may_be_named_ark(monkeypatch):

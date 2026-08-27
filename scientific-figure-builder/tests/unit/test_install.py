@@ -9,6 +9,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from figure_tools.config import deep_merge
 from install.configure_opencode import (
     apply_merge,
@@ -17,8 +19,11 @@ from install.configure_opencode import (
     render_diff,
 )
 from install.install_delivery import (
+    LAUNCHER_MARKER,
     delivery_paths,
     install_delivery,
+    launcher_text,
+    validate_launcher_target,
     verify_delivery,
 )
 
@@ -132,11 +137,13 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         config_home=config_home,
         data_home=data_home,
         codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
     )
     assert global_paths.skill_dir == (
         config_home / "opencode" / "skills" / "scientific-figure-builder"
     )
     assert global_paths.config_file == config_home / "opencode" / "opencode.json"
+    assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
 
     project = tmp_path / "project"
     project.mkdir()
@@ -145,11 +152,13 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         data_home=data_home,
         project_dir=project,
         codex_home=project / ".codex",
+        bin_dir=tmp_path / "bin",
     )
     assert project_paths.skill_dir == (
         project / ".opencode" / "skills" / "scientific-figure-builder"
     )
     assert project_paths.config_file == project / "opencode.json"
+    assert project_paths.launcher_file is None
 
 
 def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
@@ -162,6 +171,7 @@ def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
         config_home=config_home,
         data_home=tmp_path / "data",
         codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
     )
     assert paths.config_file == jsonc
 
@@ -176,6 +186,7 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
         data_home=tmp_path / "data",
         project_dir=project,
         codex_home=project / ".codex",
+        bin_dir=tmp_path / "bin",
     )
     assert paths.config_file == nested_config
 
@@ -195,6 +206,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
     )
     paths.config_file.parent.mkdir(parents=True)
     paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
@@ -212,6 +224,8 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
     assert paths.command_file.is_file()
     assert result["mcp_tools"] == 15
+    assert Path(result["launcher"]).is_file()
+    assert LAUNCHER_MARKER in Path(result["launcher"]).read_text(encoding="utf-8")
 
     merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
     assert merged["provider"] == _existing_config()["provider"]
@@ -222,6 +236,39 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
 
     verified = verify_delivery(paths)
     assert verified["mcp_tools"] == 15
+    assert verified["checks"]["launcher"] is True
+    assert verified["checks"]["gui_resources"] is True
+
+
+def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path):
+    source = Path(__file__).resolve().parents[2]
+    launcher = tmp_path / "bin" / "scientific-figure"
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho unrelated\n", encoding="utf-8")
+    paths = delivery_paths(
+        config_home=tmp_path / "config", data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
+    )
+    with pytest.raises(RuntimeError, match="unrelated launcher"):
+        install_delivery(source, paths, runtime_sync=lambda _runtime: Path(sys.executable))
+    assert launcher.read_text(encoding="utf-8").startswith("#!/bin/sh\necho unrelated")
+
+
+def test_launcher_target_validation_allows_our_marker(tmp_path: Path):
+    launcher = tmp_path / "scientific-figure"
+    launcher.write_text(launcher_text(Path(sys.executable)), encoding="utf-8")
+    validate_launcher_target(launcher)
+
+
+def test_windows_launcher_rendering_is_controlled(monkeypatch):
+    import install.install_delivery as delivery
+
+    monkeypatch.setattr(delivery.os, "name", "nt")
+    text = delivery.launcher_text(Path("C:/Program Files/Scientific Figure/.venv/Scripts/python.exe"))
+    assert text.startswith("@echo off")
+    assert '"C:\\Program Files\\Scientific Figure\\.venv\\Scripts\\python.exe"' in text
+    assert "%*" in text
+    assert delivery.LAUNCHER_MARKER in text
 
 
 def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
@@ -230,6 +277,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
     )
 
     def _use_test_python(_runtime_dir: Path) -> Path:
