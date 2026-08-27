@@ -205,6 +205,10 @@ Providers 页面负责端点增删改、协议和模型能力；独立的“凭�
 界面采用紧凑侧栏、路由卡片、状态徽标和固定保存栏；QML 只负责展示，配置、
 Keyring、校验和连接测试仍复用现有 Python 服务。
 
+首次使用时应先在 Providers 页面创建 Provider，再配置 Model role。没有
+Provider 时，路由下拉框会禁用并提供“前往新增 Provider”入口；仅在未改变
+内容的字段之间切换焦点，不会错误地产生“未保存修改”状态。
+
 每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
 在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在
 `.scientific-figure/project.yaml` 做项目级覆盖；`SCI_FIG_*` 环境变量覆盖

@@ -208,8 +208,7 @@ gui` from the installed runtime (or `uv run --extra gui --directory
 scientific-figure-builder python -m figure_tools gui` from this checkout). It
 edits the user-scoped models and providers file without starting a browser or
 local server. Provider API keys remain in the operating-system credential store;
-headless and CI use continues
-to work with `key_env` environment variables.
+headless and CI use continue to work with `key_env` environment variables.
 
 The Providers page handles endpoint CRUD, protocol fields, and capabilities.
 The separate Credentials & Connection page handles password-mode API Key
@@ -220,6 +219,11 @@ test shows a cost warning first. Omitting `image_edit` inherits `image_generate`
 The interface uses a compact sidebar, route cards, inline status badges, and a
 fixed save bar. QML is only the presentation layer; configuration, Keyring,
 validation, and connection testing remain in the existing Python services.
+
+On first use, create a Provider before configuring Model roles. When no
+Provider exists, route selectors are disabled and link directly to the
+Providers page instead of showing an empty dropdown. Moving focus between
+unchanged fields does not create a false unsaved state.
 
 Each model role is assigned to a provider, so different steps can use different
 vendors. Configure globally in `~/.config/scientific-figure-builder/config.yaml`
