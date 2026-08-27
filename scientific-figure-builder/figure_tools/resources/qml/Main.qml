@@ -375,6 +375,7 @@ ApplicationWindow {
                             }
                             Text { text: "Provider 类型"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
                             AppComboBox {
+                                objectName: "providerTypeSelector"
                                 Layout.fillWidth: true
                                 model: ["openai", "anthropic"]
                                 currentIndex: model.indexOf(appController.selectedProvider.type || "openai")
@@ -387,30 +388,93 @@ ApplicationWindow {
                                 placeholderText: "https://api.example.com/v1"
                                 onEditingFinished: appController.updateProvider("base_url", text)
                             }
-                            Text { text: "高级设置"; color: theme.text; font.pixelSize: 14; font.bold: true }
-                            Text { text: "认证方式"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
-                            AppComboBox {
+                            ColumnLayout {
+                                objectName: "anthropicAdvancedSettings"
                                 Layout.fillWidth: true
-                                model: ["x-api-key", "bearer"]
-                                currentIndex: model.indexOf(appController.selectedProvider.auth_scheme || "x-api-key")
-                                onActivated: appController.updateProvider("auth_scheme", currentText)
+                                spacing: 10
+                                visible: appController.selectedProvider.type === "anthropic"
+                                Text { text: "高级设置"; color: theme.text; font.pixelSize: 14; font.bold: true }
+                                Text {
+                                    objectName: "providerAdvancedHint"
+                                    Layout.fillWidth: true
+                                    text: "多数 Provider 无需修改；仅在接口文档有明确要求时调整。"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
+                                Text { text: "认证方式"; color: theme.textMuted; font.pixelSize: 11; font.bold: true }
+                                AppComboBox {
+                                    Layout.fillWidth: true
+                                    model: ["x-api-key", "bearer"]
+                                    currentIndex: model.indexOf(appController.selectedProvider.auth_scheme || "x-api-key")
+                                    onActivated: appController.updateProvider("auth_scheme", currentText)
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "API Key 的发送方式：x-api-key 请求头或 Bearer Token。"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
+                                Text {
+                                    objectName: "providerMessagesPathLabel"
+                                    text: "Messages Path"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                                AppTextField {
+                                    Layout.fillWidth: true
+                                    text: appController.selectedProvider.messages_path || "/messages"
+                                    placeholderText: "/messages"
+                                    onEditingFinished: appController.updateProvider("messages_path", text)
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Anthropic Compatible Provider 的请求路径，默认 /messages。"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
+                                Text {
+                                    objectName: "providerAnthropicVersionLabel"
+                                    text: "Anthropic Version"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                                AppTextField {
+                                    Layout.fillWidth: true
+                                    text: appController.selectedProvider.anthropic_version || "2023-06-01"
+                                    placeholderText: "2023-06-01"
+                                    onEditingFinished: appController.updateProvider("anthropic_version", text)
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Anthropic Compatible Provider 的版本请求头，默认 2023-06-01。"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
                             }
-                            AppTextField {
+                            ColumnLayout {
+                                objectName: "openaiCapabilities"
                                 Layout.fillWidth: true
-                                text: appController.selectedProvider.messages_path || "/messages"
-                                placeholderText: "Messages path"
-                                onEditingFinished: appController.updateProvider("messages_path", text)
-                            }
-                            AppTextField {
-                                Layout.fillWidth: true
-                                text: appController.selectedProvider.anthropic_version || "2023-06-01"
-                                placeholderText: "Anthropic version"
-                                onEditingFinished: appController.updateProvider("anthropic_version", text)
-                            }
-                            Switch {
-                                text: "支持参考图编辑"
-                                checked: appController.selectedProvider.supports_image_edit || false
-                                onToggled: appController.updateProviderBool("supports_image_edit", checked)
+                                spacing: 10
+                                visible: appController.selectedProvider.type === "openai"
+                                Text { text: "OpenAI Compatible Provider 能力"; color: theme.text; font.pixelSize: 14; font.bold: true }
+                                Switch {
+                                    text: "支持参考图编辑"
+                                    checked: appController.selectedProvider.supports_image_edit || false
+                                    onToggled: appController.updateProviderBool("supports_image_edit", checked)
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "仅在 Provider 明确支持基于参考图编辑图片时开启。"
+                                    color: theme.textMuted
+                                    font.pixelSize: 11
+                                    wrapMode: Text.Wrap
+                                }
                             }
                             Item { Layout.preferredHeight: 12 }
                         }

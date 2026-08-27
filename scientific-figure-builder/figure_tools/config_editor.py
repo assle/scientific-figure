@@ -56,6 +56,21 @@ class ConfigSerializationError(ConfigEditorError):
 
 
 PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+PROVIDER_TYPE_FIELD_DEFAULTS: dict[str, Mapping[str, Any]] = {
+    "openai": {
+        "supports_image_edit": False,
+    },
+    "anthropic": {
+        "auth_scheme": "x-api-key",
+        "messages_path": "/messages",
+        "anthropic_version": "2023-06-01",
+    },
+}
+PROVIDER_TYPE_SPECIFIC_FIELDS = frozenset(
+    field
+    for defaults in PROVIDER_TYPE_FIELD_DEFAULTS.values()
+    for field in defaults
+)
 
 
 def validate_provider_id(provider_id: str) -> str:
@@ -202,10 +217,18 @@ class GlobalConfigEditor:
                      values: Mapping[str, Any]) -> None:
         provider_id = validate_provider_id(provider_id)
         provider_type = values.get("type")
-        if provider_type is not None and provider_type not in {"openai", "anthropic"}:
+        if (
+            provider_type is not None
+            and provider_type not in PROVIDER_TYPE_FIELD_DEFAULTS
+        ):
             raise ConfigEditorError("Provider type must be openai or anthropic")
         self._assert_non_secret(values)
-        draft.providers[provider_id] = _merge(draft.providers.get(provider_id), values)
+        provider = _merge(draft.providers.get(provider_id), values)
+        if provider_type is not None:
+            applicable_fields = PROVIDER_TYPE_FIELD_DEFAULTS[str(provider_type)]
+            for field in PROVIDER_TYPE_SPECIFIC_FIELDS - applicable_fields.keys():
+                provider.pop(field, None)
+        draft.providers[provider_id] = provider
 
     @staticmethod
     def _assert_non_secret(values: Mapping[str, Any]) -> None:
