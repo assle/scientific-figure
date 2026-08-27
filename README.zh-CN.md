@@ -7,304 +7,178 @@
 </p>
 
 <p align="center">
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white" alt="Python"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?logo=opensourceinitiative&logoColor=white" alt="License"></a>
-  <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Required-purple?logo=astralshuv&logoColor=white" alt="uv"></a>
-  <a href="https://opencode.ai/"><img src="https://img.shields.io/badge/OpenCode-Ready-orange" alt="OpenCode"></a>
-  <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
-  <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible">
+  <img src="https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
+  <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
+  <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
-
----
-
-## 项目简介
-
-从自然语言需求到**可复现的发表级**科研配图。数据图由 Python/SVG 确定性渲染；AI 图像模型只生成隔离的非量化素材。每次输出跨运行字节级一致。
 
 <p align="center">
-  <img src="assets/example_compound.png" alt="复合图示例" width="640">
+  把澄清后的科研配图需求转化为可复现素材、组合图、验证证据和出版级输出。
 </p>
 
-## 功能特性
+<p align="center">
+  <img src="assets/example_compound.png" alt="发表级复合科研图" width="820">
+</p>
 
-| | 功能 | 说明 |
+## 能得到什么
+
+| | 能力 | 结果 |
 |---|---|---|
-| 📊 | **确定性数据图** | 折线/散点/柱状/热图/误差棒/多面板 - CSV 转图，字节级可复现 |
-| 🎨 | **AI 素材生成** | 可配置图像模型生成隔离视觉元素（设备示意图等），自动去背景 |
-| 🏷️ | **SVG 标签** | 箭头、公式、标注，全部确定性生成 |
-| 🧩 | **自动拼装** | 多元素按 z-order 合成，导出 PNG/SVG/PDF |
-| 🎯 | **导出场景** | `general` 输出跨工具通用的路径文字，`ppt` 输出适合 PowerPoint 的可编辑 SVG |
-| ✅ | **两层校验** | 确定性几何规则 + 多模态 VLM 审核，错误阻断导出 |
-| 🔄 | **可复现运行** | 版本化 run 目录、缓存、断点恢复 |
-
-## 快速开始
-
-### 选择导出场景
-
-SVG 输出支持两种场景：
-
-- `general`（默认）：文字转成路径，跨工具兼容性最好。
-- `ppt`：文字保留为可编辑 `<text>`，并做 PowerPoint 取消组合/转换为形状的兼容归一化。
-
-可在项目配置中设置：
-
-```yaml
-export:
-  export_target: ppt
-```
-
-也可以在单次工具调用或运行时通过 `export_target: "ppt"` 覆盖。
-
-### 选择图宽
-
-未指定图宽时，skill 会询问使用哪个常见出版图宽：
-
-- 半栏图：6.5 cm
-- 通栏图：14 cm
-
-也可以在结构化请求中设置：
-
-```yaml
-figure_width_cm: 6.5
-```
-
-高度会沿用默认画布比例自动计算，除非你另外指定自定义高度。
-
-### 选择语言和风格
-
-未指定时，skill 会在规划前先询问：
-
-- 图内文字语言：中文（`zh`）或英文（`en`）
-- 图风格：`default` 出版风，或自定义参考风格
-
-已确定时可直接写在结构化请求里：
-
-```yaml
-language: zh
-style: default
-```
-
-### 安装
-
-一次安装，**OpenCode 和 Codex 全局可用**：
-
-```bash
-./install.sh
-```
-
-也可以直接从 GitHub 全局安装，无需手动克隆：
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/assle/scientific-figure/main/install.sh | sh
-```
-
-这会把你电脑用户级目录中的 skill、命令和私有运行时安装好。你**不需要**把
-仓库复制到每个项目里。安装器默认同时写入 OpenCode 和 Codex 的配置。
-
-如果只想安装到某一个项目：
-
-```bash
-./install.sh --project /path/to/your-project
-```
-
-只想安装其中一种 agent：
-
-```bash
-./install.sh --opencode-only
-./install.sh --codex-only
-```
-
-全局安装位置：
-
-- Skill：`~/.config/opencode/skills/scientific-figure-builder`
-- Command：`~/.config/opencode/commands/scientific-figure.md`
-- Codex Skill：`~/.codex/skills/scientific-figure-builder`
-- Codex 配置：`~/.codex/config.toml`
-- Runtime：`~/.local/share/scientific-figure-builder`
-- 启动器：`~/.local/bin/scientific-figure`（若不在 `PATH`，安装器会提示）
-
-需要：Python 3.11+、[uv](https://docs.astral.sh/uv/)，以及你实际使用的
-[OpenCode](https://opencode.ai/) 或 Codex。只需在仓库检出目录执行一次安装命令，
-仓库本身不会变成你项目的一部分。
-
-## 安装
-
-在仓库检出目录执行一次即可：
-
-```bash
-./install.sh
-```
-
-只装某个 agent，或安装到指定项目：
-
-```bash
-./install.sh --target codex         # 或：--target opencode
-./install.sh --project /path/to/project
-```
-
-**安装会做什么。**
-
-- 在 `~/.local/share/scientific-figure-builder/` 创建私有运行环境（包含包、Schema、模板、参考资料的虚拟环境）。
-- 把 **skill** 安装到你的 agent，使其能调用本工具：
-  - Codex：`~/.codex/skills/scientific-figure-builder/`
-  - OpenCode：`~/.config/opencode/skills/scientific-figure-builder/`
-- 添加 OpenCode **斜杠命令**：`~/.config/opencode/commands/scientific-figure.md`
-- 注册 MCP **服务条目**（用于启动 `figure_tools.server`）：
-  - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
-  - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
-- 默认安装包含 GUI extra、Keyring 支持和 GUI 资源；全局安装会创建
-  `scientific-figure` 启动器，项目级安装不会创建全局启动器。
-- 把配置好的供应商环境变量（各 provider 的 `key_env` 及 `SCI_FIG_*` 模型覆盖项）转发给 MCP 宿主。
-- 编辑已有配置前会先备份。
-
-不会把 API Key 写入磁盘。GUI 中的 API Key 使用密码模式并保存到系统
-Keyring；服务器、CI 和无桌面环境仍可只使用 `key_env` 环境变量。
-
-## 卸载
-
-移除已安装的软件及其 MCP 条目，不影响本仓库和无关配置：
-
-```bash
-./uninstall.sh                        # 全局安装
-./uninstall.sh --config               # 同时删除 ~/.config/scientific-figure-builder/
-./uninstall.sh --all                  # 全局 + 用户配置
-./uninstall.sh --project /path/to/project   # 删除某项目内的安装
-./uninstall.sh --dry-run              # 先预览，不改动任何东西
-```
-
-**卸载会删除什么。**
-
-- 私有运行环境：`~/.local/share/scientific-figure-builder/`
-- 已安装的 skill：
-  - `~/.codex/skills/scientific-figure-builder/`
-  - `~/.config/opencode/skills/scientific-figure-builder/`
-- OpenCode 斜杠命令：`~/.config/opencode/commands/scientific-figure.md`
-- MCP 服务条目（只删 `scientific-figure`，其它服务器保留）：
-  - Codex：`~/.codex/config.toml` 中的 `[mcp_servers.scientific-figure]`
-  - OpenCode：`~/.config/opencode/opencode.json` 中的 `mcp.scientific-figure`
-- 启动器：只删除本工具标记的 `scientific-figure`，无关同名文件会保留并警告。
-- 加 `--config`：删除用户配置目录 `~/.config/scientific-figure-builder/`
-  并先清理该配置引用的 Keyring 凭据；Keyring 清理失败时保留配置。
-- 加 `--project DIR`：删除该项目 `.opencode/` 与 `.codex/` 下的 skill、命令及 MCP 条目
-
-其它 agent 配置、项目和本仓库均不受影响。被删除的目录可通过重新执行 `./install.sh` 恢复。
-
-### 配置模型接口（可选）
-
-也可以直接运行原生 Qt Quick/QML 中文配置窗口：
-
-```bash
-scientific-figure gui
-# 或：python -m figure_tools gui
-```
-
-Providers 页面负责端点增删改、协议和模型能力；独立的“凭据与连接”页面负责
-安全保存 API Key，以及为当前未保存草稿主动测试连接。连接测试只在用户
-点击后执行，视觉路径使用最小确定性图片；生成路径可能产生 Provider 费用，
-会在执行前确认。`image_edit` 省略时继承 `image_generate`，不要求重复配置。
-界面采用紧凑侧栏、路由卡片、状态徽标和固定保存栏；QML 只负责展示，配置、
-Keyring、校验和连接测试仍复用现有 Python 服务。
-
-首次使用时应先在 Providers 页面创建 Provider，再配置 Model role。没有
-Provider 时，路由下拉框会禁用并提供“前往新增 Provider”入口；仅在未改变
-内容的字段之间切换焦点，不会错误地产生“未保存修改”状态。
-
-每个模型角色都会绑定到一个 provider，因此不同流程可以使用不同厂商。
-在 `~/.config/scientific-figure-builder/config.yaml` 全局配置，在
-`.scientific-figure/project.yaml` 做项目级覆盖；`SCI_FIG_*` 环境变量覆盖
-模型 id，各 provider 的 `key_env` 指定环境变量回退名；若存在 `credential_id`，
-系统 Keyring 凭据优先。
-
-Provider 只使用两种接口方言：`openai` — 生图走 `/images/generations`、视觉走
-`/responses`；`anthropic` — 仅视觉走 `/messages`。`base_url` 应填 API 根地址，
-不要填完整操作地址。
-
-```yaml
-# ~/.config/scientific-figure-builder/config.yaml（不要写入 API Key）
-providers:
-  deepseek:
-    type: openai
-    base_url: https://api.deepseek.com/           # DeepSeek 多模态，走 /responses
-    key_env: DEEPSEEK_API_KEY
-  ark_seedream:
-    type: openai
-    base_url: https://ark.cn-beijing.volces.com/api/plan/v3  # Seedream，走 /images/generations
-    key_env: ARK_API_KEY
-    supports_image_edit: true
-models:
-  image_generate: {model: "<Seedream 模型 id>", provider: ark_seedream}
-  vision_analyze: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
-  vision_validate: {model: "deepseek-v4-flash-vision-exp", provider: deepseek}
-```
-
-`image_generate` 必须是真正的图片生成模型；`vision_analyze` /
-`vision_validate` 是多模态（读图）模型，可以是与分析步骤同一厂商。
-`image_edit` 为可选角色，省略时回退到 `image_generate`。图表、标签、公式和
-SVG 元素由确定性引擎渲染，绝不发送给模型。凭证永不写入配置、日志、产出物
-或清单；安装脚本会自动转发用户配置里的所有 `key_env` 到 MCP 宿主。若只做
-本地开发，可用 `SCIENTIFIC_FIGURE_CONFIG` 指向自己的配置文件，而不必改
-`~/.config/...`。
-
-### 在 OpenCode 中使用
-
-```text
-使用 scientific-figure-builder，根据 data.csv 画一张论文用折线图
-```
-
-或用命令：
-
-```bash
-/scientific-figure init
-/scientific-figure plan 根据 data.csv 生成多面板科研图
-/scientific-figure run
-/scientific-figure validate
-/scientific-figure export
-```
-
-## 效果展示
+| 📊 | 确定性数据图 | 从 CSV 生成折线、散点、柱状、热图、误差棒和多面板图 |
+| 🎨 | Provider-neutral AI 素材 | 带来源记录和自动去背景的隔离非量化视觉素材 |
+| 🧩 | 精确拼装 | 使用 Python/SVG 组合面板、标签、箭头和公式 |
+| ✅ | 两层验证 | 权威几何规则 + 多模态模型语义补充 |
+| 📦 | 出版导出 | PNG、SVG、PDF，以及可选的 PowerPoint 友好 SVG/PPTX |
 
 <p align="center">
   <table>
     <tr>
-      <td align="center"><img src="assets/example_line_plot.png" width="280"><br><sub>折线图</sub></td>
-      <td align="center"><img src="assets/example_heatmap.png" width="280"><br><sub>热图</sub></td>
-      <td align="center"><img src="assets/example_multipanel.png" width="280"><br><sub>多面板</sub></td>
+      <td align="center"><img src="assets/example_line_plot.png" width="280"><br><sub>可复现折线图</sub></td>
+      <td align="center"><img src="assets/example_heatmap.png" width="280"><br><sub>确定性数据映射热图</sub></td>
+      <td align="center"><img src="assets/example_multipanel.png" width="330"><br><sub>多面板组合</sub></td>
     </tr>
   </table>
 </p>
+
+## 可视化模型路由
+
+原生 Qt Quick 应用用于管理全局 Model role、Provider 和系统凭据。打开或保存
+配置不会启动浏览器、本地 Web 服务，也不会自动访问 Provider。
+
+<p align="center">
+  <img src="assets/gui-model-routes.png" alt="模型角色路由界面" width="920">
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/gui-providers.png" alt="Provider 端点和能力配置"></td>
+    <td width="50%"><img src="assets/gui-credentials.png" alt="Keyring 凭据和连接测试"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>端点、协议与模型能力</sub></td>
+    <td align="center"><sub>Keyring 凭据与主动连接测试</sub></td>
+  </tr>
+</table>
+
+- **Providers**：负责端点增删改、接口方言和可选能力。
+- **凭据与连接**：把 API Key 保存到操作系统 Keyring；只有用户点击时才测试当前未保存草稿。
+- **模型路由**：把 `vision_analyze`、`image_generate`、可选 `image_edit` 和
+  `vision_validate` 绑定到 Provider 与固定模型 ID。
+- 没有 Provider 时，路由选择器会禁用并直接引导到新增流程。
+
+## 快速开始
+
+### 1. 安装
+
+```bash
+git clone https://github.com/assle/scientific-figure.git
+cd scientific-figure
+./install.sh
+```
+
+全局安装器会为 Codex 和 OpenCode 注册 Skill 与 15 工具 MCP 服务、安装私有
+运行时，并创建 `~/.local/bin/scientific-figure` 启动器。
+
+### 2. 配置 Provider
+
+```bash
+scientific-figure gui
+```
+
+先创建 Provider，再分配 Model role。API Key 不会进入 YAML：全局配置只保存稳定
+的 `credential_id`；服务器、CI 和无桌面环境仍可使用 `key_env` 环境变量。
+
+### 3. 让 Agent 开始工作
+
+```text
+使用 scientific-figure-builder，根据 data.csv 创建发表级多面板科研图。
+导出 PNG、SVG 和 PDF，并让 SVG 适合在 PowerPoint 中继续编辑。
+```
+
+渲染前，Skill 会确认导出目标、图宽、语言和风格；付费生成前会先展示计划与线框图。
+
+## 核心规则
+
+```text
+精确数据、坐标轴、公式、文字和几何结构  →  Python / SVG
+隔离的非量化视觉素材                    →  配置的图像 Provider
+最终组合与导出                          →  本地确定性流水线
+```
+
+AI 图像模型不会绘制数据图或最终复合图。确定性检查保持权威；视觉模型可以补充
+语义说明，但不能把几何检查的失败改成通过。
+
+## 最小 Provider 配置
+
+GUI 会替你写入这些元数据；配置中刻意不包含 API Key：
+
+```yaml
+providers:
+  vision_provider:
+    type: openai
+    base_url: https://api.example.com/v1
+    key_env: VISION_API_KEY
+  image_provider:
+    type: openai
+    base_url: https://images.example.com/v1
+    key_env: IMAGE_API_KEY
+    supports_image_edit: true
+
+models:
+  vision_analyze:  {provider: vision_provider, model: vision-model}
+  image_generate:  {provider: image_provider,  model: image-model}
+  vision_validate: {provider: vision_provider, model: vision-model}
+```
+
+省略 `image_edit` 即表示继承 `image_generate`。Keyring 凭据优先于环境变量回退。
+
+## 导出目标
+
+| 目标 | 适用场景 | SVG 文字 |
+|---|---|---|
+| `general` | 投稿、浏览器和通用矢量工具 | 转换为兼容性更好的路径 |
+| `ppt` | PowerPoint 编辑和取消组合 | 保留为可编辑文字 |
+
+## 安装选项
+
+```bash
+./install.sh --codex-only
+./install.sh --opencode-only
+./install.sh --project /path/to/project
+./install.sh --verify
+```
+
+<details>
+<summary><strong>安全卸载</strong></summary>
+
+```bash
+./uninstall.sh                  # 保留用户配置和 Keyring 凭据
+./uninstall.sh --config         # 同时清理配置引用的 Keyring 条目
+./uninstall.sh --project DIR    # 删除指定项目集成
+./uninstall.sh --dry-run
+```
+
+卸载器只删除本工具标记的启动器和 MCP 条目；Keyring 清理失败时会保留用户配置。
+</details>
 
 ## 开发
 
 ```bash
 cd scientific-figure-builder
-uv sync
-uv run pytest
+uv sync --extra gui
+uv run --extra gui pytest -q
+uv run --extra gui python -m figure_tools gui
 ```
 
-可选的 PowerPoint 端到端测试会打开本机 Microsoft PowerPoint，验证
-`export_target=ppt` 的 SVG 能插入、转换并取消组合：
+延伸阅读：
 
-```bash
-RUN_POWERPOINT_E2E=1 uv run pytest tests/e2e/test_powerpoint_import.py -q
-```
-
-首次运行可能需要在 macOS 提示中授予 PowerPoint 访问测试临时目录的权限。
-
-## 项目结构
-
-```
-scientific-figure-builder/
-├── figure_tools/        # Python 核心包
-│   ├── providers/       # Provider 传输层 + 客户端（OpenAI/Anthropic）
-│   ├── plotting/        # 图表规范、数据、配方、渲染器
-│   ├── validation/      # 几何规则 + VLM 审核 + 证据图
-│   ├── assembly/        # 图形合成
-│   └── export/          # PNG/SVG/PDF/PPTX 导出
-├── schemas/             # 6 个版本化 JSON Schema
-├── templates/           # 默认配置 + 绘图配方
-├── references/          # 路由/工作流/provider 文档
-└── tests/               # 单元/集成/端到端测试
-```
+- [领域术语](./CONTEXT.md)
+- [Provider 接口](./scientific-figure-builder/references/provider-interfaces.md)
+- [工作流细节](./scientific-figure-builder/references/workflow-details.md)
+- [安全策略](./SECURITY.md)
+- [GUI 跨平台验证](./docs/verification/gui-platforms.md)
 
 ## 开源许可
 
