@@ -28,11 +28,14 @@ class RunState:
         self.run_id = run_id
         self.parent_run_id = parent_run_id
         self.current_step = ""
+        self.current_phase = ""
         self._steps: dict[str, dict] = {}
         self._calls: dict[str, int] = {}
         self.budget: dict[str, int] = dict(budget or {})
         self._retries: dict[str, dict[str, int]] = {}
         self.cache_hits = 0
+        self._artifacts: dict[str, dict[str, Any]] = {}
+        self._audit_log: list[dict[str, Any]] = []
         self._approvals: dict[str, str] = {}
         self.resume: dict[str, Any] = {"from_step": "", "invalidate_downstream": False}
 
@@ -43,6 +46,23 @@ class RunState:
             "status": status,
             "output_hashes": dict(output_hashes or {}),
         }
+
+    def mark_phase(self, phase: str) -> None:
+        self.current_phase = phase
+        self.current_step = phase
+
+    def set_artifact(self, name: str, reference: dict[str, Any]) -> None:
+        self._artifacts[name] = copy.deepcopy(reference)
+
+    def artifact(self, name: str) -> dict[str, Any] | None:
+        value = self._artifacts.get(name)
+        return copy.deepcopy(value) if value is not None else None
+
+    def clear_artifact(self, name: str) -> None:
+        self._artifacts.pop(name, None)
+
+    def record_audit(self, event: str, details: dict[str, Any]) -> None:
+        self._audit_log.append({"event": event, "details": copy.deepcopy(details)})
 
     def is_completed(self, step: str) -> bool:
         return self._steps.get(step, {}).get("status") == "completed"
@@ -105,6 +125,7 @@ class RunState:
             "run_id": self.run_id,
             "parent_run_id": self.parent_run_id,
             "current_step": self.current_step or self.resume.get("from_step", "") or "init",
+            "current_phase": self.current_phase or self.current_step or "init",
             "steps": steps,
             "calls": {"counts": self._calls, "budget": self.budget},
             "retries": {
@@ -112,6 +133,8 @@ class RunState:
                 "quality": {r: v["quality"] for r, v in self._retries.items()},
             },
             "cache_hits": self.cache_hits,
+            "artifacts": copy.deepcopy(self._artifacts),
+            "audit_log": copy.deepcopy(self._audit_log),
             "approval_checkpoints": [
                 {"checkpoint": k, "status": v} for k, v in self._approvals.items()
             ],
@@ -129,6 +152,7 @@ class RunState:
             budget=dict(data.get("calls", {}).get("budget", {})),
         )
         state.current_step = data.get("current_step", "")
+        state.current_phase = data.get("current_phase", state.current_step)
         for s in data.get("steps", []):
             state._steps[s["step"]] = {
                 "status": s["status"],
@@ -140,6 +164,8 @@ class RunState:
             for role, n in retries.get(kind, {}).items():
                 state._retries.setdefault(role, {"transient": 0, "quality": 0})[kind] = n
         state.cache_hits = data.get("cache_hits", 0)
+        state._artifacts = copy.deepcopy(data.get("artifacts", {}))
+        state._audit_log = copy.deepcopy(data.get("audit_log", []))
         for a in data.get("approval_checkpoints", []):
             state._approvals[a["checkpoint"]] = a["status"]
         state.resume = {

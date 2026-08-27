@@ -66,6 +66,17 @@ def test_service_uses_fake_transport_and_cleans_minimum_image(tmp_path: Path):
     assert calls and not Path(calls[0][2][0]).exists()
 
 
+def test_service_can_test_phase_reasoning_without_an_image():
+    calls = []
+    result = _service(calls).run(
+        "demo", PROVIDER,
+        {"phase_reasoning": {"provider": "demo", "model": "reasoner"}},
+        temporary_credential="temporary-key",
+    )
+    assert result.role == "phase_reasoning"
+    assert calls == [("phase_reasoning", "reasoner", [])]
+
+
 def test_service_requires_a_credential_and_redacts_transport_error(monkeypatch):
     calls = []
     monkeypatch.delenv("DEMO_API_KEY", raising=False)

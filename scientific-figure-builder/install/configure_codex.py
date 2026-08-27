@@ -168,4 +168,4 @@ def verify_codex_config(config_path: str | Path, mcp_name: str) -> dict[str, Any
         "mcp_table": isinstance(mcp, dict),
         "command": bool(mcp.get("command") if isinstance(mcp, dict) else None),
     }
-    return {"checks": checks, "mcp_tools": 14}
+    return {"checks": checks, "mcp_tools": 2}

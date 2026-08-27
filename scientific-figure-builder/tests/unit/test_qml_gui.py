@@ -58,7 +58,8 @@ def test_qml_controller_updates_references_on_rename(tmp_path: Path, app):
     controller.updateRole("image_generate", "provider", "first_provider")
     controller.updateRole("image_generate", "model", "image-model")
     assert controller.renameSelectedProvider("renamed_provider") is True
-    assert controller.roles[1]["provider"] == "renamed_provider"
+    role = next(item for item in controller.roles if item["role"] == "image_generate")
+    assert role["provider"] == "renamed_provider"
     assert controller.deleteSelectedProvider() is False
     assert "引用" in controller.notification
 
@@ -94,7 +95,7 @@ def test_same_value_updates_do_not_mark_draft_dirty(tmp_path: Path, app):
     controller.updateRole("vision_analyze", "model", "vision-model")
     assert controller.save() is True
     assert controller.dirty is False
-    role = controller.roles[0]
+    role = next(item for item in controller.roles if item["role"] == "vision_analyze")
     provider = controller.selectedProvider
     controller.updateRole("vision_analyze", "provider", role["provider"])
     controller.updateRole("vision_analyze", "model", role["model"])

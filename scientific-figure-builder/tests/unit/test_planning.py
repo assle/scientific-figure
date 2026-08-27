@@ -173,3 +173,15 @@ def test_figure_width_overrides_canvas_dimensions():
 def test_plan_style_bible_ref_defaults():
     plan = create_figure_plan(_request())
     assert plan["style_bible_ref"] == "default"
+
+
+def test_plan_carries_delivery_language_and_style_constraints():
+    plan = create_figure_plan(
+        _request(export_target="ppt", figure_width_cm=6.5,
+                 language="en", style="custom-style"),
+        style_bible_ref="custom-style",
+    )
+    assert plan["delivery"] == {"export_target": "ppt", "figure_width_cm": 6.5}
+    assert plan["language"] == "en"
+    assert plan["style"] == "custom-style"
+    assert plan["style_bible_ref"] == "custom-style"

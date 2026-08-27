@@ -8,6 +8,36 @@ Scientific Figure Builder turns a clarified scientific-figure request into repro
 A question that must be answered before rendering, generation, assembly, or export can begin: output target, figure width, text language, or style.
 _Avoid_: pending question, optional preference, user input requirement
 
+## Workflow lifecycle
+
+**Lifecycle phase**:
+One controlled state of a scientific-figure run: Intake, Planning, Execution, Review and repair, or Export.
+_Avoid_: generation route, tool step, model role
+
+**Orchestrator**:
+The single authority that advances a scientific-figure run between Lifecycle phases from persisted Phase artifacts and approvals.
+_Avoid_: Calling Agent, Phase worker, step runner
+
+**Phase worker**:
+A context-isolated, non-autonomous reasoning adapter for one Lifecycle phase that returns a Phase artifact without advancing the run; it may use the `phase_reasoning` Model role or the schema-equivalent offline path.
+_Avoid_: Agent, subagent, Model role
+
+**Phase prompt**:
+The versioned instructions supplied to a Phase worker for exactly one Lifecycle phase.
+_Avoid_: Skill prompt, workflow prompt, system prompt
+
+**Phase artifact**:
+A versioned, schema-governed result of one Lifecycle phase that becomes explicit input to downstream phases.
+_Avoid_: conversation context, intermediate output, run file
+
+**Figure brief**:
+The Phase artifact produced by Intake that records the resolved scientific intent, source inputs, output constraints, and remaining Required clarifications.
+_Avoid_: user request, Figure plan, prompt
+
+**Generation route**:
+The production path for a planned figure element within Execution, such as Python, SVG, image generation, image editing, or assembly.
+_Avoid_: Lifecycle phase, Model route, workflow stage
+
 ## Model routing
 
 **Multimodal model**:
@@ -19,7 +49,7 @@ A model that produces or revises non-quantitative raster assets; plots, labels, 
 _Avoid_: drawing model, image model
 
 **Model role**:
-A stable functional slot for model-assisted work: `image_generate`, optional `image_edit`, `vision_analyze`, or `vision_validate`.
+A stable functional slot for model-assisted work: optional `phase_reasoning`, `image_generate`, optional `image_edit`, `vision_analyze`, or `vision_validate`.
 _Avoid_: model, step, flow, agent model
 
 **Model route**:

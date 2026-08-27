@@ -24,8 +24,12 @@ DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
 # schema file -> list of documents (fixtures or templates) that must validate.
 SCHEMA_DOCUMENTS = {
+    "export-result.schema.json": ["export_result.json"],
+    "execution-result.schema.json": ["execution_result.json"],
+    "figure-brief.schema.json": ["figure_brief.json"],
     "figure-plan.schema.json": ["figure_plan.json"],
     "plot-spec.schema.json": ["plot_spec.json"],
+    "repair-plan.schema.json": ["repair_plan.json"],
     "asset-manifest.schema.json": ["asset_manifest.json"],
     "style-bible.schema.json": ["style_bible.json", "default-style-bible.json"],
     "run-state.schema.json": ["run_state.json"],

@@ -223,7 +223,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert (paths.skill_dir / "SKILL.md").is_file()
     assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
     assert paths.command_file.is_file()
-    assert result["mcp_tools"] == 15
+    assert result["mcp_tools"] == 2
     assert Path(result["launcher"]).is_file()
     assert LAUNCHER_MARKER in Path(result["launcher"]).read_text(encoding="utf-8")
 
@@ -235,7 +235,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     )
 
     verified = verify_delivery(paths)
-    assert verified["mcp_tools"] == 15
+    assert verified["mcp_tools"] == 2
     assert verified["checks"]["launcher"] is True
     assert verified["checks"]["gui_resources"] is True
 

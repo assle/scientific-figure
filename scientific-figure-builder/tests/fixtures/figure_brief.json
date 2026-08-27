@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "figure_brief",
+  "brief_id": "figure-01-brief-v1",
+  "figure_id": "figure-01",
+  "run_id": "figure-01",
+  "request": {"figure_id": "figure-01"},
+  "intent": "A reproducible scientific figure",
+  "inputs": {"reference_figures": [], "data_sources": []},
+  "delivery": {"export_target": "general", "figure_width_cm": 14.0},
+  "language": "en",
+  "style": "default",
+  "assumptions": [],
+  "uncertainties": [],
+  "required_clarifications": [],
+  "status": "ready",
+  "provenance": {
+    "phase": "intake",
+    "prompt_version": "1.0",
+    "prompt_hash": "sha256:prompt",
+    "request_hash": "sha256:request"
+  }
+}

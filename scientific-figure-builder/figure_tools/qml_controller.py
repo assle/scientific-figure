@@ -26,6 +26,7 @@ from figure_tools.providers.auth import CredentialResolver, default_secret_store
 from figure_tools.providers.generic_transport import normalize_provider_base_url
 
 ROLE_META = (
+    ("phase_reasoning", "阶段推理", "为每个生命周期阶段运行独立结构化推理"),
     ("vision_analyze", "参考图分析", "读取参考图并提取结构与语义"),
     ("image_generate", "图像生成", "生成隔离的非量化视觉素材"),
     ("image_edit", "图像编辑", "使用参考图修订生成素材"),
@@ -162,6 +163,8 @@ class GuiController(QObject):
             provider_type = self._provider_view(provider_id).get("type", "")
             if role in {"image_generate", "image_edit"} and provider_type != "openai":
                 warnings.append(f"{state['label']} 需要 OpenAI Compatible Provider")
+            if role == "phase_reasoning" and provider_type not in {"openai", "anthropic"}:
+                warnings.append(f"{state['label']} 需要 OpenAI 或 Anthropic Compatible Provider")
         return "\n".join(warnings)
 
     def _provider_view(self, provider_id: str) -> dict[str, Any]:

@@ -117,6 +117,29 @@ class ProviderClient:
                     raise
                 time.sleep(min(0.1 * (2 ** (attempt - 1)), 5.0))
 
+    def run_phase_worker(
+        self,
+        phase: str,
+        prompt: str,
+        context: dict[str, Any],
+        allowed_tools: list[str],
+        fallback_artifact: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run one isolated reasoning phase and return its JSON artifact."""
+        role = "phase_reasoning"
+        self._record_call(role)
+        self._log_prompt(f"phase_{phase}", prompt)
+        result = self._post(role, {
+            "phase": phase,
+            "prompt": prompt,
+            "context": context,
+            "allowed_tools": allowed_tools,
+            "fallback_artifact": fallback_artifact,
+        })
+        if not isinstance(result, dict):
+            raise ProviderError("phase worker response must be a JSON object")
+        return result
+
     # --- reference analysis ---------------------------------------------
     def analyze_reference_figure(self, image_path: str | Path,
                                  prompt: str | None = None,

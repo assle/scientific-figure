@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "export_result",
+  "run_id": "figure-01",
+  "validation_ref": {"artifact": "validation/final.json", "content_hash": "sha256:validation"},
+  "assembly_ref": {"path": "assembly", "exists": true, "content_hash": "sha256:assembly"},
+  "files": {"png": "exports/figure.png"},
+  "forced": false,
+  "reason": null
+}

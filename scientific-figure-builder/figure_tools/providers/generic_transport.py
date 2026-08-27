@@ -143,9 +143,29 @@ class OpenAICompatibleTransport(ProviderTransport):
     ) -> dict[str, Any]:
         if role in ("generation", "edits"):
             return self._image(role, model, payload, image_paths or [])
+        if role == "phase_reasoning":
+            return self._reasoning(model, payload)
         if role in ("reference_analysis", "validations", "final_validation"):
             return self._vision(role, model, payload, image_paths or [])
         raise ProviderError(f"unknown role {role!r}")
+
+    def _reasoning(self, model: str, payload: dict[str, Any]) -> dict[str, Any]:
+        prompt = (
+            f"{payload['prompt']}\n\n"
+            f"Phase context:\n{json.dumps(payload.get('context', {}), ensure_ascii=False)}\n\n"
+            f"Allowed tools: {json.dumps(payload.get('allowed_tools', []))}\n"
+            "Return ONLY one JSON object matching this output shape:\n"
+            f"{json.dumps(payload.get('fallback_artifact', {}), ensure_ascii=False)}"
+        )
+        response = self._post("/responses", {
+            "model": model,
+            "input": [{"role": "user", "content": [
+                {"type": "input_text", "text": prompt},
+            ]}],
+            "max_output_tokens": 8192,
+            "text": {"format": {"type": "json_object"}},
+        })
+        return extract_json(_responses_text(response), redactor=self.redactor)
 
     def _image(
         self,
@@ -267,6 +287,8 @@ class AnthropicTransport(ProviderTransport):
         payload: dict,
         image_paths: list[str] | None = None,
     ) -> dict[str, Any]:
+        if role == "phase_reasoning":
+            return self._reasoning(model, payload)
         if role not in ("reference_analysis", "validations", "final_validation"):
             raise ProviderError(
                 "Anthropic Messages providers support vision analysis/validation, "
@@ -299,6 +321,41 @@ class AnthropicTransport(ProviderTransport):
                 "model": model,
                 "max_tokens": 4096,
                 "messages": [{"role": "user", "content": content}],
+            },
+            opener=self._opener,
+            redactor=self.redactor,
+            timeout=self.timeout,
+        )
+        text = "".join(
+            block.get("text", "")
+            for block in response.get("content", [])
+            if block.get("type") == "text"
+        )
+        return extract_json(text, redactor=self.redactor)
+
+    def _reasoning(self, model: str, payload: dict[str, Any]) -> dict[str, Any]:
+        prompt = (
+            f"{payload['prompt']}\n\n"
+            f"Phase context:\n{json.dumps(payload.get('context', {}), ensure_ascii=False)}\n\n"
+            f"Allowed tools: {json.dumps(payload.get('allowed_tools', []))}\n"
+            "Return ONLY one JSON object matching this output shape:\n"
+            f"{json.dumps(payload.get('fallback_artifact', {}), ensure_ascii=False)}"
+        )
+        headers = {"anthropic-version": self.version}
+        if self.auth_scheme == "bearer":
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        else:
+            headers["x-api-key"] = self.api_key
+        response = _request_json(
+            f"{self.base_url}{self.messages_path}",
+            method="POST",
+            headers=headers,
+            body={
+                "model": model,
+                "max_tokens": 8192,
+                "messages": [{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                ]}],
             },
             opener=self._opener,
             redactor=self.redactor,

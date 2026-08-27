@@ -1,6 +1,6 @@
 interface:
   display_name: "Scientific Figure Builder"
   short_description: "Build publication-quality scientific figures"
-  default_prompt: "Use $scientific-figure-builder to create the figure, and before doing anything ask the user for output target, width, language, and style."
+  default_prompt: "Use $scientific-figure-builder and follow the next action returned by the lifecycle orchestrator."
 policy:
   allow_implicit_invocation: false

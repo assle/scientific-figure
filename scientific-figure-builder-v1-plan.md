@@ -5,15 +5,15 @@
 - Status: approved implementation baseline
 - Target platform: OpenCode first
 - Skill name: `scientific-figure-builder`
-- Execution provider: Volcengine Ark only
+- Execution provider: configurable, Provider-neutral model routes
 - This document is an implementation plan. Do not expand v1 scope without explicit approval.
 
 ## 1. Objective
 
-Build an OpenCode-first scientific-figure orchestration Skill. The Skill must
-understand a figure request, decompose it into appropriate rendering tasks,
-route each task to the correct engine, validate the results, and assemble the
-final figure.
+Build an OpenCode-first scientific-figure orchestration Skill. A single
+Orchestrator must advance isolated Lifecycle phases, hand off versioned Phase
+artifacts, decompose a figure request into appropriate Generation routes, and
+validate and assemble the final figure.
 
 This is not a single-prompt image-generation Skill.
 
@@ -24,22 +24,22 @@ OpenCode so another agent platform can reuse them later.
 
 | Component | Responsibilities | Prohibited work |
 |---|---|---|
-| OpenCode planning model | Understand requests, classify tasks, create plans, select tools, summarize validation | Invent scientific data or directly produce final raster figures |
-| Ark multimodal analysis model | Analyze reference figures, identify panels and objects, extract text candidates, report uncertainty | Decide whether numerical source data are correct |
-| Ark multimodal validation model | Check semantic structure, object count, perspective, style consistency, unwanted text, and final layout | Validate quantitative accuracy from pixels |
-| Ark image-generation model | Generate or edit isolated, complex, non-quantitative visual assets | Generate data plots, axes, tick labels, exact numbers, equations, periodic arrays, or final compound figures |
+| Calling Agent and Orchestrator | Submit user input, advance Lifecycle phases, select permitted Generation routes, and surface next actions | Invent scientific data or directly produce final raster figures |
+| Configured multimodal analysis model | Analyze reference figures, identify panels and objects, extract text candidates, report uncertainty | Decide whether numerical source data are correct |
+| Configured multimodal validation model | Check semantic structure, object count, perspective, style consistency, unwanted text, and final layout | Validate quantitative accuracy from pixels |
+| Configured image-generation model | Generate or edit isolated, complex, non-quantitative visual assets | Generate data plots, axes, tick labels, exact numbers, equations, periodic arrays, or final compound figures |
 | Python | Quantitative plots, precise geometry, file validation, composition, export, effective-DPI checks | Invent missing experimental values |
 | SVG | Arrows, connectors, labels, equations, regular geometry, simple diagrams | Produce complex photorealistic equipment |
 | PPTX | Optional editable text, shapes, and final slide composition | Serve as the scientific computation engine |
 
 Examples:
 
-- Semi-realistic optical-fiber body: Ark image model.
+- Semi-realistic optical-fiber body: configured image-generation model.
 - Exact periodic grating: Python or SVG.
 - Beam and arrow: SVG.
 - Coupling-efficiency curve: Python.
 - Labels, angles, and equations: SVG or PPTX.
-- Reference-figure decomposition: Ark multimodal analysis model.
+- Reference-figure decomposition: configured multimodal analysis model.
 - Final assembly: Python and SVG.
 
 ## 3. v1 scope
@@ -68,7 +68,7 @@ Examples:
 - Animation.
 - Interactive web visualizations.
 - Rotatable 3D models.
-- Providers other than Volcengine Ark.
+- Multiple autonomous Agents negotiating workflow ownership.
 - Automatic full-paper PDF interpretation.
 - Direct one-shot generation of a formal compound scientific figure.
 - Accessibility checks such as color-blindness simulation.
@@ -79,12 +79,12 @@ label consistency, legend obstruction, cropping, and effective resolution.
 ## 4. Primary user workflow
 
 1. Initialize the project configuration on first use.
-2. Inspect the request and local inputs.
-3. Keep raw experimental data local by default.
-4. Upload only explicitly listed reference images required by Ark.
-5. Classify the task as `data_plot`, `schematic`, `hybrid`, or
+2. Submit the request to Intake and resolve Required clarifications.
+3. Persist a Figure brief and keep raw experimental data local by default.
+4. Upload only explicitly listed reference images required by the selected Provider.
+5. Let Planning classify the task as `data_plot`, `schematic`, `hybrid`, or
    `figure_decomposition`.
-6. Analyze reference images with the configured Ark multimodal analysis model.
+6. Analyze reference images with the configured multimodal analysis model.
 7. Create versioned structured plans and a no-cost SVG layout wireframe.
 8. Show the plan, upload list, model-call estimate, and wireframe to the user.
 9. Wait for approval before any paid generation.
@@ -123,13 +123,13 @@ default limits.
 
 Contain:
 
-- Ark API key reference.
-- Fixed Ark model IDs or Endpoint IDs.
+- Provider credential reference.
+- Fixed model IDs or Endpoint IDs per Model role.
 - Optional private endpoint settings.
 
-Read the API key from an environment variable such as `ARK_API_KEY` or a
-user-private file. Never write it to a repository, report, prompt log, or run
-manifest. Provide only an example private configuration.
+Resolve each Provider credential from its configured `credential_id` or
+`key_env`. Never write a credential to a repository, report, prompt log, or run
+manifest. Provide only non-secret configuration examples.
 
 ### Project configuration
 
@@ -152,6 +152,8 @@ Configure roles independently, even if two roles initially use the same model:
 
 ```yaml
 models:
+  phase_reasoning:
+    model: "<optional-fixed-model-or-endpoint-id>"
   image_generate:
     model: "<fixed-model-or-endpoint-id>"
   image_edit:
@@ -161,6 +163,10 @@ models:
   vision_validate:
     model: "<fixed-model-or-endpoint-id>"
 ```
+
+`phase_reasoning` and `image_edit` are optional. Without `phase_reasoning`,
+Lifecycle phases use the schema-equivalent offline worker; without
+`image_edit`, eligible raster repairs inherit `image_generate`.
 
 Do not implement `latest` model resolution or silent model upgrades.
 
@@ -194,7 +200,8 @@ scientific-figure-builder/
 │   ├── server.py
 │   ├── config.py
 │   ├── state.py
-│   ├── ark/
+│   ├── lifecycle_prompts.py
+│   ├── providers/
 │   ├── planning/
 │   ├── plotting/
 │   ├── vector/
@@ -316,14 +323,21 @@ Minimum content:
 
 ## 8. MCP tool contract
 
-Expose stable capability-oriented tools. Do not expose Ark-specific model names
+Expose stable capability-oriented tools. Do not expose Provider-specific model names
 in Skill instructions.
 
-### Required tools
+### Public MCP tools
 
 ```text
 initialize_figure_project
+advance_figure_workflow
+```
+
+### Internal capability interfaces
+
+```text
 analyze_reference_figure
+check_figure_requirements
 create_figure_plan
 create_layout_wireframe
 generate_image_asset
@@ -340,12 +354,12 @@ resume_figure_run
 
 ### Key behavioral requirements
 
-- `analyze_reference_figure` calls the configured Ark analysis model and
+- `analyze_reference_figure` calls the configured multimodal analysis model and
   returns structured panels, objects, text candidates, confidence values, and
   uncertainties.
 - `generate_image_asset` and `edit_image_asset` produce one isolated object by
   default.
-- `validate_image_asset` combines deterministic checks with the configured Ark
+- `validate_image_asset` combines deterministic checks with the configured
   validation model.
 - `validate_plot_data` compares rendered inputs against source data
   deterministically and never relies on visual judgment for numerical accuracy.
@@ -480,7 +494,7 @@ Scientific errors cannot be automatically waived.
 - Maximum quality retries per asset: two.
 - Treat transient network or rate-limit retries separately from quality retries.
 - Default independent-asset concurrency: two.
-- Use exponential backoff for Ark rate limits.
+- Use exponential backoff for configured Provider rate limits.
 - Generate a cache key from model ID, prompt, parameters, and reference hashes.
 - Reuse exact cache hits unless forced regeneration is requested.
 - Persist step outputs and hashes for resume.
@@ -612,11 +626,11 @@ Exit criteria:
 - An interrupted deterministic run resumes without repeating completed work.
 - Local edits invalidate only affected downstream artifacts.
 
-### Phase 4: Ark model integration
+### Phase 4: Provider model integration
 
 Deliver:
 
-- Ark authentication and fixed-role model configuration.
+- Provider-neutral authentication and fixed-role model configuration.
 - Reference analysis.
 - Image generation.
 - Reference-image editing.
@@ -626,7 +640,7 @@ Deliver:
 
 Exit criteria:
 
-- Each Ark tool respects the call budget.
+- Each Provider-backed tool respects the call budget.
 - Secrets never appear in logs or artifacts.
 - Identical requests produce cache hits.
 
@@ -664,7 +678,7 @@ Exit criteria:
 
 ### Phase 7: Real-model acceptance testing
 
-Use real paid Ark calls rather than simulated model responses.
+Use real paid Provider calls rather than simulated model responses.
 
 Required end-to-end cases:
 
@@ -689,7 +703,7 @@ v1 is complete only when:
 - All schemas are versioned and validated.
 - OpenCode can discover and invoke the Skill.
 - The MCP server exposes the approved stable tools.
-- All four Ark model roles are configured independently with fixed IDs.
+- All Model roles are configured independently with fixed IDs and Provider IDs.
 - Paid execution requires plan approval by default.
 - Raw data remain local by default.
 - Data plots are spec-driven and reproducible.
@@ -705,11 +719,7 @@ v1 is complete only when:
 - OpenCode Skills: https://opencode.ai/docs/skills/
 - OpenCode Custom Tools: https://opencode.ai/docs/custom-tools/
 - OpenCode MCP Servers: https://opencode.ai/docs/mcp-servers/
-- Volcengine Ark ImageGenerations API:
-  https://api.volcengine.com/api-docs/view?action=ImageGenerations&serviceCode=ark&version=2024-01-01
-
-Ark APIs and available models can change. Before implementing the provider
-client, verify the current official Agent Plan documentation, request schema,
-authentication requirements, model IDs, image-edit support, output retention,
-and rate limits. Keep any updated API details in `references/provider-interfaces.md`,
-not in the core Skill workflow.
+Before implementing or changing a Provider adapter, verify that Provider's
+official request schema, authentication requirements, model IDs, image-edit
+support, output retention, and rate limits. Keep Provider-specific details in
+`references/provider-interfaces.md`, not in the core Skill workflow.

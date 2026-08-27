@@ -2,6 +2,24 @@
 
 Configuration, approval, budget, and resume behavior (plan sections 5 and 12).
 
+## Lifecycle orchestration
+
+The single Orchestrator owns the run lifecycle: Intake, Planning, Execution,
+Review and repair, and Export. Calling Agent commands are adapters to this
+seam; they do not sequence low-level MCP tools independently.
+
+Intake produces a versioned Figure brief. Planning consumes only a completed
+brief and produces a Figure plan plus wireframe. Execution consumes only an
+approved plan and uses Python, SVG, image generation/editing, and assembly as
+Generation routes. Review produces a Validation report or targeted Repair
+plan. Export is deterministic and crosses the Export gate.
+
+Each model-assisted lifecycle phase receives a fresh Phase worker context with
+only its Phase prompt, allowed tools, and upstream Phase artifacts. Prompt
+version, prompt hash, and allowed tools are recorded under the run's
+`prompts/` directory. Workers return schema-valid artifacts but do not mutate
+Run state or write arbitrary downstream outputs.
+
 ## Configuration layers (merged in order)
 
 1. Skill defaults (safe rendering defaults, templates, schema versions, limits).
@@ -20,14 +38,18 @@ metadata and keeps credential values in the system store.
 
 ## Model roles
 
-The three canonical online roles use fixed IDs:
+The canonical online roles use fixed IDs:
 
 ```yaml
 models:
+  phase_reasoning: { model: "<optional-fixed-model-or-endpoint-id>" }
   image_generate: { model: "<fixed-model-or-endpoint-id>", provider: openai }
   vision_analyze: { model: "<fixed-model-or-endpoint-id>" }
-  vision_validate:{ model: "<fixed-model-or-endpoint-id>" }
+  vision_validate: { model: "<fixed-model-or-endpoint-id>" }
 ```
+
+`phase_reasoning` is optional. When absent, the schema-equivalent offline Phase
+worker handles Intake, Planning, and Review and repair.
 
 `image_edit` is an optional override for generated or source-less raster assets.
 When it is absent, reference-image revision reuses `image_generate`. Scientific

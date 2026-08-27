@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/execution-result.schema.json",
+  "title": "Execution Result",
+  "description": "Versioned outputs from executing an approved Figure plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "run_id",
+    "plan_ref",
+    "status",
+    "asset_manifest",
+    "plots",
+    "vectors",
+    "assembly",
+    "layout_manifests",
+    "call_provenance",
+    "validation_reports",
+    "failures"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "artifact_type": {"const": "execution_result"},
+    "run_id": {"type": "string", "minLength": 1},
+    "plan_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "status": {"type": "string", "enum": ["completed", "failed"]},
+    "asset_manifest": {"type": "object"},
+    "plots": {"type": "object"},
+    "vectors": {"type": "object"},
+    "assembly": {"type": "object"},
+    "layout_manifests": {"type": "array", "items": {"type": "object"}},
+    "call_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counts", "retries", "cache_hits"],
+      "properties": {
+        "counts": {"type": "object"},
+        "retries": {"type": "object"},
+        "cache_hits": {"type": "integer", "minimum": 0}
+      }
+    },
+    "validation_reports": {"type": "array", "items": {"type": "object"}},
+    "failures": {"type": "array", "items": {"type": "object"}}
+  }
+}

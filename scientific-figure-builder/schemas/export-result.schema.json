@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/export-result.schema.json",
+  "title": "Export Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_type", "run_id", "validation_ref",
+    "assembly_ref", "files", "forced", "reason"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "artifact_type": {"const": "export_result"},
+    "run_id": {"type": "string", "minLength": 1},
+    "validation_ref": {"type": "object"},
+    "assembly_ref": {"type": "object"},
+    "files": {"type": "object", "additionalProperties": {"type": "string"}},
+    "forced": {"type": "boolean"},
+    "reason": {"type": ["string", "null"]}
+  }
+}
