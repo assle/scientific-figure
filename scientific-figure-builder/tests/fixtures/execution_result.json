@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "execution_result",
+  "run_id": "figure-01",
+  "plan_ref": {"artifact": "plans/figure_plan.json", "content_hash": "sha256:plan"},
+  "status": "completed",
+  "asset_manifest": {"path": "asset_manifest.json"},
+  "plots": {"path": "plots"},
+  "vectors": {"path": "vectors"},
+  "assembly": {"path": "assembly"},
+  "layout_manifests": [],
+  "call_provenance": {"counts": {}, "retries": {}, "cache_hits": 0},
+  "validation_reports": [],
+  "failures": []
+}

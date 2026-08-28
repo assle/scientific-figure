@@ -14,6 +14,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 ROLE_TO_MODEL_CONFIG = {
+    "phase_reasoning": "phase_reasoning",
     "generation": "image_generate",
     "edits": "image_edit",
     "reference_analysis": "vision_analyze",
@@ -94,6 +95,8 @@ class MockProviderTransport(ProviderTransport):
                 "confidence": 0.82,
                 "uncertainties": ["core diameter read from datasheet"],
             }
+        if role == "phase_reasoning":
+            return payload["fallback_artifact"]
         if role in ("generation", "edits"):
             return {"image_bytes": _transparent_circle_png(2048),
                     "model": model, "seed": 0}

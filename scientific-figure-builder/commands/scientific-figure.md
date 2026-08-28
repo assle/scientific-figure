@@ -1,47 +1,28 @@
 ---
-description: Orchestrate a scientific figure (init, plan, run, resume, validate, export)
+description: Orchestrate a scientific figure through the lifecycle orchestrator
 ---
-You are invoking the scientific-figure-builder skill.
+You are invoking the scientific-figure-builder skill. Load its lifecycle router
+and use the single `advance_figure_workflow` tool for task runs. The tool owns
+phase transitions and returns the next user action.
 
-Load the `scientific-figure-builder` skill, then perform the requested
-subcommand from `$ARGUMENTS`:
+Interpret the requested subcommand from `$ARGUMENTS` as follows:
 
 - `init` - initialize project configuration (`.scientific-figure/`) with no
   secrets. Provider credentials come from the system credential store or the
   configured environment variable; never write values into configuration.
 - `gui` - open the native Chinese global model/provider configuration window;
   it does not start a browser, server, or network connection.
-- `plan` - inspect the request and local inputs, then **ask for every unresolved
-  required clarification**: output target (`general` vs `ppt`), figure width
-  (half-column 6.5 cm or full-column 14 cm), text language (Chinese vs English),
-  and style (default publication style vs a custom style reference). If the user
-  does not specify, use the defaults, but always ask first. Then classify the
-  task, analyze reference images (if any), create a versioned figure plan and a
-  no-cost SVG layout wireframe. Show the plan, upload list, model-call estimate,
-  and wireframe. **Wait for approval before any paid generation.** Keep raw
-  data local by default.
-- `run` - execute the approved plan: generate isolated transparent assets via
-  the configured image model, render data plots and precise geometry locally with
-  Python/SVG, validate, and assemble. If there are three or more AI assets,
-  generate one style-anchor asset first and pause for approval. Retry quality
-  failures at most twice per asset.
-- `resume` - resume an interrupted run from its run directory without
-  repeating completed work; invalidate only affected downstream artifacts.
-- `validate` - run deterministic and multimodal validation; classify results as
-  `error` (blocks export) or `warning` (allows export but is recorded).
-- `export` - export final PNG, SVG, and PDF (optional PPTX) and write the asset
-  manifest, validation report, and generation report into the versioned run
-  directory.
+- `plan` - submit the request to the orchestrator and follow its Intake and
+  Planning next actions until the Figure plan and wireframe are ready.
+- `run` - submit the plan approval or execution action returned by the
+  orchestrator and follow its next action through Execution and Review.
+- `resume` - submit `resume` with the run directory; reuse completed Phase
+  artifacts and paid results.
+- `validate` - continue the Review and repair phase and surface its Validation report or
+  Repair plan.
+- `export` - continue the Export phase, respecting the Export gate and any
+  explicit force-export choice and audit reason.
 
-Routing rules (do not deviate): data plots, axes, exact numbers, equations, and
-periodic arrays come from Python/SVG only; image models produce only
-isolated, non-quantitative visual assets; final compound figures are assembled
-by Python, never by the image model. If the request is scientifically ambiguous,
-pause and ask the user before proceeding. If the output target
-(`general` vs `ppt`), figure width, text language, or style is not specified,
-ask for it before creating the plan.
-
-Do not write scripts, render plots, generate assets, assemble, or export until
-every required clarification is resolved and the plan is approved.
-`auto_execute` skips only the plan-approval wait, never the required
-clarifications.
+The orchestrator enforces routing, clarification, approval, budget, validation,
+privacy, and export rules. Do not write ad-hoc plotting scripts or call
+low-level generation/assembly tools directly for a normal lifecycle run.

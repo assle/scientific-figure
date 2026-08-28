@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "repair_plan",
+  "run_id": "figure-01",
+  "plan_ref": {"artifact": "plans/figure_plan.json", "content_hash": "sha256:plan"},
+  "execution_ref": {"artifact": "plans/execution_result.json", "content_hash": "sha256:execution"},
+  "validation_ref": {"artifact": "validation/final.json", "content_hash": "sha256:validation"},
+  "repairs": [
+    {
+      "asset_id": "curve",
+      "route": "python",
+      "action": "repair source plot spec",
+      "source_check": "render",
+      "status": "pending"
+    }
+  ],
+  "status": "pending"
+}

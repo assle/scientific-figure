@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/repair-plan.schema.json",
+  "title": "Repair Plan",
+  "description": "Versioned, targeted actions produced by Review and repair.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "artifact_type", "run_id", "plan_ref",
+    "execution_ref", "validation_ref", "repairs", "status"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "artifact_type": {"const": "repair_plan"},
+    "run_id": {"type": "string", "minLength": 1},
+    "plan_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "execution_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "validation_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "repairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "route", "action", "source_check", "status"],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "route": {"type": "string", "enum": ["python", "svg", "image_edit"]},
+          "action": {"type": "string", "minLength": 1},
+          "source_check": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["pending", "completed", "failed"]}
+        }
+      }
+    },
+    "status": {"type": "string", "enum": ["pending", "completed", "unresolved"]}
+  }
+}

@@ -58,12 +58,16 @@ except ImportError:  # pragma: no cover - exercised on headless installs
 
 
 ROLE_LABELS = {
+    "phase_reasoning": "阶段推理",
     "vision_analyze": "参考图分析",
     "image_generate": "图像生成",
     "image_edit": "图像编辑",
     "vision_validate": "视觉验证",
 }
-ROLE_ORDER = ("vision_analyze", "image_generate", "image_edit", "vision_validate")
+ROLE_ORDER = (
+    "phase_reasoning", "vision_analyze", "image_generate", "image_edit",
+    "vision_validate",
+)
 
 
 def _provider_type(provider: dict[str, Any]) -> str:
@@ -672,6 +676,8 @@ if QApplication is not None:
                 if role in {"image_generate", "image_edit"} and provider_type != "openai":
                     warnings.append(f"{ROLE_LABELS[role]}：{provider_type or '未知'} Provider 不支持图像生成。")
                 if role in {"vision_analyze", "vision_validate"} and provider_type not in {"openai", "anthropic"}:
+                    warnings.append(f"{ROLE_LABELS[role]}：Provider type 不受支持。")
+                if role == "phase_reasoning" and provider_type not in {"openai", "anthropic"}:
                     warnings.append(f"{ROLE_LABELS[role]}：Provider type 不受支持。")
                 if role == "image_edit" and not provider.get("supports_image_edit", False):
                     warnings.append("图像编辑 Provider 未声明参考图编辑能力；保存后仍保留生成用途。")

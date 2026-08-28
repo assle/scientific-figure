@@ -22,6 +22,7 @@
     "run_id": { "type": "string", "minLength": 1 },
     "parent_run_id": { "type": ["string", "null"] },
     "current_step": { "type": "string", "minLength": 1 },
+    "current_phase": { "type": "string", "minLength": 1 },
     "steps": {
       "type": "array",
       "items": {
@@ -72,6 +73,19 @@
       }
     },
     "cache_hits": { "type": "integer", "minimum": 0 },
+    "artifacts": { "type": "object", "additionalProperties": { "type": "object" } },
+    "audit_log": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "details"],
+        "properties": {
+          "event": {"type": "string", "minLength": 1},
+          "details": {"type": "object"}
+        }
+      }
+    },
     "approval_checkpoints": {
       "type": "array",
       "items": {

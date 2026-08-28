@@ -24,13 +24,17 @@ A **provider** is a named endpoint described by:
 
 Each **model role** is `{model: <id>, provider: <provider-name>}`. The
 `ProviderRouter` routes each role to the transport of its referenced provider.
+`phase_reasoning` is an optional text-only role: when configured, each
+model-assisted Lifecycle phase makes a fresh structured-output call with its
+own Phase prompt and context. Without it, the offline Phase worker produces the
+same artifact schema.
 
 ### Operation routing
 
-| Provider `type` | Image generation/editing | Vision (analyze/validate) |
-|---|---|---|
-| `openai` | `POST {base_url}/images/generations` (`b64_json`) | `POST {base_url}/responses` (`input_image` parts) |
-| `anthropic` | unsupported | `POST {base_url}{messages_path}` (default `/messages`) |
+| Provider `type` | Phase reasoning | Image generation/editing | Vision (analyze/validate) |
+|---|---|---|---|
+| `openai` | `POST {base_url}/responses` | `POST {base_url}/images/generations` (`b64_json`) | `POST {base_url}/responses` (`input_image` parts) |
+| `anthropic` | `POST {base_url}{messages_path}` | unsupported | `POST {base_url}{messages_path}` (default `/messages`) |
 
 The OpenAI-compatible vision adapter requests structured JSON
 (`text.format.type = json_object`) and reads `output_text` (or the
@@ -100,6 +104,7 @@ built-in default. For Ark vision, use the `anthropic` dialect
 
 | Internal role | Config key | Operation |
 |---|---|---|
+| `phase_reasoning` | optional `phase_reasoning` | isolated Intake, Planning, or Review and repair reasoning |
 | `generation` | `image_generate` | isolated asset generation |
 | `edits` | optional `image_edit`, else `image_generate` | generated-raster reference revision |
 | `reference_analysis` | `vision_analyze` | reference figure analysis |

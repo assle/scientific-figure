@@ -21,12 +21,14 @@ PROJECT_DIR_NAME = ".scientific-figure"
 USER_CONFIG_DIR_NAME = "scientific-figure-builder"
 PROJECT_IGNORES = "*.local\nsecrets.json\nprivate/\n"
 MODEL_ROLES = (
+    "phase_reasoning",
     "image_generate",
     "image_edit",
     "vision_analyze",
     "vision_validate",
 )
 ROLE_ENV_VARS = {
+    "phase_reasoning": "SCI_FIG_PHASE_REASONING",
     "image_generate": "SCI_FIG_IMAGE_GENERATE",
     "image_edit": "SCI_FIG_IMAGE_EDIT",
     "vision_analyze": "SCI_FIG_VISION_ANALYZE",

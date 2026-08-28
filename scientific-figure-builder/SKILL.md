@@ -11,30 +11,35 @@ disable-model-invocation: true
 
 # Scientific Figure Builder
 
-## Hard rule: interview first
+## Lifecycle router
 
-Run a `/grilling` session to collect these four decisions from the user, one
-question at a time. Ask the first question, then stop and end your turn. Do not
-act until all four are answered:
+The Calling Agent submits user input, approvals, or resume actions to the
+single `advance_figure_workflow` orchestrator tool. Read its returned
+`phase`, `status`, and `next_action`; ask the user only when the result requests
+clarification or approval, then submit the corresponding action. Do not
+manually sequence the low-level MCP tools for a normal figure run.
 
-1. Output target: `general` (PNG/SVG/PDF) or `ppt`? (default `general`)
-2. Figure width: half-column 6.5 cm or full-column 14 cm? (default 6.5)
-3. Text language: `zh` or `en`? (default `zh`)
-4. Style: `default` or custom reference? (default `default`)
+The orchestrator owns the Lifecycle phases Intake, Planning, Execution, Review
+and repair, and Export. Each model-assisted phase uses its own Phase prompt and
+context. Versioned Phase artifacts, not conversation history, are the handoff
+between phases.
 
-If the user does not specify, use the default shown, but still ask first.
-`auto_execute` never skips this interview.
+## Non-negotiable production rules
 
-## After the interview
+- Intake must resolve output target (`general` or `ppt`), physical width, text
+  language, and style before Planning can start.
+- Planning must produce a Figure plan and wireframe and wait for approval before
+  paid execution unless the user explicitly selected `auto_execute`.
+- Data plots, axes, exact numbers, equations, labels, and final composition
+  come from deterministic Python/SVG/local assembly.
+- Image-generation models produce only isolated, non-quantitative raster
+  assets; image editing is allowed only for eligible raster repairs.
+- Deterministic validation findings are authoritative. Export remains blocked
+  by blocking findings unless the user explicitly chooses force export and
+  provides an audit reason.
+- Keep raw CSV/Excel/JSON data local by default and disclose every upload before
+  a network operation.
 
-Produce reproducible, publication-quality compound scientific figures from
-natural-language requests, reference figures, and CSV/Excel/JSON data. Data
-plots, axes, exact numbers, equations, and final composition come from
-deterministic Python/SVG; configured image models produce only isolated,
-non-quantitative visual assets. Never write ad-hoc plotting scripts before the
-interview is complete.
-
-Call `check_figure_requirements` when available to confirm the four decisions
-are resolved before any rendering, generation, assembly, or export. See
-`references/routing-rules.md` for routing and `references/workflow-details.md`
-for the full plan/approval/run workflow.
+For route-specific details and the run artifact contract, see
+`references/routing-rules.md`, `references/workflow-details.md`, and
+`references/output-contract.md`.

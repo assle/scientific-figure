@@ -34,7 +34,7 @@ component bundle, and the delivery cleanup modules.
 | Windows | Path-independent atomic write, launcher `.cmd` rendering, Keyring seam, Chinese UI strings | Credential Manager backend and a visible desktop session require a Windows host |
 | Linux | Fake secure-backend success/failure, environment fallback, no-DISPLAY MCP import path | Secret Service availability depends on the desktop session; headless use should use `key_env` |
 
-The installer always verifies the MCP 15-tool response, CLI help, marked
+The installer always verifies the two-tool lifecycle MCP response, CLI help, marked
 launcher (global scope), and packaged GUI resource import without opening a
 window. The documented host limitations are the only checks that require a
 real platform session.

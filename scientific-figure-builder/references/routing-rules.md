@@ -6,7 +6,9 @@ Element-to-engine routing for scientific-figure-builder (plan section 2).
 
 | Component | Responsibilities | Prohibited |
 |---|---|---|
-| OpenCode planning model | Understand requests, classify tasks, create plans, select tools, summarize validation | Invent scientific data; directly produce final raster figures |
+| Calling Agent | Submit user input, approvals, and resume actions to the Orchestrator; present its next action | Own lifecycle sequencing or bypass phase gates |
+| Orchestrator | Own Lifecycle phases, approvals, budgets, artifact handoffs, and next actions | Invent scientific data or replace deterministic routes |
+| Phase worker | Perform isolated reasoning for one Lifecycle phase and return a schema-valid Phase artifact | Advance Run state, write arbitrary downstream artifacts, or use unallowed routes |
 | Configured multimodal analysis model | Analyze references, identify panels/objects, extract text candidates, report uncertainty | Decide whether numerical source data are correct |
 | Configured multimodal validation model | Check semantic structure, object count, perspective, style consistency, unwanted text, final layout | Validate quantitative accuracy from pixels |
 | Configured image-generation model | Generate/edit isolated, complex, non-quantitative visual assets | Generate data plots, axes, tick labels, exact numbers, equations, periodic arrays, or final compound figures |

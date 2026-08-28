@@ -20,7 +20,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Callable, Sequence
 
 try:
@@ -141,10 +141,15 @@ def delivery_paths(
 LAUNCHER_MARKER = "# scientific-figure-builder launcher"
 
 
-def launcher_text(runtime_python: Path) -> str:
+def launcher_text(
+    runtime_python: PurePath,
+    *,
+    platform_name: str | None = None,
+) -> str:
     """Render a stable launcher without embedding secrets or config values."""
 
-    if os.name == "nt":
+    target_platform = os.name if platform_name is None else platform_name
+    if target_platform == "nt":
         return (
             "@echo off\r\n"
             f'"{runtime_python}" -m figure_tools %*\r\n'
@@ -287,8 +292,8 @@ def smoke_test_mcp(runtime_python: Path, runtime_dir: Path) -> None:
     if len(lines) != 2:
         raise RuntimeError("MCP self-check returned an unexpected response")
     tools = lines[1].get("result", {}).get("tools", [])
-    if len(tools) != 15:
-        raise RuntimeError(f"MCP self-check expected 15 tools, found {len(tools)}")
+    if len(tools) != 2:
+        raise RuntimeError(f"MCP self-check expected 2 tools, found {len(tools)}")
 
 
 def install_delivery(
@@ -412,7 +417,7 @@ def install_delivery(
         "codex_skill_backup": str(codex_skill_backup) if codex_skill_backup else None,
         "codex_config": str(paths.codex_config_file),
         "codex_config_backup": codex_config_result["backup"],
-        "mcp_tools": 15,
+        "mcp_tools": 2,
         "launcher": str(launcher) if launcher else None,
         "launcher_warning": launcher_warning,
     }
@@ -492,7 +497,7 @@ def verify_delivery(
     else:
         raise RuntimeError("Installation verification failed: MCP runtime is missing")
 
-    return {"checks": checks, "mcp_tools": 15}
+    return {"checks": checks, "mcp_tools": 2}
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from figure_tools.server import REQUIRED_TOOLS, TOOL_REGISTRY, dispatch
+from figure_tools.server import PUBLIC_TOOLS, REQUIRED_TOOLS, TOOL_REGISTRY, _tool_list, dispatch
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -28,6 +28,7 @@ REQUIRED = {
     "validate_assembled_figure",
     "export_figure",
     "resume_figure_run",
+    "advance_figure_workflow",
 }
 
 
@@ -63,6 +64,79 @@ def test_dispatch_create_figure_plan():
     plan = result["figure_plan"]
     assert plan["figure_id"] == "f1"
     assert plan["assets"][0]["routing"] == "python"
+
+
+def test_registry_exposes_high_level_workflow_seam():
+    schema = TOOL_REGISTRY["advance_figure_workflow"]["input_schema"]
+    assert schema["type"] == "object"
+    assert "run_dir" in schema["required"]
+    assert "action" in schema["properties"]
+
+
+def test_mcp_public_surface_exposes_only_lifecycle_entrypoints():
+    assert PUBLIC_TOOLS == ["initialize_figure_project", "advance_figure_workflow"]
+    assert [tool["name"] for tool in _tool_list()] == PUBLIC_TOOLS
+
+
+def test_workflow_action_schema_requires_force_reason_and_rejects_unknown_fields():
+    from jsonschema import Draft202012Validator
+
+    schema = TOOL_REGISTRY["advance_figure_workflow"]["input_schema"]
+    validator = Draft202012Validator(schema)
+    base = {"run_dir": "/tmp/run"}
+    assert list(validator.iter_errors({
+        **base, "action": {"action": "force_export"},
+    }))
+    assert list(validator.iter_errors({
+        **base, "action": {"action": "resume", "surprise": True},
+    }))
+
+
+def test_workflow_request_and_result_schemas_are_explicit():
+    from jsonschema import Draft202012Validator
+
+    tool = TOOL_REGISTRY["advance_figure_workflow"]
+    input_validator = Draft202012Validator(tool["input_schema"])
+    assert list(input_validator.iter_errors({
+        "run_dir": "/tmp/run",
+        "request": {"figure_id": "f", "panels": [], "surprise": True},
+    }))
+    output_schema = tool["output_schema"]
+    assert output_schema["additionalProperties"] is False
+    assert {"phase", "status", "next_action", "artifacts"} <= set(
+        output_schema["required"]
+    )
+
+
+def test_every_tool_has_an_explicit_input_schema():
+    for name in REQUIRED_TOOLS:
+        schema = TOOL_REGISTRY[name]["input_schema"]
+        assert schema.get("type") == "object"
+        assert schema != {"type": "object"}, name
+
+
+def test_dispatch_rejects_missing_required_arguments():
+    with pytest.raises(ValueError, match="invalid arguments for render_scientific_plot"):
+        dispatch("render_scientific_plot", {})
+
+
+def test_dispatch_advance_figure_workflow(tmp_path: Path):
+    request = {
+        "figure_id": "f1", "canvas": {"aspect_ratio": 1.0, "width": 90, "height": 90},
+        "units": "mm",
+        "panels": [{"panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [90, 90],
+                    "elements": []}],
+        "labels": [], "assumptions": [], "uncertainties": [],
+        "user_input_requirements": [], "export_target": "general",
+        "figure_width_cm": 14.0, "language": "en", "style": "default",
+        "auto_execute": True,
+    }
+    run_dir = tmp_path / "run"
+    result = dispatch("advance_figure_workflow", {
+        "run_dir": str(run_dir), "request": request,
+    })
+    assert result["status"] == "completed"
+    assert result["phase"] == "export"
 
 
 def test_dispatch_check_figure_requirements():

@@ -82,7 +82,7 @@ cd scientific-figure
 ./install.sh
 ```
 
-The global installer registers the Skill and 15-tool MCP server for Codex and
+The global installer registers the Skill and two-tool lifecycle MCP server for Codex and
 OpenCode, installs a private runtime, and creates `~/.local/bin/scientific-figure`.
 
 ### 2. Configure Providers
@@ -102,8 +102,10 @@ Use scientific-figure-builder to create a publication-ready multipanel figure
 from data.csv. Export PNG, SVG, and PDF, and keep the SVG PowerPoint-friendly.
 ```
 
-Before rendering, the Skill clarifies export target, figure width, language, and
-style. It shows the plan and wireframe before paid generation.
+The lifecycle Orchestrator first records export target, figure width, language,
+and style in a Figure brief, then shows the Figure plan and wireframe before
+paid generation. Calling Agent commands resume from the Orchestrator's next
+action instead of manually sequencing low-level tools.
 
 ## The core rule
 

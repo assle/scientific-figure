@@ -24,6 +24,8 @@
   ],
   "properties": {
     "schema_version": { "const": "1.0" },
+    "plan_id": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
     "figure_id": { "type": "string", "minLength": 1 },
     "run_id": { "type": "string", "minLength": 1 },
     "canvas": {
@@ -78,6 +80,26 @@
         }
       }
     },
+    "brief_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export_target": {"type": "string", "enum": ["general", "ppt"]},
+        "figure_width_cm": {"type": "number", "exclusiveMinimum": 0},
+        "include_pptx": {"type": "boolean"}
+      }
+    },
+    "language": {"type": "string", "enum": ["zh", "en"]},
+    "style": {"type": "string", "minLength": 1},
     "approval": { "$ref": "#/$defs/approval" }
   },
   "$defs": {
@@ -117,7 +139,16 @@
         "routing": {
           "type": "string",
           "enum": ["python", "svg", "image_model", "pptx"]
-        }
+        },
+        "panel_id": {"type": "string", "minLength": 1},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "physical_size": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "number", "exclusiveMinimum": 0}
+        },
+        "source": {"type": "object"}
       }
     },
     "textElement": {
@@ -128,7 +159,8 @@
         "element_id": { "type": "string", "minLength": 1 },
         "kind": { "type": "string", "enum": ["label", "annotation", "equation"] },
         "content": { "type": "string", "minLength": 1 },
-        "latex": { "type": "string" }
+        "latex": { "type": "string" },
+        "panel_id": {"type": "string", "minLength": 1}
       }
     },
     "approval": {

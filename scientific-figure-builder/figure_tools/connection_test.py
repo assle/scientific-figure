@@ -64,6 +64,7 @@ class ConnectionTestService:
         models: Mapping[str, Mapping[str, Any]], provider_id: str,
     ) -> tuple[str, str] | None:
         for route_key, internal_role in (
+            ("phase_reasoning", "phase_reasoning"),
             ("vision_analyze", "reference_analysis"),
             ("vision_validate", "validations"),
             ("image_generate", "generation"),
@@ -138,6 +139,15 @@ class ConnectionTestService:
                         role, model,
                         {"prompt": "connection test; return one minimal asset", "parameters": {"size": "1x1"}},
                         [str(image_path)],
+                    )
+                elif role == "phase_reasoning":
+                    response = transport.post(
+                        role, model,
+                        {
+                            "prompt": "connection test; return one compact JSON object",
+                            "context": {}, "allowed_tools": [],
+                            "fallback_artifact": {"status": "ok"},
+                        },
                     )
                 else:
                     response = transport.post(

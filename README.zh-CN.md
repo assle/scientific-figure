@@ -78,7 +78,7 @@ cd scientific-figure
 ./install.sh
 ```
 
-全局安装器会为 Codex 和 OpenCode 注册 Skill 与 15 工具 MCP 服务、安装私有
+全局安装器会为 Codex 和 OpenCode 注册 Skill 与双入口生命周期 MCP 服务、安装私有
 运行时，并创建 `~/.local/bin/scientific-figure` 启动器。
 
 ### 2. 配置 Provider
@@ -97,7 +97,9 @@ scientific-figure gui
 导出 PNG、SVG 和 PDF，并让 SVG 适合在 PowerPoint 中继续编辑。
 ```
 
-渲染前，Skill 会确认导出目标、图宽、语言和风格；付费生成前会先展示计划与线框图。
+生命周期 Orchestrator 会先把导出目标、图宽、语言和风格记录到 Figure brief，
+再在付费生成前展示 Figure plan 与线框图。Calling Agent 根据 Orchestrator 返回的
+下一动作继续，不再手动串联底层工具。
 
 ## 核心规则
 

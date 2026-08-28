@@ -77,6 +77,10 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
                 "z_order": z,
                 "dependencies": [],
                 "routing": route_element(el),
+                "panel_id": panel["panel_id"],
+                "bbox": list(panel["bbox"]),
+                "physical_size": list(panel["physical_size"]),
+                "source": dict(el),
             })
             z += 1
     for label in request.get("labels", []):
@@ -86,6 +90,7 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
             "z_order": z,
             "dependencies": [],
             "routing": "svg",
+            "source": dict(label),
         })
         z += 1
     return assets
@@ -174,7 +179,7 @@ def create_figure_plan(
     assets = _planned_assets(request)
     figure_id = request["figure_id"]
     run_id = request.get("run_id", figure_id)
-    return {
+    plan = {
         "schema_version": "1.0",
         "figure_id": figure_id,
         "run_id": run_id,
@@ -192,7 +197,8 @@ def create_figure_plan(
         "style_bible_ref": style_bible_ref,
         "text_elements": [
             {"element_id": l["element_id"], "kind": l.get("kind", "label"),
-             "content": l["content"]}
+             "content": l["content"],
+             **({"panel_id": l["panel_id"]} if l.get("panel_id") else {})}
             for l in request.get("labels", [])
         ],
         "assumptions": list(request.get("assumptions", [])),
@@ -205,3 +211,23 @@ def create_figure_plan(
         "planned_uploads": _planned_uploads(request),
         "approval": {"status": _approval_status(request)},
     }
+    export_target = request.get("export_target")
+    figure_width_cm = request.get("figure_width_cm")
+    include_pptx = request.get("include_pptx")
+    if export_target is not None or figure_width_cm is not None or include_pptx is not None:
+        plan["delivery"] = {
+            key: value
+            for key, value in (
+                ("export_target", export_target),
+                ("figure_width_cm", figure_width_cm),
+                ("include_pptx", include_pptx),
+            )
+            if value is not None
+        }
+    if request.get("language") is not None:
+        plan["language"] = request["language"]
+    if request.get("style") is not None:
+        plan["style"] = request["style"]
+    if request.get("brief_ref") is not None:
+        plan["brief_ref"] = request["brief_ref"]
+    return plan

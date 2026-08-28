@@ -6,6 +6,7 @@ two-layer validation, assembly, final validation, export, and reporting.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import shutil
@@ -82,26 +83,10 @@ class FigureWorkflow:
                 "figure_plan": plan or {},
             }
 
-        self.request["canvas"] = resolve_figure_canvas(
-            self.request,
-            default_canvas=(self.config.get("canvas") or {}),
-        )
-        export_target = self._export_target()
-        task = classify_task(self.request)
-        plan = create_figure_plan(self.request)
-        self._write_json("plans/figure_plan.json", plan)
-        (self.run_dir / "plans").mkdir(parents=True, exist_ok=True)
-        (self.run_dir / "plans" / "layout_wireframe.svg").write_text(
-            generate_wireframe(plan), encoding="utf-8")
-
-        # Pre-render layout analysis (spec 0001, improvement 2).
-        data_chars = self._collect_data_characteristics()
-        layout_report = analyze_layout(plan, data_chars)
-        self._write_json("plans/layout_analysis.json", layout_report)
-
-        # Persist style bible and inputs (plan section 13).
-        self._write_style_bible()
-        self._copy_inputs()
+        prepared = self.prepare_plan()
+        plan = prepared["plan"]
+        export_target = prepared["export_target"]
+        task = prepared["task"]
 
         # Approval gate: no paid generation without explicit opt-in (section 4).
         if plan["approval"]["status"] != "auto_execute" and not approved:
@@ -110,7 +95,82 @@ class FigureWorkflow:
                     "figure_plan": plan, "task": task}
         self.state.request_approval("plan_approval", "approved")
 
-        # Style-anchor gate (section 4 step 10): >=3 AI assets.
+        execution = self.execute_plan(
+            plan, export_target=export_target,
+            style_anchor_approved=style_anchor_approved,
+            layout_report=prepared["layout_report"],
+        )
+        if execution["paused"]:
+            return {"paused": True, "pause_reason": execution["pause_reason"],
+                    "figure_plan": plan, "task": task}
+
+        published = self.publish(
+            prepared, execution, force_export=force_export,
+        )
+        exported = published["exported"]
+        export_blocked_reason = published["export_blocked_reason"]
+        report_path = published["report_path"]
+        manifest = execution["manifest"]
+        validation_reports = execution["validation_reports"]
+
+        return {
+            "paused": False,
+            "task": task,
+            "figure_plan": plan,
+            "asset_manifest": manifest,
+            "validation_reports": validation_reports,
+            "exported": exported,
+            "export_blocked_reason": export_blocked_reason,
+            "report_path": str(report_path),
+        }
+
+    def prepare_plan(self) -> dict[str, Any]:
+        """Create the plan-side artifacts without rendering or paid calls."""
+        self.request["canvas"] = resolve_figure_canvas(
+            self.request,
+            default_canvas=(self.config.get("canvas") or {}),
+        )
+        export_target = self._export_target()
+        task = classify_task(self.request)
+        plan = create_figure_plan(
+            self.request,
+            style_bible_ref=self.request.get("style", "default"),
+        )
+        layout_report = self.prepare_plan_artifacts(plan)
+        return {
+            "plan": plan,
+            "task": task,
+            "export_target": export_target,
+            "layout_report": layout_report,
+        }
+
+    def prepare_plan_artifacts(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Persist the deterministic artifacts derived from one Figure plan."""
+        self._write_json("plans/figure_plan.json", plan)
+        (self.run_dir / "plans").mkdir(parents=True, exist_ok=True)
+        (self.run_dir / "plans" / "layout_wireframe.svg").write_text(
+            generate_wireframe(plan), encoding="utf-8")
+
+        data_chars = self._collect_data_characteristics()
+        layout_report = analyze_layout(plan, data_chars)
+        self._write_json("plans/layout_analysis.json", layout_report)
+        self._write_style_bible()
+        self._copy_inputs()
+        return layout_report
+
+    def execute_plan(
+        self,
+        plan: dict[str, Any],
+        export_target: str | None = None,
+        style_anchor_approved: bool = False,
+        layout_report: dict[str, Any] | None = None,
+        pre_rendered_assets: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Render and validate an approved plan, without publishing exports."""
+        planned_request = self._request_from_plan(plan)
+        if planned_request is not None:
+            self.request = planned_request
+        export_target = export_target or self._export_target()
         ai_elements = [
             (panel, el)
             for panel in self.request["panels"]
@@ -125,17 +185,15 @@ class FigureWorkflow:
                     ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
             if not style_anchor_approved:
                 self.state.request_approval("style_anchor_approval", "pending")
-                return {"paused": True, "pause_reason": "style_anchor_approval",
-                        "figure_plan": plan, "task": task}
+                return {"paused": True, "pause_reason": "style_anchor_approval"}
             self.state.request_approval("style_anchor_approval", "approved")
 
         manifest_assets, validation_reports, placements, text_placements = \
-            self._render_assets(plan, ai_elements, export_target)
-
+            self._render_assets(plan, ai_elements, export_target,
+                                pre_rendered_assets=pre_rendered_assets)
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self._write_json("asset_manifest.json", manifest)
 
-        # Assemble.
         assembly_dir = self.run_dir / "assembly"
         source_layouts = {
             p["asset_id"]: p["layout_manifest"]
@@ -143,23 +201,19 @@ class FigureWorkflow:
             if p.get("asset_id") and p.get("layout_manifest")
             and Path(p["layout_manifest"]).exists()
         }
-        assembly_result = compose_assets(placements, output_dir=assembly_dir,
-                                         canvas_mm=self._canvas_mm(),
-                                         dpi=self.compose_dpi,
-                                         text_placements=text_placements,
-                                         source_layouts=source_layouts,
-                                         export_target=export_target)
+        assembly_result = compose_assets(
+            placements, output_dir=assembly_dir,
+            canvas_mm=self._canvas_mm(), dpi=self.compose_dpi,
+            text_placements=text_placements, source_layouts=source_layouts,
+            export_target=export_target,
+        )
         composed_png = Path(assembly_result["files"]["png"])
-
-        # Final validation (plan section 17.1): thread the provider client and the
-        # assembly layout manifest so the multimodal final check actually runs.
         final = FigureQAEngine(
             config=self.config.get("validation", {}),
             provider_client=self.provider,
         ).validate_final(
             AssembledFigure(
-                figure_plan=plan,
-                asset_manifest=manifest,
+                figure_plan=plan, asset_manifest=manifest,
                 image_path=composed_png,
                 layout_manifest_path=assembly_result.get("layout_manifest"),
                 physical_size_mm=self._canvas_mm(),
@@ -173,19 +227,12 @@ class FigureWorkflow:
         self._write_json("validation/validation_report.json", final)
         self._write_json("validation/final.json", final)
 
-        # Export gate (spec 0001, improvement 3): one shared deep module.
-        export_result = export_figure(
-            validation_reports,
-            source_dir=assembly_dir,
-            output_dir=self.run_dir / "exports",
-            force_export=force_export,
-        )
-        exported = bool(export_result["files"])
-        export_blocked_reason = export_result["export_blocked_reason"]
-
-        # Root cause analysis (spec 0001, improvement 4): triggered by blocking
-        # (error-level) failures. Warning-level failures are recorded but do not
-        # by themselves warrant a root-cause report.
+        if layout_report is None:
+            layout_path = self.run_dir / "plans" / "layout_analysis.json"
+            if layout_path.is_file():
+                layout_report = json.loads(layout_path.read_text(encoding="utf-8"))
+            else:
+                layout_report = {}
         has_blocking_failures = any(
             any(c.get("status") == "fail" and c.get("level") == "error"
                 for c in r.get("checks", []))
@@ -194,23 +241,101 @@ class FigureWorkflow:
         if has_blocking_failures:
             root_cause = analyze_root_causes(validation_reports, plan, layout_report)
             self._write_json("validation/root_cause_report.json", root_cause)
-
         self.state.save(self.run_dir / "run_state.json")
-        report_path = write_generation_report(
-            self.run_dir, plan, manifest, validation_reports,
-            run_state=self.state.to_dict(), exported=exported,
-            force_export=force_export, export_blocked_reason=export_blocked_reason,
-            export_target=export_target)
-
         return {
             "paused": False,
-            "task": task,
-            "figure_plan": plan,
-            "asset_manifest": manifest,
+            "manifest": manifest,
             "validation_reports": validation_reports,
+            "assembly_result": assembly_result,
+            "placements": placements,
+            "text_placements": text_placements,
+        }
+
+    def _request_from_plan(self, plan: dict[str, Any]) -> dict[str, Any] | None:
+        """Reconstruct execution input from an approved plan artifact.
+
+        Plans created before source snapshots were introduced fall back to the
+        caller-provided request for compatibility.
+        """
+        source_assets = [asset for asset in plan.get("assets", []) if asset.get("source")]
+        if not source_assets and plan.get("assets"):
+            return None
+        panels = [
+            {
+                "panel_id": panel["panel_id"],
+                "bbox": list(panel["bbox"]),
+                "physical_size": list(panel["physical_size"]),
+                "elements": [],
+            }
+            for panel in plan.get("panels", [])
+        ]
+        panels_by_id = {panel["panel_id"]: panel for panel in panels}
+        labels: list[dict[str, Any]] = []
+        for asset in source_assets:
+            source = copy.deepcopy(asset["source"])
+            if asset.get("type") in {"text", "equation"}:
+                labels.append(source)
+                continue
+            panel_id = asset.get("panel_id")
+            if panel_id in panels_by_id:
+                panels_by_id[panel_id]["elements"].append(source)
+        if not labels:
+            labels = [copy.deepcopy(item) for item in plan.get("text_elements", [])]
+        delivery = dict(plan.get("delivery") or {})
+        return {
+            "figure_id": plan["figure_id"],
+            "run_id": plan.get("run_id", plan["figure_id"]),
+            "canvas": copy.deepcopy(plan["canvas"]),
+            "units": plan.get("units", "mm"),
+            "panels": panels,
+            "labels": labels,
+            "assumptions": list(plan.get("assumptions", [])),
+            "uncertainties": list(plan.get("uncertainties", [])),
+            "user_input_requirements": [],
+            "reference_figures": [
+                item["path"] for item in plan.get("planned_uploads", [])
+            ],
+            "export_target": delivery.get("export_target", "general"),
+            "figure_width_cm": delivery.get("figure_width_cm"),
+            "include_pptx": delivery.get("include_pptx", False),
+            "language": plan.get("language", "zh"),
+            "style": plan.get("style", plan.get("style_bible_ref", "default")),
+            "brief_ref": plan.get("brief_ref"),
+            "auto_execute": True,
+        }
+
+    def publish(
+        self,
+        prepared: dict[str, Any],
+        execution: dict[str, Any],
+        force_export: bool = False,
+        force_export_reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply the Export gate and write the generation report."""
+        assembly_dir = self.run_dir / "assembly"
+        validation_reports = execution["validation_reports"]
+        export_result = export_figure(
+            validation_reports,
+            source_dir=assembly_dir,
+            output_dir=self.run_dir / "exports",
+            force_export=force_export,
+        )
+        exported = bool(export_result["files"])
+        export_blocked_reason = export_result["export_blocked_reason"]
+        self.state.save(self.run_dir / "run_state.json")
+        report_path = write_generation_report(
+            self.run_dir, prepared["plan"], execution["manifest"],
+            validation_reports, run_state=self.state.to_dict(),
+            exported=exported, force_export=force_export,
+            force_export_reason=force_export_reason,
+            export_blocked_reason=export_blocked_reason,
+            export_target=prepared["export_target"],
+        )
+        return {
             "exported": exported,
+            "files": dict(export_result["files"]),
             "export_blocked_reason": export_blocked_reason,
-            "report_path": str(report_path),
+            "report_path": report_path,
         }
 
     def _zorder(self, asset_id: str, plan: dict) -> int:
@@ -228,9 +353,18 @@ class FigureWorkflow:
     def _write_style_bible(self) -> None:
         from figure_tools._resources import template_path
 
+        style = self.request.get("style", "default")
+        destination = self.run_dir / "style_bible.json"
+        if isinstance(style, dict):
+            destination.write_text(json.dumps(style, indent=2), encoding="utf-8")
+            return
+        if isinstance(style, str) and style not in {"", "default"}:
+            candidate = Path(style)
+            if candidate.is_file():
+                shutil.copyfile(candidate, destination)
+                return
         src = template_path("default-style-bible.json")
-        (self.run_dir / "style_bible.json").write_text(src.read_text(encoding="utf-8"),
-                                                        encoding="utf-8")
+        destination.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
 
     def _copy_inputs(self) -> None:
         inputs = self.run_dir / "inputs"
@@ -315,7 +449,8 @@ class FigureWorkflow:
         }
         return {k: round(v / total, 2) for k, v in quadrants.items()}
 
-    def _render_assets(self, plan, ai_elements, export_target: str):
+    def _render_assets(self, plan, ai_elements, export_target: str,
+                       pre_rendered_assets: dict[str, dict[str, Any]] | None = None):
         manifest_assets: list[dict] = []
         validation_reports: list[dict] = []
         placements: list[dict] = []
@@ -347,7 +482,10 @@ class FigureWorkflow:
             from concurrent.futures import ThreadPoolExecutor
 
             with ThreadPoolExecutor(max_workers=2) as ex:
-                futs = {ex.submit(self._safe_gen_ai, panel, el): el["element_id"]
+                futs = {ex.submit(
+                    self._safe_gen_ai, panel, el,
+                    (pre_rendered_assets or {}).get(el["element_id"]),
+                ): el["element_id"]
                         for panel, el in ai_elements}
                 for fut in futs:
                     ai_results[futs[fut]] = fut.result()
@@ -368,9 +506,14 @@ class FigureWorkflow:
         text_placements = self._render_labels(plan, manifest_assets, export_target)
         return manifest_assets, validation_reports, placements, text_placements
 
-    def _safe_gen_ai(self, panel, el):
+    def _safe_gen_ai(self, panel, el, pre_rendered_meta=None):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
+            if pre_rendered_meta is not None and Path(pre_rendered_meta["path"]).exists():
+                report = self.provider.validate_image_asset(
+                    path, physical_size_mm=tuple(panel["physical_size"])
+                )
+                return (el["element_id"], pre_rendered_meta, report, None)
             meta = self.provider.generate_image_asset(el["prompt"], {}, output_path=path)
             report = self.provider.validate_image_asset(
                 path, physical_size_mm=tuple(panel["physical_size"]))

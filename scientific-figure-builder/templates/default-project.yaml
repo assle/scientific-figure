@@ -41,6 +41,12 @@ limits:
 # SCI_FIG_* environment variables override model IDs for these roles.
 # Do NOT use "latest" resolution.
 models:
+  # Optional text-reasoning route. When configured, Intake, Planning, and
+  # Review and repair each use a fresh Provider call with their own Phase prompt.
+  # Without it, the schema-equivalent offline Phase worker is used.
+  # phase_reasoning:
+  #   model: "<fixed-model-or-endpoint-id>"
+  #   provider: openai
   image_generate:
     model: "<fixed-model-or-endpoint-id>"
     provider: openai

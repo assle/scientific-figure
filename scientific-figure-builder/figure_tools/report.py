@@ -15,6 +15,7 @@ def write_generation_report(
     run_state: dict[str, Any] | None = None,
     exported: bool = False,
     force_export: bool = False,
+    force_export_reason: str | None = None,
     export_blocked_reason: str | None = None,
     export_target: str = "general",
 ) -> Path:
@@ -81,6 +82,8 @@ def write_generation_report(
         worst = max(r.get("summary", {}).get("errors", 0) for r in validation_reports)
         if worst > 0 and exported and force_export:
             lines.append("> Export forced despite validation errors (force_export=True).")
+            if force_export_reason:
+                lines.append(f"> Reason: {force_export_reason}")
         elif worst > 0 and not exported:
             lines.append("> Export blocked due to validation errors.")
             if export_blocked_reason:

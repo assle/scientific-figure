@@ -8,10 +8,18 @@ Run directory layout and output formats (plan section 13).
 runs/2026-07-28_figure-01/
 ├── inputs/
 ├── plans/
+│   ├── figure_brief.json
 │   ├── figure_plan.json
+│   ├── figure_plan.v<N>.json
 │   ├── plot_spec.json
+│   ├── execution_result.json
+│   ├── repair_plan.json
+│   ├── export_result.json
 │   └── layout_wireframe.svg
 ├── prompts/
+│   ├── intake.json / intake.txt
+│   ├── planning.json / planning.txt
+│   └── review_and_repair.json / review_and_repair.txt
 ├── assets/
 ├── plots/
 │   └── <asset_id>/

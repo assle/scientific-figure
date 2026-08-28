@@ -1,4 +1,4 @@
-"""MCP server exposing the 14 stable capability tools (plan section 8).
+"""MCP server exposing the stable capability tools and lifecycle orchestrator.
 
 Tool handlers wrap the deterministic engines and the provider client. The stdio
 JSON-RPC loop lets OpenCode discover and invoke the tools. When configured
@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from figure_tools.providers.client import ProviderClient
+from figure_tools.orchestrator import FigureOrchestrator
 from figure_tools.providers.auth import (
     SecretRedactor,
     default_secret_store,
@@ -24,9 +25,15 @@ from figure_tools.providers.auth import (
     sanitize_error,
 )
 from figure_tools.providers.generic_transport import ProviderRouter
-from figure_tools.providers.transport import MockProviderTransport
+from figure_tools.providers.transport import MockProviderTransport, model_config_for_role
+from figure_tools.phase_workers import ProviderPhaseWorker, StructuredPhaseWorker
 from figure_tools.assembly.compositor import compose_assets
-from figure_tools.config import configured_models, configured_providers, initialize_project
+from figure_tools.config import (
+    configured_models,
+    configured_providers,
+    initialize_project,
+    load_config,
+)
 from figure_tools.export.publish import export_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.renderer import render_plot
@@ -43,6 +50,7 @@ from figure_tools.vector.wireframe import generate_wireframe
 _CACHE_DIR = Path(tempfile.gettempdir()) / "scientific-figure-cache"
 # Default per-run paid-call budget (plan section 12).
 _DEFAULT_BUDGET = {
+    "phase_reasoning": 10,
     "reference_analysis": 1, "generation": 5, "edits": 2,
     "validations": 5, "final_validation": 1,
 }
@@ -257,6 +265,41 @@ def _h_resume_figure_run(args):
     return {"run_state": None}
 
 
+def _h_advance_figure_workflow(args):
+    """Run the high-level lifecycle seam and keep low-level tools internal."""
+    from figure_tools.state import RunDirectory, RunState
+
+    run_dir = Path(args["run_dir"])
+    RunDirectory.ensure_structure(run_dir)
+    state_path = run_dir / "run_state.json"
+    state = RunState.load(state_path) if state_path.exists() else RunState(
+        run_id=run_dir.name, budget=dict(_DEFAULT_BUDGET),
+    )
+    client = _client(
+        output_dir=run_dir,
+        project_dir=args.get("project_dir") or _project_dir_for_paths(run_dir),
+    )
+    # _client builds the configured transport and redactor; the orchestrator
+    # owns the durable per-run state used by that client.
+    client.state = state
+    worker = (
+        ProviderPhaseWorker(client)
+        if model_config_for_role(client.models, "phase_reasoning") is not None
+        else StructuredPhaseWorker()
+    )
+    orchestrator = FigureOrchestrator(
+        request=args.get("request"),
+        config=load_config(args.get("project_dir") or _project_dir_for_paths(run_dir) or "."),
+        run_dir=run_dir,
+        provider_client=client,
+        state=state,
+        base_dir=args.get("base_dir", "."),
+        compose_dpi=int(args.get("dpi", 300)),
+        worker=worker,
+    )
+    return orchestrator.advance(args.get("action"))
+
+
 REQUIRED_TOOLS = [
     "initialize_figure_project",
     "analyze_reference_figure",
@@ -273,7 +316,10 @@ REQUIRED_TOOLS = [
     "validate_assembled_figure",
     "export_figure",
     "resume_figure_run",
+    "advance_figure_workflow",
 ]
+
+PUBLIC_TOOLS = ["initialize_figure_project", "advance_figure_workflow"]
 
 _HANDLERS: dict[str, Callable[[dict], Any]] = {
     "initialize_figure_project": _h_initialize_figure_project,
@@ -291,6 +337,7 @@ _HANDLERS: dict[str, Callable[[dict], Any]] = {
     "validate_assembled_figure": _h_validate_assembled_figure,
     "export_figure": _h_export_figure,
     "resume_figure_run": _h_resume_figure_run,
+    "advance_figure_workflow": _h_advance_figure_workflow,
 }
 
 _DESCRIPTIONS = {
@@ -312,24 +359,308 @@ _DESCRIPTIONS = {
     "validate_assembled_figure": "Final assembled-figure validation.",
     "export_figure": "Export final PNG/SVG/PDF (optional PPTX).",
     "resume_figure_run": "Load run state for resume.",
+    "advance_figure_workflow": (
+        "Advance one figure lifecycle transition through the single orchestrator."
+    ),
+}
+
+_FIGURE_REQUEST_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["figure_id", "panels"],
+    "properties": {
+        "figure_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": "string", "minLength": 1},
+        "intent": {"type": "string"},
+        "description": {"type": "string"},
+        "canvas": {
+            "type": "object", "additionalProperties": False,
+            "required": ["aspect_ratio", "width", "height"],
+            "properties": {
+                "aspect_ratio": {"type": "number", "exclusiveMinimum": 0},
+                "width": {"type": "number", "exclusiveMinimum": 0},
+                "height": {"type": "number", "exclusiveMinimum": 0},
+            },
+        },
+        "units": {"type": "string", "enum": ["mm", "cm", "in", "px"]},
+        "panels": {
+            "type": "array", "minItems": 1,
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["panel_id", "bbox", "physical_size", "elements"],
+                "properties": {
+                    "panel_id": {"type": "string", "minLength": 1},
+                    "bbox": {"type": "array", "minItems": 4, "maxItems": 4,
+                             "items": {"type": "number"}},
+                    "physical_size": {"type": "array", "minItems": 2, "maxItems": 2,
+                                      "items": {"type": "number", "exclusiveMinimum": 0}},
+                    "elements": {
+                        "type": "array",
+                        "items": {
+                            "type": "object", "additionalProperties": False,
+                            "required": ["element_id", "type"],
+                            "properties": {
+                                "element_id": {"type": "string", "minLength": 1},
+                                "type": {"type": "string", "enum": [
+                                    "data_plot", "image_asset", "label", "annotation",
+                                    "text", "equation", "vector_element",
+                                ]},
+                                "plot_spec": {"type": "string", "minLength": 1},
+                                "prompt": {"type": "string", "minLength": 1},
+                                "content": {"type": "string", "minLength": 1},
+                                "parameters": {"type": "object"},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "labels": {
+            "type": "array",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["element_id", "kind", "content"],
+                "properties": {
+                    "element_id": {"type": "string", "minLength": 1},
+                    "kind": {"type": "string", "enum": ["label", "annotation", "equation"]},
+                    "content": {"type": "string", "minLength": 1},
+                    "panel_id": {"type": "string", "minLength": 1},
+                },
+            },
+        },
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
+        "user_input_requirements": {"type": "array", "items": {"type": "string"}},
+        "reference_figures": {"type": "array", "items": {"type": "string"}},
+        "export_target": {"type": ["string", "null"], "enum": ["general", "ppt", None]},
+        "figure_width_cm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "language": {"type": ["string", "null"], "enum": ["zh", "en", None]},
+        "style": {"type": ["string", "object", "null"]},
+        "include_pptx": {"type": "boolean"},
+        "auto_execute": {"type": "boolean"},
+    },
+}
+
+
+_WORKFLOW_INPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["run_dir"],
+    "properties": {
+        "run_dir": {"type": "string", "minLength": 1},
+        "project_dir": {"type": "string", "minLength": 1},
+        "base_dir": {"type": "string", "minLength": 1},
+        "dpi": {"type": "integer", "minimum": 1},
+        "request": _FIGURE_REQUEST_SCHEMA,
+        "action": {
+            "oneOf": [
+                {"type": "string", "enum": [
+                    "start", "resume", "approve_plan",
+                    "approve_style_anchor",
+                ]},
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["action", "answers"],
+                    "properties": {
+                        "action": {"const": "submit_clarifications"},
+                        "answers": {
+                            "type": "object", "additionalProperties": False,
+                            "minProperties": 1,
+                            "properties": {
+                                "export_target": {"type": "string", "enum": ["general", "ppt"]},
+                                "figure_width_cm": {"type": "number", "exclusiveMinimum": 0},
+                                "language": {"type": "string", "enum": ["zh", "en"]},
+                                "style": {"type": "string", "minLength": 1},
+                            },
+                        },
+                    },
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["action", "repairs"],
+                    "properties": {
+                        "action": {"const": "apply_repair"},
+                        "repairs": {
+                            "type": "array", "minItems": 1,
+                            "items": {
+                                "type": "object", "additionalProperties": False,
+                                "required": ["asset_id", "route"],
+                                "properties": {
+                                    "asset_id": {"type": "string", "minLength": 1},
+                                    "route": {"type": "string", "enum": ["python", "svg", "image_edit"]},
+                                    "plot_spec": {"type": "string", "minLength": 1},
+                                    "content": {"type": "string", "minLength": 1},
+                                    "prompt": {"type": "string", "minLength": 1},
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["action", "reason"],
+                    "properties": {
+                        "action": {"const": "force_export"},
+                        "reason": {"type": "string", "minLength": 1},
+                    },
+                },
+            ],
+        },
+    },
+}
+
+_ARTIFACT_REFERENCE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["path", "exists", "content_hash"],
+    "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "exists": {"type": "boolean"},
+        "content_hash": {"type": ["string", "null"]},
+    },
+}
+
+_WORKFLOW_OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["phase", "status", "next_action", "artifacts"],
+    "properties": {
+        "phase": {"type": "string", "enum": [
+            "intake", "planning", "execution", "review_and_repair", "export",
+        ]},
+        "status": {"type": "string", "enum": ["paused", "completed"]},
+        "next_action": {"type": ["string", "null"]},
+        "artifacts": {
+            "type": "object",
+            "additionalProperties": _ARTIFACT_REFERENCE_SCHEMA,
+        },
+        "clarifications": {"type": "array", "items": {"type": "object"}},
+        "export_blocked_reason": {"type": ["string", "null"]},
+    },
+}
+
+
+def _input_schema(required: list[str], properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": required,
+        "properties": properties,
+    }
+
+
+_PATH = {"type": "string", "minLength": 1}
+_OBJECT = {"type": "object"}
+_TOOL_INPUT_SCHEMAS = {
+    "initialize_figure_project": _input_schema(["project_dir"], {
+        "project_dir": _PATH,
+    }),
+    "analyze_reference_figure": _input_schema(["image_path"], {
+        "image_path": _PATH, "prompt": {"type": "string"},
+        "project_dir": _PATH,
+    }),
+    "check_figure_requirements": _input_schema(["request"], {
+        "request": _OBJECT,
+    }),
+    "create_figure_plan": _input_schema(["request"], {
+        "request": _OBJECT,
+    }),
+    "create_layout_wireframe": _input_schema(["figure_plan"], {
+        "figure_plan": _OBJECT,
+    }),
+    "generate_image_asset": _input_schema(["prompt", "output_path"], {
+        "prompt": {"type": "string", "minLength": 1},
+        "output_path": _PATH, "project_dir": _PATH,
+    }),
+    "edit_image_asset": _input_schema(["parent_path", "prompt", "output_path"], {
+        "parent_path": _PATH, "prompt": {"type": "string", "minLength": 1},
+        "output_path": _PATH, "project_dir": _PATH,
+    }),
+    "render_scientific_plot": _input_schema(["plot_spec_path", "output_dir"], {
+        "plot_spec_path": _PATH, "output_dir": _PATH,
+        "base_dir": _PATH,
+        "export_target": {"type": "string", "enum": ["general", "ppt"]},
+    }),
+    "render_vector_element": _input_schema(["content"], {
+        "content": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["label", "annotation", "equation", "text"]},
+        "export_target": {"type": "string", "enum": ["general", "ppt"]},
+    }),
+    "validate_image_asset": _input_schema(["image_path"], {
+        "image_path": _PATH, "physical_size_mm": {"type": "array"},
+        "project_dir": _PATH,
+    }),
+    "validate_plot_data": _input_schema(["plot_spec_path"], {
+        "plot_spec_path": _PATH, "base_dir": _PATH,
+    }),
+    "assemble_figure": _input_schema(["placements", "output_dir", "canvas_mm"], {
+        "placements": {"type": "array"}, "output_dir": _PATH,
+        "canvas_mm": {"type": "array", "minItems": 2, "maxItems": 2},
+        "dpi": {"type": "integer", "minimum": 1},
+        "text_placements": {"type": "array"}, "source_layouts": _OBJECT,
+        "export_target": {"type": "string", "enum": ["general", "ppt"]},
+    }),
+    "validate_assembled_figure": _input_schema(
+        ["figure_plan", "asset_manifest", "composed_image_path", "physical_size_mm"],
+        {
+            "figure_plan": _OBJECT, "asset_manifest": _OBJECT,
+            "composed_image_path": _PATH,
+            "physical_size_mm": {"type": "array", "minItems": 2, "maxItems": 2},
+            "layout_manifest_path": _PATH, "asset_placements": _OBJECT,
+            "qa_config": _OBJECT, "run_id": {"type": "string"},
+            "project_dir": _PATH,
+        },
+    ),
+    "export_figure": _input_schema(["source_dir", "output_dir"], {
+        "source_dir": _PATH, "output_dir": _PATH,
+        "force_export": {"type": "boolean"},
+        "formats": {"type": "array", "items": {"type": "string"}},
+    }),
+    "resume_figure_run": _input_schema(["run_dir"], {
+        "run_dir": _PATH,
+    }),
+    "advance_figure_workflow": _WORKFLOW_INPUT_SCHEMA,
 }
 
 TOOL_REGISTRY = {
     name: {"handler": _HANDLERS[name], "description": _DESCRIPTIONS[name],
-           "input_schema": {"type": "object"}}
+           "input_schema": _TOOL_INPUT_SCHEMAS[name],
+           **({"output_schema": _WORKFLOW_OUTPUT_SCHEMA}
+              if name == "advance_figure_workflow" else {})}
     for name in REQUIRED_TOOLS
 }
 
 
 def dispatch(name: str, arguments: dict[str, Any]) -> Any:
-    return TOOL_REGISTRY[name]["handler"](arguments)
+    tool = TOOL_REGISTRY[name]
+    from jsonschema import Draft202012Validator
+    errors = sorted(
+        Draft202012Validator(tool["input_schema"]).iter_errors(arguments),
+        key=lambda error: list(error.path),
+    )
+    if errors:
+        detail = "; ".join(error.message for error in errors)
+        raise ValueError(f"invalid arguments for {name}: {detail}")
+    result = tool["handler"](arguments)
+    output_schema = tool.get("output_schema")
+    if output_schema is not None:
+        output_errors = sorted(
+            Draft202012Validator(output_schema).iter_errors(result),
+            key=lambda error: list(error.path),
+        )
+        if output_errors:
+            detail = "; ".join(error.message for error in output_errors)
+            raise ValueError(f"invalid result for {name}: {detail}")
+    return result
 
 
 def _tool_list() -> list[dict]:
     return [
         {"name": name, "description": TOOL_REGISTRY[name]["description"],
-         "inputSchema": TOOL_REGISTRY[name]["input_schema"]}
-        for name in REQUIRED_TOOLS
+         "inputSchema": TOOL_REGISTRY[name]["input_schema"],
+         **({"outputSchema": TOOL_REGISTRY[name]["output_schema"]}
+            if "output_schema" in TOOL_REGISTRY[name] else {})}
+        for name in PUBLIC_TOOLS
     ]
 
 
@@ -349,6 +680,12 @@ def serve_stdio() -> int:
             result = {"tools": _tool_list()}
         elif method == "tools/call":
             name = msg["params"]["name"]
+            if name not in PUBLIC_TOOLS:
+                sys.stdout.write(json.dumps(
+                    {"jsonrpc": "2.0", "id": mid,
+                     "error": {"code": -32601, "message": f"tool {name!r} is internal"}}) + "\n")
+                sys.stdout.flush()
+                continue
             arguments = msg["params"].get("arguments", {})
             try:
                 data = dispatch(name, arguments)
