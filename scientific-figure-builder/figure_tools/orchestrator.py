@@ -125,10 +125,25 @@ class FigureOrchestrator:
                 )
                 current_plan_hash = self.store.hash_json(plan)
                 if recorded_plan_hash and recorded_plan_hash != current_plan_hash:
+                    previous_plan = self._plan_snapshot(recorded_plan_hash)
+                    if previous_plan is None:
+                        raise ValueError(
+                            "cannot reconcile a revised Figure plan without its revision snapshot"
+                        )
+                    previous_revision = int(previous_plan.get("revision", 1))
+                    if int(plan.get("revision", previous_revision)) <= previous_revision:
+                        plan["revision"] = previous_revision + 1
+                        plan["plan_id"] = (
+                            f"{plan['figure_id']}-plan-v{plan['revision']}"
+                        )
                     self.store.validate(plan, "figure-plan.schema.json")
-                    previous_plan = self.store.load_optional_json(
-                        f"plans/figure_plan.v{plan.get('revision', 1)}.json"
+                    reusable = self._reusable_raster_assets(
+                        self.store.load_optional_json("asset_manifest.json")
                     )
+                    if reusable:
+                        self.store.commit_json(
+                            "plans/pre_rendered_assets.json", reusable
+                        )
                     self.invalidator.after_figure_plan_change(previous_plan, plan)
                     from figure_tools.execution import FigureExecution
 
@@ -141,6 +156,9 @@ class FigureOrchestrator:
                         base_dir=self.base_dir,
                         compose_dpi=self.compose_dpi,
                     ).prepare_plan_artifacts(plan)
+                    self.store.commit_json(
+                        f"plans/figure_plan.v{plan['revision']}.json", plan
+                    )
         self.state.mark_step("planning", "completed", {
             "figure_plan": self.store.hash_json(plan),
         })
@@ -821,6 +839,14 @@ class FigureOrchestrator:
         brief = self.store.load_optional_json("plans/figure_brief.json")
         request = brief.get("request") if brief else None
         return request if isinstance(request, dict) else None
+
+    def _plan_snapshot(self, content_hash: str) -> dict[str, Any] | None:
+        for path in sorted((self.run_dir / "plans").glob("figure_plan.v*.json")):
+            relative = path.relative_to(self.run_dir)
+            candidate = self.store.load_optional_json(relative)
+            if candidate is not None and self.store.hash_json(candidate) == content_hash:
+                return candidate
+        return None
 
     def _paused(self, phase: str, next_action: str, **extra: Any) -> dict[str, Any]:
         self.state.mark_phase(phase)

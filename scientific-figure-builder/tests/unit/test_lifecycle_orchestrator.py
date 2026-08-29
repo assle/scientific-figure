@@ -261,8 +261,10 @@ def test_changed_figure_brief_cannot_reuse_an_old_plan(tmp_path: Path):
 
 
 def test_externally_revised_plan_invalidates_execution_before_resume(tmp_path: Path):
-    orchestrator, run_dir, _client = _orchestrator(tmp_path, _request())
+    orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
     assert orchestrator.advance()["status"] == "completed"
+    generation_calls = client.state.calls_used("generation")
+    client.cache = None
     plan_path = run_dir / "plans" / "figure_plan.json"
     plan = json.loads(plan_path.read_text())
     plan["canvas"]["width"] += 1
@@ -271,10 +273,14 @@ def test_externally_revised_plan_invalidates_execution_before_resume(tmp_path: P
     resumed = orchestrator.advance("resume")
 
     assert resumed["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_calls
+    revised_plan = json.loads(plan_path.read_text())
+    assert revised_plan["revision"] == 2
+    assert (run_dir / "plans" / "figure_plan.v2.json").is_file()
     execution = json.loads(
         (run_dir / "plans" / "execution_result.json").read_text()
     )
-    assert execution["plan_ref"]["content_hash"] == hash_json(plan)
+    assert execution["plan_ref"]["content_hash"] == hash_json(revised_plan)
 
 
 def test_completed_resume_repairs_changed_export_without_provider_calls(tmp_path: Path):
