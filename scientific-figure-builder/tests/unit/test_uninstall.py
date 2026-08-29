@@ -201,3 +201,36 @@ def test_uninstall_cleans_orphaned_install_state(tmp_path: Path):
     assert not paths.runtime_scope_dir.exists()
     assert not paths.install_lock_dir.exists()
     assert str(paths.install_lock_dir) in result["removed"]
+
+
+def test_opencode_uninstall_preserves_jsonc_comments_and_other_servers(tmp_path: Path):
+    layout = _layout(tmp_path)
+    opencode_home = layout["config_home"] / "opencode"
+    config = opencode_home / "opencode.jsonc"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        """{
+  // keep top
+  "mcp": {
+    "other": {"command": ["other"]}, // keep inline
+    "scientific-figure": {"command": ["scientific"]},
+  },
+  /* keep permission */
+  "permission": {"bash": "ask"},
+}
+""",
+        encoding="utf-8",
+    )
+    uninstall(
+        **layout,
+        remove_runtime=False,
+        remove_opencode=True,
+        remove_codex=False,
+    )
+    candidate = config.read_text(encoding="utf-8")
+    assert "scientific-figure" not in candidate
+    assert '"other": {"command": ["other"]}, // keep inline' in candidate
+    assert "// keep top" in candidate
+    assert "// keep inline" in candidate
+    assert "/* keep permission */" in candidate
+    assert '"permission": {"bash": "ask"},' in candidate

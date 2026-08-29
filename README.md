@@ -206,6 +206,12 @@ default Core target, `--opencode-only` maps to `--opencode`, and
 `--codex-only` installs the deprecated manual Codex Skill/config integration.
 The supported Codex path is `--codex` followed by the Native plugin install.
 
+OpenCode configuration updates are JSONC-aware. Install, upgrade, and targeted
+uninstall edit only `mcp.scientific-figure` (and create the `mcp`/`$schema`
+parents when absent), while preserving unrelated field order, indentation, line
+and block comments, inline comments, and trailing commas. Invalid JSONC fails
+preflight before any install transaction starts.
+
 ### Filesystem layout
 
 Code, the private virtual environment, and dependencies live in a versioned

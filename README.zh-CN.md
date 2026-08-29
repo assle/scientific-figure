@@ -190,6 +190,10 @@ models:
 `--opencode`，`--codex-only` 只安装 deprecated 的手工 Codex Skill/config 集成。正式
 Codex 路径是 `--codex` 后通过 marketplace 安装原生插件。
 
+OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
+`mcp.scientific-figure`（缺少时才创建 `mcp`/`$schema` 父节点），无关字段顺序、缩进、
+行/块/行尾注释和尾随逗号均保持原文。无效 JSONC 会在任何安装事务开始前失败。
+
 ### 文件系统布局
 
 代码、私有虚拟环境和依赖使用带版本的应用载荷前缀，不再放入 `XDG_DATA_HOME`：

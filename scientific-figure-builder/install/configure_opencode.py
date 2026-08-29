@@ -17,10 +17,18 @@ import copy
 import difflib
 import json
 import os
-import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Callable
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "figure_tools").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
+from figure_tools.jsonc_edit import load_jsonc, set_mcp_entry  # noqa: E402
 
 try:
     from .provider_environment import PROVIDER_ENV_VARS
@@ -31,20 +39,14 @@ DEFAULT_MCP_NAME = "scientific-figure"
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"
 
 
-def _strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-    text = re.sub(r"^\s*//.*$", "", text, flags=re.MULTILINE)
-    return text
-
-
 def load_config(path: str | Path) -> dict[str, Any]:
     p = Path(path)
     if not p.exists():
         return {}
-    text = _strip_comments(p.read_text(encoding="utf-8"))
+    text = p.read_text(encoding="utf-8")
     if not text.strip():
         return {}
-    return json.loads(text)
+    return load_jsonc(text)
 
 
 def dump_config(data: dict[str, Any]) -> str:
@@ -66,6 +68,12 @@ def render_diff(existing: dict[str, Any], proposed: dict[str, Any]) -> str:
     return "".join(difflib.unified_diff(a, b, fromfile="opencode.json", tofile="opencode.json"))
 
 
+def render_mcp_merge(text: str, mcp_name: str, mcp_entry: dict[str, Any]) -> str:
+    """Render a comment-preserving candidate without writing the config."""
+
+    return set_mcp_entry(text, mcp_name, mcp_entry)
+
+
 def apply_merge(
     config_path: str | Path,
     mcp_name: str,
@@ -77,6 +85,10 @@ def apply_merge(
     existing = load_config(config_path)
     proposed = propose_merge(existing, mcp_name, mcp_entry)
     diff = render_diff(existing, proposed)
+    original_text = (
+        config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    )
+    candidate_text = render_mcp_merge(original_text, mcp_name, mcp_entry)
 
     if approver is not None and not approver(diff):
         return {"applied": False, "diff": diff, "backup": None}
@@ -87,7 +99,17 @@ def apply_merge(
         backup_path = config_path.with_suffix(config_path.suffix + ".bak")
         shutil.copyfile(config_path, backup_path)
 
-    config_path.write_text(dump_config(proposed), encoding="utf-8")
+    config_path.write_text(candidate_text, encoding="utf-8")
+    try:
+        verified = load_config(config_path)
+        if verified.get("mcp", {}).get(mcp_name) != mcp_entry:
+            raise RuntimeError("OpenCode MCP candidate was not written correctly")
+    except Exception:
+        if backup_path is not None:
+            shutil.copyfile(backup_path, config_path)
+        elif config_path.exists():
+            config_path.unlink()
+        raise
     return {"applied": True, "diff": diff, "backup": str(backup_path) if backup_path else None}
 
 

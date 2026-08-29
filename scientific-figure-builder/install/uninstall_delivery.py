@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -18,6 +16,7 @@ for _parent in Path(__file__).resolve().parents:
 
 from figure_tools.install_paths import PathEnvironment, read_active_runtime  # noqa: E402
 from figure_tools.install_transaction import install_lock_status  # noqa: E402
+from figure_tools.jsonc_edit import remove_mcp_entry  # noqa: E402
 
 try:
     from .auth_cleanup import cleanup_keyring_credentials
@@ -30,24 +29,18 @@ NAME = "scientific-figure-builder"
 MCP = "scientific-figure"
 
 
-def _strip_jsonc(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"^\s*//.*$", "", text, flags=re.M)
-
-
 def remove_opencode_mcp(path: Path) -> bool:
     if not path.is_file():
         return False
     try:
-        data = json.loads(_strip_jsonc(path.read_text(encoding="utf-8")))
+        candidate, changed = remove_mcp_entry(
+            path.read_text(encoding="utf-8"), MCP
+        )
     except Exception:
         return False
-    if not isinstance(data, dict) or not isinstance(data.get("mcp"), dict):
+    if not changed:
         return False
-    if MCP not in data["mcp"]:
-        return False
-    del data["mcp"][MCP]
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(candidate, encoding="utf-8")
     return True
 
 

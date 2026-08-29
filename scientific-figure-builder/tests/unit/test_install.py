@@ -139,9 +139,82 @@ def test_apply_merge_handles_jsonc_comments(tmp_path: Path):
     )
     apply_merge(cfg, "scientific-figure", MCP_ENTRY, approver=lambda d: True)
     text = cfg.read_text(encoding="utf-8")
-    merged = json.loads(text)
+    from figure_tools.jsonc_edit import load_jsonc
+
+    merged = load_jsonc(text)
+    assert "// a comment" in text
     assert merged["mcp"]["scientific-figure"] == MCP_ENTRY
     assert merged["mcp"]["other"]["command"] == ["x"]
+
+
+def test_transactional_install_preserves_jsonc_comments_and_order(tmp_path: Path):
+    config_home = tmp_path / "config"
+    config = config_home / "opencode" / "opencode.jsonc"
+    config.parent.mkdir(parents=True)
+    original = """{
+  // provider stays first
+  "provider": {"custom": {"url": "https://example.test//v1"}},
+  /* keep before MCP */
+  "mcp": {
+    "other": {"command": ["other"]}, // keep other
+  },
+  "permission": {"bash": "ask"},
+}
+"""
+    config.write_text(original, encoding="utf-8")
+    paths = delivery_paths(
+        config_home=config_home,
+        data_home=tmp_path / "data",
+        state_home=tmp_path / "state",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    install_delivery(
+        Path(__file__).resolve().parents[2],
+        paths,
+        runtime_sync=_stage_test_python,
+        run_smoke_test=False,
+        install_opencode=True,
+        install_codex=False,
+    )
+    candidate = config.read_text(encoding="utf-8")
+    assert candidate.index("provider") < candidate.index('"mcp"') < candidate.index("permission")
+    for exact in (
+        "// provider stays first",
+        '"provider": {"custom": {"url": "https://example.test//v1"}}',
+        "/* keep before MCP */",
+        '"other": {"command": ["other"]}, // keep other',
+        '"permission": {"bash": "ask"},',
+    ):
+        assert exact in candidate
+
+
+def test_invalid_jsonc_fails_preflight_without_any_install_write(tmp_path: Path):
+    config_home = tmp_path / "config"
+    config = config_home / "opencode" / "opencode.jsonc"
+    config.parent.mkdir(parents=True)
+    original = '{"mcp": {/* unterminated}'
+    config.write_text(original, encoding="utf-8")
+    paths = delivery_paths(
+        config_home=config_home,
+        data_home=tmp_path / "data",
+        state_home=tmp_path / "state",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    with pytest.raises(ValueError, match="unterminated"):
+        install_delivery(
+            Path(__file__).resolve().parents[2],
+            paths,
+            runtime_sync=_stage_test_python,
+            install_opencode=True,
+            install_codex=False,
+        )
+    assert config.read_text(encoding="utf-8") == original
+    assert not paths.runtime_scope_dir.exists()
+    assert not paths.transaction_log_dir.exists()
 
 
 def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):

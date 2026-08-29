@@ -45,10 +45,9 @@ from figure_tools.install_transaction import (  # noqa: E402
 try:
     from .configure_opencode import (
         DEFAULT_MCP_NAME,
-        dump_config,
         load_config,
         mcp_entry_for_python,
-        propose_merge,
+        render_mcp_merge,
     )
     from .configure_codex import (
         codex_mcp_entry,
@@ -58,10 +57,9 @@ try:
 except ImportError:  # Direct execution from install.sh.
     from configure_opencode import (
         DEFAULT_MCP_NAME,
-        dump_config,
         load_config,
         mcp_entry_for_python,
-        propose_merge,
+        render_mcp_merge,
     )
     from configure_codex import (
         codex_mcp_entry,
@@ -415,14 +413,16 @@ def install_delivery(
         if install_opencode:
             staged_command = transaction.stage_path("opencode-command.md")
             shutil.copy2(source_dir / COMMAND_SOURCE, staged_command)
-            existing = load_config(paths.config_file)
-            candidate = propose_merge(
-                existing,
+            existing_text = (
+                paths.config_file.read_text(encoding="utf-8")
+                if paths.config_file.exists()
+                else ""
+            )
+            opencode_text = render_mcp_merge(
+                existing_text,
                 DEFAULT_MCP_NAME,
                 mcp_entry_for_python(final_runtime_python),
             )
-            opencode_text = dump_config(candidate)
-            json.loads(opencode_text)
             staged_opencode_config = _write_staged_text(
                 transaction.stage_path("opencode-config.json"), opencode_text
             )
