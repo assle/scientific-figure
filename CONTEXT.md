@@ -56,6 +56,29 @@ _Avoid_: generation route, tool step, model role
 The single authority that advances a scientific-figure run between Lifecycle phases from persisted Phase artifacts and approvals.
 _Avoid_: Calling Agent, Phase worker, step runner
 
+Its external Interface is `advance_figure_workflow`. Calling Agents, OpenCode
+commands, and the Lifecycle MCP server do not call Generation routes or phase
+implementations directly.
+
+**Figure Execution Module**:
+The deterministic production module that accepts an approved Figure plan and
+prepares plan-derived artifacts, executes Generation routes, assembles and
+validates the figure, and publishes approved exports. It does not clarify
+requirements, approve plans, or advance Lifecycle phases.
+_Avoid_: workflow, Orchestrator, Lifecycle authority
+
+**Run Store**:
+The concrete run-directory module that owns directory structure, atomic JSON
+commit, schema validation, canonical Artifact hashes, references, and safe
+loads.
+_Avoid_: repository, filesystem port, ad-hoc JSON helper
+
+**Run Invalidator**:
+The module that computes and applies explicit invalidation plans for upstream
+Artifact changes and route-specific repairs while preserving unrelated paid or
+deterministic assets.
+_Avoid_: step runner, raw deletion list
+
 **Phase worker**:
 A context-isolated, non-autonomous reasoning adapter for one Lifecycle phase that returns a Phase artifact without advancing the run; it may use the `phase_reasoning` Model role or the schema-equivalent offline path.
 _Avoid_: Agent, subagent, Model role
@@ -121,6 +144,13 @@ _Avoid_: edit fallback, duplicate route, automatic capability
 **Route compatibility**:
 Whether a Model route's Provider type and declared Provider capabilities can fulfil its Model role.
 _Avoid_: connection status, Provider health, model availability
+
+**Provider Configuration Module**:
+The headless source of truth for Provider types, legacy migration, type-specific
+fields, Model role catalog, Image-edit inheritance, normalization, and Route
+compatibility. Configuration loading, editing, routing, Runtime Context, and
+the QML Adapter consume this module.
+_Avoid_: GUI metadata, transport cache, saved draft
 
 ## Configuration and credentials
 
@@ -229,6 +259,12 @@ _Avoid_: active runtime, backup version, project runtime
 **Install transaction**:
 One scope-locked, auditable change that either commits every staged delivery path or restores all replaced paths.
 _Avoid_: install step, runtime sync, backup
+
+**Install Request / Install Result**:
+The Delivery Interface describing target, Runtime scope, Product version, and
+Configuration app selection, and reporting committed, retained, pruned, and
+logged paths. CLI flags only translate to an Install Request.
+_Avoid_: CLI argument bundle, installer boolean combination
 
 **Verified runtime**:
 A Product-version runtime whose dependencies, CLI resources, and Lifecycle MCP surface passed installation checks and is eligible to become Active runtime.

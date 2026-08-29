@@ -47,10 +47,18 @@ def test_cli_installs_optional_gui_component(tmp_path: Path, monkeypatch, capsys
 
 
 def test_cli_gui_missing_dependency_has_actionable_error(monkeypatch, capsys):
-    import figure_tools.gui as gui
+    import builtins
+    from figure_tools.qml_gui import run_gui
 
-    monkeypatch.setattr(gui, "QApplication", None)
-    assert main(["gui"]) == 1
+    real_import = builtins.__import__
+
+    def missing_qt(name, *args, **kwargs):
+        if name.startswith("PySide6"):
+            raise ImportError("missing Qt")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_qt)
+    assert run_gui([]) == 1
     captured = capsys.readouterr()
     assert "scientific-figure install-gui" in captured.err
     assert "Traceback" not in captured.err

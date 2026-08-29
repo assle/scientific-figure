@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] == "gui":
         # Keep PySide6 out of init/help and all MCP imports.
-        from figure_tools.gui import run_gui
+        from figure_tools.qml_gui import run_gui
 
         return run_gui(argv[1:])
     project_dir = argv[1] if len(argv) > 1 else "."

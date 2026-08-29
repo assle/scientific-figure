@@ -8,22 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "figure_tools").is_dir():
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        break
-
-from figure_tools.install_paths import PathEnvironment, read_active_runtime  # noqa: E402
-from figure_tools.install_transaction import install_lock_status  # noqa: E402
-from figure_tools.jsonc_edit import remove_mcp_entry  # noqa: E402
-
-try:
-    from .auth_cleanup import cleanup_keyring_credentials
-    from .install_delivery import LAUNCHER_MARKER, delivery_paths
-except ImportError:  # direct execution
-    from auth_cleanup import cleanup_keyring_credentials
-    from install_delivery import LAUNCHER_MARKER, delivery_paths
+from figure_tools.install_paths import PathEnvironment, read_active_runtime
+from figure_tools.install_transaction import install_lock_status
+from figure_tools.jsonc_edit import remove_mcp_entry
+from install.auth_cleanup import cleanup_keyring_credentials
+from install.install_delivery import LAUNCHER_MARKER, delivery_paths
 
 NAME = "scientific-figure-builder"
 MCP = "scientific-figure"

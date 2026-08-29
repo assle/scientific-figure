@@ -5,9 +5,9 @@ blocking failures blocks export unless ``force_export`` explicitly bypasses
 the gate — plus the mechanical copy of the final PNG/SVG/PDF artifacts from
 the assembly directory to the export destination.
 
-Both entry points (``FigureWorkflow.run`` and the MCP ``export_figure`` tool)
-cross this same interface, so the gate rule and its messages live in exactly
-one place.
+The Figure Execution Module crosses this interface after the Orchestrator has
+completed review. The gate rule and its messages therefore live in exactly one
+place.
 """
 
 from __future__ import annotations

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,10 +20,11 @@ from install.configure_opencode import (
     render_diff,
 )
 from install.install_delivery import (
+    InstallRequest,
     LAUNCHER_MARKER,
     build_parser,
     delivery_paths,
-    install_delivery,
+    install,
     launcher_text,
     sync_runtime,
     validate_launcher_target,
@@ -46,6 +48,29 @@ def _stage_test_python(runtime_dir: Path, _with_gui: bool = False) -> Path:
     )
     python.chmod(0o755)
     return python
+
+
+def _install(source_dir: Path, paths, **kwargs):
+    install_opencode = kwargs.pop("install_opencode", True)
+    install_codex = kwargs.pop("install_codex", True)
+    with_gui = kwargs.pop("with_gui", False)
+    if install_opencode and install_codex:
+        target = "both"
+    elif install_opencode:
+        target = "opencode"
+    elif install_codex:
+        target = "codex-legacy"
+    else:
+        target = "runtime"
+    request = InstallRequest(
+        source_dir=source_dir,
+        paths=paths,
+        target=target,
+        scope="global" if paths.scope_id == "global" else "project",
+        product_version=paths.product_version,
+        with_gui=with_gui,
+    )
+    return install(request, **kwargs)
 
 
 def _existing_config():
@@ -170,7 +195,7 @@ def test_transactional_install_preserves_jsonc_comments_and_order(tmp_path: Path
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    install_delivery(
+    _install(
         Path(__file__).resolve().parents[2],
         paths,
         runtime_sync=_stage_test_python,
@@ -205,7 +230,7 @@ def test_invalid_jsonc_fails_preflight_without_any_install_write(tmp_path: Path)
         bin_dir=tmp_path / "bin",
     )
     with pytest.raises(ValueError, match="unterminated"):
-        install_delivery(
+        _install(
             Path(__file__).resolve().parents[2],
             paths,
             runtime_sync=_stage_test_python,
@@ -316,7 +341,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
         return _stage_test_python(runtime_dir)
 
-    result = install_delivery(
+    result = _install(
         source,
         paths,
         runtime_sync=_use_test_python,
@@ -324,10 +349,10 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert (paths.skill_dir / "SKILL.md").is_file()
     assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
     assert paths.command_file.is_file()
-    assert result["mcp_tools"] == 2
-    assert result["active_runtime"]["version"] == "0.2.0"
-    assert Path(result["launcher"]).is_file()
-    assert LAUNCHER_MARKER in Path(result["launcher"]).read_text(encoding="utf-8")
+    assert result.mcp_tools == 2
+    assert result.active_runtime["version"] == "0.2.0"
+    assert result.launcher.is_file()
+    assert LAUNCHER_MARKER in result.launcher.read_text(encoding="utf-8")
 
     merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
     assert merged["provider"] == _existing_config()["provider"]
@@ -355,7 +380,7 @@ def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path)
         codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
     )
     with pytest.raises(RuntimeError, match="unrelated launcher"):
-        install_delivery(
+        _install(
             source,
             paths,
             runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
@@ -396,21 +421,20 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
     def _use_test_python(_runtime_dir: Path, _with_gui: bool) -> Path:
         return _stage_test_python(_runtime_dir)
 
-    first = install_delivery(
+    first = _install(
         source,
         paths,
         runtime_sync=_use_test_python,
         run_smoke_test=False,
     )
-    second = install_delivery(
+    second = _install(
         source,
         paths,
         runtime_sync=_use_test_python,
         run_smoke_test=False,
     )
-    assert first["runtime_backup"] is None
-    assert second["runtime_backup"] is None
-    assert second["skill_backup"] is None
+    assert first.runtime_backup is None
+    assert second.runtime_backup is None
     assert len(list(paths.skill_dir.parent.glob("*/SKILL.md"))) == 1
     assert (paths.skill_dir / "SKILL.md").is_file()
     assert not paths.install_lock_dir.exists()
@@ -464,7 +488,7 @@ def test_install_delivery_forwards_gui_selection(tmp_path: Path):
         requested.append(with_gui)
         return _stage_test_python(_runtime_dir)
 
-    install_delivery(
+    _install(
         source,
         paths,
         runtime_sync=_record_gui,
@@ -487,6 +511,79 @@ def test_installer_gui_option_is_explicit():
     assert parser.parse_args(["--codex-only"]).target == "codex-legacy"
 
 
+def test_install_request_is_the_single_target_scope_and_version_interface(tmp_path: Path):
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    request = InstallRequest(
+        source_dir=Path(__file__).resolve().parents[2],
+        paths=paths,
+        target="opencode",
+        scope="global",
+        product_version=paths.product_version,
+        with_gui=True,
+    )
+
+    assert request.install_opencode is True
+    assert request.install_codex is False
+    assert request.with_gui is True
+    with pytest.raises(ValueError, match="scope"):
+        InstallRequest(
+            source_dir=request.source_dir,
+            paths=paths,
+            target="runtime",
+            scope="project",
+            product_version=paths.product_version,
+        )
+
+
+def test_cli_translates_flags_into_an_install_request(tmp_path: Path, monkeypatch, capsys):
+    import install.install_delivery as delivery
+
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    captured = []
+    monkeypatch.setattr(delivery, "delivery_paths", lambda **_kwargs: paths)
+    monkeypatch.setattr(delivery, "read_product_version", lambda _source: paths.product_version)
+    monkeypatch.setattr(
+        delivery,
+        "install",
+        lambda request: captured.append(request) or SimpleNamespace(
+            transaction_log=tmp_path / "transaction.json",
+            mcp_tools=2,
+            gui_installed=True,
+            skill=paths.skill_dir,
+            config=paths.config_file,
+            codex_skill=paths.codex_skill_dir,
+            codex_config=paths.codex_config_file,
+            launcher=paths.launcher_file,
+            launcher_warning=None,
+            legacy_runtime_retained=None,
+        ),
+    )
+
+    assert delivery.main([
+        "--source-dir", str(Path(__file__).parents[2]),
+        "--opencode", "--with-gui",
+    ]) == 0
+
+    assert captured[0].target == "opencode"
+    assert captured[0].scope == "global"
+    assert captured[0].with_gui is True
+    assert "installed successfully" in capsys.readouterr().out
+
+
 def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
@@ -496,7 +593,7 @@ def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    result = install_delivery(
+    result = _install(
         Path(__file__).resolve().parents[2],
         paths,
         runtime_sync=_stage_test_python,
@@ -504,8 +601,8 @@ def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path
         install_opencode=False,
         install_codex=False,
     )
-    assert Path(result["runtime"]).is_dir()
-    assert Path(result["launcher"]).is_file()
+    assert result.runtime.is_dir()
+    assert result.launcher.is_file()
     assert not paths.skill_dir.exists()
     assert not paths.codex_skill_dir.exists()
     assert not paths.config_file.exists()
@@ -527,7 +624,7 @@ def test_host_install_targets_do_not_touch_unselected_agent(
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    install_delivery(
+    _install(
         Path(__file__).resolve().parents[2],
         paths,
         runtime_sync=_stage_test_python,
@@ -554,7 +651,7 @@ def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypa
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    install_delivery(
+    _install(
         source,
         paths,
         runtime_sync=_stage_test_python,
@@ -587,7 +684,7 @@ def test_failed_upgrade_preserves_previous_active_runtime(tmp_path: Path):
         raise RuntimeError("upgrade failed")
 
     with pytest.raises(RuntimeError, match="upgrade failed"):
-        install_delivery(
+        _install(
             Path(__file__).resolve().parents[2],
             upgrade,
             runtime_sync=_fail_upgrade,
@@ -611,15 +708,15 @@ def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: 
     assert paths.legacy_runtime_dir is not None
     paths.legacy_runtime_dir.mkdir(parents=True)
     (paths.legacy_runtime_dir / "old.txt").write_text("rollback", encoding="utf-8")
-    result = install_delivery(
+    result = _install(
         Path(__file__).resolve().parents[2],
         paths,
         runtime_sync=_stage_test_python,
         run_smoke_test=False,
     )
-    assert result["legacy_runtime_retained"] == str(paths.legacy_runtime_dir)
+    assert result.legacy_runtime_retained == paths.legacy_runtime_dir
     assert (paths.legacy_runtime_dir / "old.txt").read_text(encoding="utf-8") == "rollback"
-    assert result["active_runtime"]["migrated_from"] == str(
+    assert result.active_runtime["migrated_from"] == str(
         paths.legacy_runtime_dir.absolute()
     )
 
@@ -654,7 +751,7 @@ def test_failure_at_every_commit_stage_leaves_no_partial_install(
             raise RuntimeError(f"injected failure at {stage}")
 
     with pytest.raises(RuntimeError, match="injected failure"):
-        install_delivery(
+        _install(
             Path(__file__).resolve().parents[2],
             paths,
             runtime_sync=_stage_test_python,
@@ -690,7 +787,7 @@ def test_late_failure_restores_existing_installation_byte_for_byte(tmp_path: Pat
         bin_dir=tmp_path / "bin",
     )
     source = Path(__file__).resolve().parents[2]
-    install_delivery(
+    _install(
         source,
         paths,
         runtime_sync=_stage_test_python,
@@ -715,7 +812,7 @@ def test_late_failure_restores_existing_installation_byte_for_byte(tmp_path: Pat
             raise RuntimeError("late failure")
 
     with pytest.raises(RuntimeError, match="late failure"):
-        install_delivery(
+        _install(
             source,
             paths,
             runtime_sync=_stage_test_python,
@@ -746,7 +843,7 @@ def test_preflight_rejects_insufficient_disk_before_writes(tmp_path: Path, monke
         lambda _path: type(disk_usage)(disk_usage.total, disk_usage.used, 1),
     )
     with pytest.raises(RuntimeError, match="insufficient disk space"):
-        install_delivery(
+        _install(
             Path(__file__).resolve().parents[2],
             paths,
             runtime_sync=_stage_test_python,

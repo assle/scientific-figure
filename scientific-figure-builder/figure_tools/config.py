@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import copy
 import os
-import warnings
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -17,35 +16,30 @@ import yaml
 
 from figure_tools.install_paths import APP_NAME, PathEnvironment
 from figure_tools._resources import template_path
+from figure_tools.provider_configuration import (
+    LEGACY_PROVIDER_PROTOCOLS,
+    MODEL_ROLES,
+    PLACEHOLDER_MODEL,
+    PROVIDER_TYPES,
+    ROLE_ENV_VARS,
+    configured_model_routes,
+    merge_model_route_sources,
+    normalize_providers,
+)
 
 PROJECT_DIR_NAME = ".scientific-figure"
 USER_CONFIG_DIR_NAME = "scientific-figure-builder"
 PROJECT_IGNORES = "*.local\nsecrets.json\nprivate/\n"
-MODEL_ROLES = (
-    "phase_reasoning",
-    "image_generate",
-    "image_edit",
-    "vision_analyze",
-    "vision_validate",
-)
-ROLE_ENV_VARS = {
-    "phase_reasoning": "SCI_FIG_PHASE_REASONING",
-    "image_generate": "SCI_FIG_IMAGE_GENERATE",
-    "image_edit": "SCI_FIG_IMAGE_EDIT",
-    "vision_analyze": "SCI_FIG_VISION_ANALYZE",
-    "vision_validate": "SCI_FIG_VISION_VALIDATE",
-}
-PLACEHOLDER_MODEL = "<fixed-model-or-endpoint-id>"
-PROVIDER_TYPES = ("openai", "anthropic")
-LEGACY_PROVIDER_PROTOCOLS = {
-    "responses": "openai",
-    "anthropic": "anthropic",
-}
-
-
 def deep_merge(base: dict, override: dict) -> dict:
     result = copy.deepcopy(base)
     for key, value in override.items():
+        if (
+            key == "model"
+            and value == PLACEHOLDER_MODEL
+            and isinstance(result.get(key), str)
+            and result[key] != PLACEHOLDER_MODEL
+        ):
+            continue
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = deep_merge(result[key], value)
         else:
@@ -119,67 +113,16 @@ def configured_models(
     project_dir: str | Path | None,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    environment = os.environ if environ is None else environ
-    user_cfg = load_user_config()
-    project_cfg = load_project_config(project_dir) if project_dir is not None else {}
-    models: dict[str, dict[str, Any]] = {}
-    for role in MODEL_ROLES:
-        role_cfg: dict[str, Any] = {}
-        configured_model: str | None = None
-        for source in (user_cfg, project_cfg):
-            source_role = source.get("models", {}).get(role, {})
-            if isinstance(source_role, dict):
-                metadata = {
-                    key: value for key, value in source_role.items()
-                    if key != "model"
-                }
-                role_cfg = deep_merge(role_cfg, metadata)
-                model = source_role.get("model")
-                if (isinstance(model, str) and model.strip()
-                        and model != PLACEHOLDER_MODEL):
-                    configured_model = model
-        env_model = environment.get(ROLE_ENV_VARS[role])
-        if isinstance(env_model, str) and env_model.strip():
-            configured_model = env_model
-        if configured_model is not None:
-            models[role] = dict(role_cfg, model=configured_model)
-    return models
+    return merge_model_route_sources(
+        (
+            load_user_config(),
+            load_project_config(project_dir) if project_dir is not None else {},
+        ),
+        environ=os.environ if environ is None else environ,
+    )
 
 
 def configured_providers(project_dir: str | Path | None) -> dict[str, dict[str, Any]]:
-    user_cfg = load_user_config()
-    project_cfg = load_project_config(project_dir) if project_dir is not None else {}
-    providers = deep_merge(
-        user_cfg.get("providers", {}) if isinstance(user_cfg.get("providers"), dict) else {},
-        project_cfg.get("providers", {}) if isinstance(project_cfg.get("providers"), dict) else {},
-    )
-    for name, provider in providers.items():
-        provider_type = provider.get("type")
-        legacy_protocol = provider.get("protocol")
-        if legacy_protocol is not None:
-            migrated_type = LEGACY_PROVIDER_PROTOCOLS.get(legacy_protocol)
-            if migrated_type is None:
-                raise ValueError(
-                    f"provider {name!r} has unsupported legacy protocol "
-                    f"{legacy_protocol!r}; use type: openai or type: anthropic"
-                )
-            if provider_type is not None and provider_type != migrated_type:
-                raise ValueError(
-                    f"provider {name!r} has conflicting type {provider_type!r} "
-                    f"and protocol {legacy_protocol!r}"
-                )
-            warnings.warn(
-                f"provider {name!r}: protocol: {legacy_protocol} is deprecated; "
-                f"use type: {migrated_type}",
-                FutureWarning,
-                stacklevel=2,
-            )
-            provider_type = migrated_type
-            provider.pop("protocol", None)
-            provider["type"] = provider_type
-        if provider_type not in PROVIDER_TYPES:
-            raise ValueError(
-                f"provider {name!r} has unsupported type {provider_type!r}; "
-                f"expected one of {', '.join(PROVIDER_TYPES)}"
-            )
-    return providers
+    effective = load_config(project_dir or ".")
+    providers = effective.get("providers", {})
+    return normalize_providers(providers if isinstance(providers, Mapping) else {})

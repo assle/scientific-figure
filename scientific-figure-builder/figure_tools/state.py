@@ -6,12 +6,13 @@ Plan sections 7, 12, and 15 (Phase 3).
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import shutil
 from datetime import date
 from pathlib import Path
 from typing import Any
+
+from figure_tools.provenance import hash_json
 
 
 class BudgetExceeded(Exception):
@@ -196,16 +197,12 @@ class Cache:
         parameters: dict,
         reference_hashes: list[str],
     ) -> str:
-        payload = json.dumps(
-            {
-                "model": model_id,
-                "prompt": prompt_hash,
-                "parameters": parameters,
-                "references": sorted(reference_hashes),
-            },
-            sort_keys=True,
-        )
-        return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        return hash_json({
+            "model": model_id,
+            "prompt": prompt_hash,
+            "parameters": parameters,
+            "references": sorted(reference_hashes),
+        })
 
     def _path(self, key: str) -> Path:
         return self.cache_dir / key.replace(":", "_")
@@ -229,12 +226,6 @@ class Cache:
         return dst
 
 
-_RUN_SUBDIRS = (
-    "inputs", "plans", "prompts", "assets", "plots", "vectors",
-    "validation", "exports",
-)
-
-
 class RunDirectory:
     def __init__(self, base_dir: str | Path) -> None:
         self.base_dir = Path(base_dir)
@@ -254,7 +245,6 @@ class RunDirectory:
 
     @staticmethod
     def ensure_structure(run_dir: str | Path) -> Path:
-        run_dir = Path(run_dir)
-        for sub in _RUN_SUBDIRS:
-            (run_dir / sub).mkdir(parents=True, exist_ok=True)
-        return run_dir
+        from figure_tools.run_store import RunStore
+
+        return RunStore(run_dir).ensure_structure()

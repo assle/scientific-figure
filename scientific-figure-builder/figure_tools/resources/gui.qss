@@ -1,4 +1,0 @@
-QMainWindow { background: #fbfbfb; }
-QTabWidget::pane { border: 1px solid #d7d7d7; }
-QPushButton { padding: 4px 10px; }
-QLabel { color: #202020; }

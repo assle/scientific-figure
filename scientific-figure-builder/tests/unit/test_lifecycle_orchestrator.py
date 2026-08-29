@@ -13,6 +13,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from figure_tools.orchestrator import FigureOrchestrator, PhaseInvocation
+from figure_tools.provenance import hash_json
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.phase_workers import StructuredPhaseWorker
@@ -100,10 +101,17 @@ def _request(**over):
     return base
 
 
-def _orchestrator(tmp_path: Path, request: dict, worker=None):
-    run_dir = RunDirectory(base_dir=tmp_path).create(request["figure_id"])
+def _orchestrator(
+    tmp_path: Path,
+    request: dict | None,
+    worker=None,
+    *,
+    run_dir: Path | None = None,
+    state: RunState | None = None,
+):
+    run_dir = run_dir or RunDirectory(base_dir=tmp_path).create(request["figure_id"])
     transport = MockProviderTransport()
-    state = RunState(run_id=run_dir.name, budget=BUDGET)
+    state = state or RunState(run_id=run_dir.name, budget=BUDGET)
     client = ProviderClient(MODELS, transport, state=state,
                             cache=Cache(run_dir / "cache"), output_dir=run_dir)
     return FigureOrchestrator(
@@ -202,7 +210,7 @@ def test_figure_plan_is_schema_valid_and_references_the_brief(tmp_path: Path):
     schema = json.loads(schema_path("figure-plan.schema.json").read_text())
     assert not list(Draft202012Validator(schema).iter_errors(plan))
     brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
-    assert plan["brief_ref"]["content_hash"] == orchestrator._hash_json(brief)
+    assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
 
 def test_execution_result_is_schema_valid_and_references_the_plan(tmp_path: Path):
@@ -215,7 +223,7 @@ def test_execution_result_is_schema_valid_and_references_the_plan(tmp_path: Path
     schema = json.loads(schema_path("execution-result.schema.json").read_text())
     assert not list(Draft202012Validator(schema).iter_errors(execution))
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    assert execution["plan_ref"]["content_hash"] == orchestrator._hash_json(plan)
+    assert execution["plan_ref"]["content_hash"] == hash_json(plan)
     assert execution["assembly"]["content_hash"].startswith("sha256:")
     assert execution["plots"]["content_hash"].startswith("sha256:")
     assert execution["vectors"]["content_hash"].startswith("sha256:")
@@ -232,7 +240,7 @@ def test_export_result_is_versioned_and_references_validation_and_assembly(tmp_p
     schema = json.loads(schema_path("export-result.schema.json").read_text())
     assert not list(Draft202012Validator(schema).iter_errors(export_result))
     validation = json.loads((run_dir / "validation" / "final.json").read_text())
-    assert export_result["validation_ref"]["content_hash"] == orchestrator._hash_json(validation)
+    assert export_result["validation_ref"]["content_hash"] == hash_json(validation)
     assert export_result["assembly_ref"]["content_hash"].startswith("sha256:")
     assert export_result["forced"] is False
 
@@ -249,7 +257,7 @@ def test_changed_figure_brief_cannot_reuse_an_old_plan(tmp_path: Path):
 
     assert result["status"] == "completed"
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    assert plan["brief_ref"]["content_hash"] == orchestrator._hash_json(brief)
+    assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
 
 def test_resume_completed_run_reuses_artifacts_without_provider_calls(tmp_path: Path):
@@ -259,12 +267,9 @@ def test_resume_completed_run_reuses_artifacts_without_provider_calls(tmp_path: 
     calls_before = list(client.transport.calls)
     persisted = RunState.load(run_dir / "run_state.json")
     resumed_worker = RecordingWorker()
-    resumed, _, resumed_client = _orchestrator(tmp_path, _request(), resumed_worker)
-    resumed.request = None
-    resumed.state = persisted
-    resumed_client.state = persisted
-    resumed.run_dir = run_dir
-    resumed_client.output_dir = run_dir
+    resumed, _, resumed_client = _orchestrator(
+        tmp_path, None, resumed_worker, run_dir=run_dir, state=persisted
+    )
     resumed_result = resumed.advance("resume")
 
     assert resumed_result["status"] == "completed"
@@ -286,12 +291,9 @@ def test_resume_after_execution_reuses_execution_artifacts(tmp_path: Path):
         path.unlink()
 
     resumed_worker = RecordingWorker()
-    resumed, _, resumed_client = _orchestrator(tmp_path, _request(), resumed_worker)
-    resumed.request = None
-    resumed.state = state
-    resumed_client.state = state
-    resumed.run_dir = run_dir
-    resumed_client.output_dir = run_dir
+    resumed, _, resumed_client = _orchestrator(
+        tmp_path, None, resumed_worker, run_dir=run_dir, state=state
+    )
 
     result = resumed.advance("resume")
 
@@ -315,12 +317,9 @@ def test_resume_after_review_reuses_review_artifact(tmp_path: Path):
         export_result_path.unlink()
 
     resumed_worker = RecordingWorker()
-    resumed, _, resumed_client = _orchestrator(tmp_path, _request(), resumed_worker)
-    resumed.request = None
-    resumed.state = state
-    resumed_client.state = state
-    resumed.run_dir = run_dir
-    resumed_client.output_dir = run_dir
+    resumed, _, resumed_client = _orchestrator(
+        tmp_path, None, resumed_worker, run_dir=run_dir, state=state
+    )
 
     result = resumed.advance("resume")
 
@@ -435,11 +434,11 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
         "artifact_type": "repair_plan",
         "run_id": client.state.run_id,
         "plan_ref": {"artifact": "plans/figure_plan.json",
-                      "content_hash": orchestrator._hash_json(plan)},
+                      "content_hash": hash_json(plan)},
         "execution_ref": {"artifact": "plans/execution_result.json",
-                          "content_hash": orchestrator._hash_json(execution)},
+                          "content_hash": hash_json(execution)},
         "validation_ref": {"artifact": "validation/final.json",
-                           "content_hash": orchestrator._hash_json(validation)},
+                           "content_hash": hash_json(validation)},
         "repairs": [{"asset_id": "fiber", "route": "image_edit",
                      "action": "make the asset blue", "source_check": "style",
                      "status": "pending"}],

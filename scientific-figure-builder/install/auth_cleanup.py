@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import sys
+import json
+import subprocess
 from pathlib import Path
 
-try:
-    from figure_tools.providers.auth import KEYRING_SERVICE
-except ModuleNotFoundError:  # direct source execution before package path setup
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from figure_tools.providers.auth import KEYRING_SERVICE
+from figure_tools.providers.auth import KEYRING_SERVICE
 
 
 def _ids(config_path: Path) -> list[str] | None:
@@ -39,22 +36,11 @@ def cleanup_keyring_credentials(
     try:
         import keyring
     except Exception:
-        keyring = None
         if runtime_dir is not None:
-            candidates = sorted(
-                list((runtime_dir / ".venv" / "lib").glob("python*/site-packages"))
-                + [runtime_dir / ".venv" / "Lib" / "site-packages"]
-            )
-            for candidate in candidates:
-                if str(candidate) not in sys.path:
-                    sys.path.insert(0, str(candidate))
-            try:
-                import keyring as runtime_keyring
-            except Exception:
-                runtime_keyring = None
-            keyring = runtime_keyring
-        if keyring is None:
-            return False, "Keyring backend unavailable; no credentials were removed"
+            runtime_result = _cleanup_with_runtime(runtime_dir, ids)
+            if runtime_result:
+                return True, None
+        return False, "Keyring backend unavailable; no credentials were removed"
     for credential_id in ids:
         try:
             keyring.delete_password(KEYRING_SERVICE, credential_id)
@@ -63,6 +49,32 @@ def cleanup_keyring_credentials(
                 continue
             return False, "Keyring cleanup failed; user config was retained"
     return True, None
+
+
+def _cleanup_with_runtime(runtime_dir: Path, credential_ids: list[str]) -> bool:
+    candidates = (
+        runtime_dir / ".venv" / "bin" / "python",
+        runtime_dir / ".venv" / "Scripts" / "python.exe",
+    )
+    runtime_python = next((path for path in candidates if path.is_file()), None)
+    if runtime_python is None:
+        return False
+    code = (
+        "import json,keyring,sys\n"
+        "for credential_id in json.loads(sys.argv[2]):\n"
+        "  try:\n"
+        "    keyring.delete_password(sys.argv[1], credential_id)\n"
+        "  except Exception as exc:\n"
+        "    if type(exc).__name__ not in {'PasswordDeleteError','NotFoundError'}: raise\n"
+    )
+    result = subprocess.run(
+        [str(runtime_python), "-c", code, KEYRING_SERVICE, json.dumps(credential_ids)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 __all__ = ["cleanup_keyring_credentials"]

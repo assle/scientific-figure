@@ -1,13 +1,8 @@
-"""Full figure workflow orchestration (plan sections 4, 9, 10, 11, 15).
-
-Ties together planning, routing, deterministic engines, the (mock) Ark client,
-two-layer validation, assembly, final validation, export, and reporting.
-"""
+"""Figure Execution Module for approved plans and publication outputs."""
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -18,13 +13,9 @@ from figure_tools.export.publish import export_figure
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.layout_analysis import analyze_layout
-from figure_tools.planning.planner import (
-    collect_required_clarifications,
-    create_figure_plan,
-    resolve_figure_canvas,
-)
-from figure_tools.planning.router import classify_task
+from figure_tools.provenance import hash_file
 from figure_tools.report import write_generation_report
+from figure_tools.run_store import RunStore
 from figure_tools.validation.engine import FigureQAEngine
 from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
@@ -33,7 +24,7 @@ from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_expor
 from figure_tools.vector.wireframe import generate_wireframe
 
 
-class FigureWorkflow:
+class FigureExecution:
     def __init__(
         self,
         request: dict[str, Any],
@@ -51,109 +42,20 @@ class FigureWorkflow:
         self.state = state
         self.base_dir = Path(base_dir)
         self.compose_dpi = compose_dpi
-
-    def _write_json(self, rel: str, data: dict) -> Path:
-        path = self.run_dir / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        return path
+        self.store = RunStore(self.run_dir)
 
     def _canvas_mm(self) -> tuple[float, float]:
         c = self.request["canvas"]
         return float(c["width"]), float(c["height"])
 
-    def run(self, approved: bool = False,
-            style_anchor_approved: bool = False,
-            force_export: bool = False) -> dict[str, Any]:
-        # Hard clarification gate: do not render, generate, assemble, or export
-        # until every required question has been resolved by the user.
-        clarifications = collect_required_clarifications(self.request)
-        if clarifications:
-            try:
-                plan = create_figure_plan(self.request)
-            except Exception:  # noqa: BLE001
-                plan = None
-            if plan is not None:
-                self._write_json("plans/figure_plan.json", plan)
-            self.state.request_approval("clarification", "pending")
-            return {
-                "paused": True,
-                "pause_reason": "clarification_required",
-                "clarifications": clarifications,
-                "figure_plan": plan or {},
-            }
-
-        prepared = self.prepare_plan()
-        plan = prepared["plan"]
-        export_target = prepared["export_target"]
-        task = prepared["task"]
-
-        # Approval gate: no paid generation without explicit opt-in (section 4).
-        if plan["approval"]["status"] != "auto_execute" and not approved:
-            self.state.request_approval("plan_approval", "pending")
-            return {"paused": True, "pause_reason": "plan_approval",
-                    "figure_plan": plan, "task": task}
-        self.state.request_approval("plan_approval", "approved")
-
-        execution = self.execute_plan(
-            plan, export_target=export_target,
-            style_anchor_approved=style_anchor_approved,
-            layout_report=prepared["layout_report"],
-        )
-        if execution["paused"]:
-            return {"paused": True, "pause_reason": execution["pause_reason"],
-                    "figure_plan": plan, "task": task}
-
-        published = self.publish(
-            prepared, execution, force_export=force_export,
-        )
-        exported = published["exported"]
-        export_blocked_reason = published["export_blocked_reason"]
-        report_path = published["report_path"]
-        manifest = execution["manifest"]
-        validation_reports = execution["validation_reports"]
-
-        return {
-            "paused": False,
-            "task": task,
-            "figure_plan": plan,
-            "asset_manifest": manifest,
-            "validation_reports": validation_reports,
-            "exported": exported,
-            "export_blocked_reason": export_blocked_reason,
-            "report_path": str(report_path),
-        }
-
-    def prepare_plan(self) -> dict[str, Any]:
-        """Create the plan-side artifacts without rendering or paid calls."""
-        self.request["canvas"] = resolve_figure_canvas(
-            self.request,
-            default_canvas=(self.config.get("canvas") or {}),
-        )
-        export_target = self._export_target()
-        task = classify_task(self.request)
-        plan = create_figure_plan(
-            self.request,
-            style_bible_ref=self.request.get("style", "default"),
-        )
-        layout_report = self.prepare_plan_artifacts(plan)
-        return {
-            "plan": plan,
-            "task": task,
-            "export_target": export_target,
-            "layout_report": layout_report,
-        }
-
     def prepare_plan_artifacts(self, plan: dict[str, Any]) -> dict[str, Any]:
         """Persist the deterministic artifacts derived from one Figure plan."""
-        self._write_json("plans/figure_plan.json", plan)
-        (self.run_dir / "plans").mkdir(parents=True, exist_ok=True)
-        (self.run_dir / "plans" / "layout_wireframe.svg").write_text(
-            generate_wireframe(plan), encoding="utf-8")
+        self.store.commit_json("plans/figure_plan.json", plan)
+        self.store.commit_text("plans/layout_wireframe.svg", generate_wireframe(plan))
 
         data_chars = self._collect_data_characteristics()
         layout_report = analyze_layout(plan, data_chars)
-        self._write_json("plans/layout_analysis.json", layout_report)
+        self.store.commit_json("plans/layout_analysis.json", layout_report)
         self._write_style_bible()
         self._copy_inputs()
         return layout_report
@@ -192,7 +94,7 @@ class FigureWorkflow:
             self._render_assets(plan, ai_elements, export_target,
                                 pre_rendered_assets=pre_rendered_assets)
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
-        self._write_json("asset_manifest.json", manifest)
+        self.store.commit_json("asset_manifest.json", manifest)
 
         assembly_dir = self.run_dir / "assembly"
         source_layouts = {
@@ -224,15 +126,11 @@ class FigureWorkflow:
             evidence_dir=self.run_dir / "validation" / "evidence",
         )
         validation_reports.append(final)
-        self._write_json("validation/validation_report.json", final)
-        self._write_json("validation/final.json", final)
+        self.store.commit_json("validation/validation_report.json", final)
+        self.store.commit_json("validation/final.json", final)
 
         if layout_report is None:
-            layout_path = self.run_dir / "plans" / "layout_analysis.json"
-            if layout_path.is_file():
-                layout_report = json.loads(layout_path.read_text(encoding="utf-8"))
-            else:
-                layout_report = {}
+            layout_report = self.store.load_optional_json("plans/layout_analysis.json") or {}
         has_blocking_failures = any(
             any(c.get("status") == "fail" and c.get("level") == "error"
                 for c in r.get("checks", []))
@@ -240,8 +138,10 @@ class FigureWorkflow:
         )
         if has_blocking_failures:
             root_cause = analyze_root_causes(validation_reports, plan, layout_report)
-            self._write_json("validation/root_cause_report.json", root_cause)
-        self.state.save(self.run_dir / "run_state.json")
+            self.store.commit_json("validation/root_cause_report.json", root_cause)
+        self.store.commit_json(
+            "run_state.json", self.state.to_dict(), schema="run-state.schema.json"
+        )
         return {
             "paused": False,
             "manifest": manifest,
@@ -322,7 +222,9 @@ class FigureWorkflow:
         )
         exported = bool(export_result["files"])
         export_blocked_reason = export_result["export_blocked_reason"]
-        self.state.save(self.run_dir / "run_state.json")
+        self.store.commit_json(
+            "run_state.json", self.state.to_dict(), schema="run-state.schema.json"
+        )
         report_path = write_generation_report(
             self.run_dir, prepared["plan"], execution["manifest"],
             validation_reports, run_state=self.state.to_dict(),
@@ -356,7 +258,7 @@ class FigureWorkflow:
         style = self.request.get("style", "default")
         destination = self.run_dir / "style_bible.json"
         if isinstance(style, dict):
-            destination.write_text(json.dumps(style, indent=2), encoding="utf-8")
+            self.store.commit_json("style_bible.json", style)
             return
         if isinstance(style, str) and style not in {"", "default"}:
             candidate = Path(style)
@@ -364,7 +266,9 @@ class FigureWorkflow:
                 shutil.copyfile(candidate, destination)
                 return
         src = template_path("default-style-bible.json")
-        destination.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        self.store.commit_json(
+            "style_bible.json", json.loads(src.read_text(encoding="utf-8"))
+        )
 
     def _copy_inputs(self) -> None:
         inputs = self.run_dir / "inputs"
@@ -532,7 +436,7 @@ class FigureWorkflow:
             svg = normalize_svg_bytes(
                 canvas.to_string().encode("utf-8"), export_target=export_target
             ).decode("utf-8")
-            svg_path.write_text(svg, encoding="utf-8")
+            self.store.commit_text(f"vectors/{asset_id}.svg", svg)
             manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
             panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
             if panel is not None:
@@ -559,8 +463,7 @@ class FigureWorkflow:
         img = Image.open(path)
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),
-            "content_hash": "sha256:" + hashlib.sha256(
-                Path(path).read_bytes()).hexdigest(),
+            "content_hash": hash_file(path),
             "pixel_dimensions": list(img.size), "transparent": transparent,
             "z_order": self._zorder(asset_id, plan),
             "validation_result": {"status": "pass"},
@@ -587,11 +490,9 @@ class FigureWorkflow:
         }
 
     def _vector_meta(self, asset_id, atype, path, plan):
-        from figure_tools.providers.client import file_hash
-
         return {
             "asset_id": asset_id, "type": atype, "path": str(path),
-            "content_hash": file_hash(path),
+            "content_hash": hash_file(path),
             "pixel_dimensions": [int(self._canvas_mm()[0] / 25.4 * self.compose_dpi),
                                  int(self._canvas_mm()[1] / 25.4 * self.compose_dpi)],
             "transparent": True, "z_order": self._zorder(asset_id, plan),

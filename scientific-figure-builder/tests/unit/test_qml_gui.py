@@ -136,12 +136,12 @@ def test_packaged_qml_loads_offscreen(tmp_path: Path, app):
 
 
 def test_gui_entrypoint_uses_qml(monkeypatch):
-    import figure_tools.gui as gui
     import figure_tools.qml_gui as qml_gui
+    from figure_tools.__main__ import main
 
     calls = []
-    monkeypatch.setattr(qml_gui, "run_qml_gui", lambda argv=None: calls.append(argv) or 0)
-    assert gui.run_gui(["--manual-test"]) == 0
+    monkeypatch.setattr(qml_gui, "run_gui", lambda argv=None: calls.append(argv) or 0)
+    assert main(["gui", "--manual-test"]) == 0
     assert calls == [["--manual-test"]]
 
 

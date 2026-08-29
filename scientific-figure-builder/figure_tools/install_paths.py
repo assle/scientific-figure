@@ -153,6 +153,7 @@ class DeliveryPaths:
 
 
 def _project_scope_id(project_dir: Path) -> str:
+    """Derive a short path identity, not an Artifact provenance hash."""
     digest = hashlib.sha256(str(project_dir.resolve()).encode("utf-8")).hexdigest()
     return digest[:16]
 

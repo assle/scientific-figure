@@ -1,7 +1,7 @@
 ---
 status: draft
 created: 2026-07-29
-seam: FigureWorkflow.run() (integration)
+seam: advance_figure_workflow (lifecycle integration)
 adr: 0001-current-evidence-figure-set
 ---
 
@@ -77,12 +77,12 @@ adr: 0001-current-evidence-figure-set
   - `legend_placement_recommendations`: 每个需要图例的面板的候选位置及数据密度评分
   - `warnings`: 面板宽度不足、无可行图例位置等警告
 - 该函数为纯函数，不调用任何外部服务，无副作用。
-- 在 `FigureWorkflow.run()` 中，在 `create_figure_plan` 之后、`_render_assets` 之前调用此函数，将报告写入 `plans/layout_analysis.json`。
+- Orchestrator 在 Planning 产出 Figure plan 后调用 Figure Execution Module 生成该报告，并写入 `plans/layout_analysis.json`。
 - 该报告为建议性质，不自动覆盖用户指定的布局参数，但会在 wireframe 和 plan 旁边展示供参考。
 
 ### 3. 强制校验门禁
 
-- 在 `FigureWorkflow.run()` 的 export 部分（当前第 112-120 行），增加校验门禁检查：
+- 在 Figure Execution Module 的 publish Interface 中执行校验门禁检查：
   - 检查 `validation_reports` 列表非空（至少包含 per-asset 和 final validation）
   - 检查所有 report 的 `summary.blocking` 为 False
   - 如果检查失败，设置 `exported = False` 并在返回值中添加 `export_blocked_reason`
@@ -100,7 +100,7 @@ adr: 0001-current-evidence-figure-set
   - `legend_data_overlap` + 面板宽度比例差异大 -> "面板宽度不足以容纳图例"
   - `effective_dpi` fail -> "bbox_inches=tight 导致 DPI 下降，建议提高 savefig dpi"
   - `text_overlap` + 标签长度 > 面板宽度 -> "标签过长，建议缩写或分两行"
-- 在 `FigureWorkflow.run()` 中，当 `final["summary"]["blocking"]` 为 True 或任何 validation report 有 fail 项时，自动调用此函数，将报告写入 `validation/root_cause_report.json`。
+- Figure Execution Module 在最终验证存在 blocking 或 fail 项时调用此函数，并将报告写入 `validation/root_cause_report.json`。
 
 ### Schema 变更
 
@@ -115,7 +115,7 @@ adr: 0001-current-evidence-figure-set
 
 ## Testing Decisions
 
-### 集成 seam：FigureWorkflow.run()
+### 集成 seam：advance_figure_workflow
 
 - 在 `tests/integration/test_workflow.py` 中新增测试用例：
   - 测试渲染前生成了 `plans/layout_analysis.json`

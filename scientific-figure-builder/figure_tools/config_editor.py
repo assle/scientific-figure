@@ -11,16 +11,21 @@ from __future__ import annotations
 import copy
 import hashlib
 import os
-import re
 import shutil
 import tempfile
 import warnings
 from dataclasses import dataclass, field
 from io import StringIO
 from pathlib import Path
-from typing import Any, Mapping
+from collections.abc import Mapping, MutableMapping
+from typing import Any
 
 from figure_tools.config import user_config_path
+from figure_tools.provider_configuration import (
+    PROVIDER_TYPE_FIELD_DEFAULTS,
+    normalize_provider,
+    normalize_provider_id,
+)
 from figure_tools.providers.auth import (
     CredentialError,
     REDACTED,
@@ -55,34 +60,14 @@ class ConfigSerializationError(ConfigEditorError):
     """The round-trip document could not be serialized safely."""
 
 
-PROVIDER_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-PROVIDER_TYPE_FIELD_DEFAULTS: dict[str, Mapping[str, Any]] = {
-    "openai": {
-        "supports_image_edit": False,
-    },
-    "anthropic": {
-        "auth_scheme": "x-api-key",
-        "messages_path": "/messages",
-        "anthropic_version": "2023-06-01",
-    },
-}
-PROVIDER_TYPE_SPECIFIC_FIELDS = frozenset(
-    field
-    for defaults in PROVIDER_TYPE_FIELD_DEFAULTS.values()
-    for field in defaults
-)
-
-
 def validate_provider_id(provider_id: str) -> str:
     """Validate and normalize the stable, non-secret Provider ID."""
-
-    normalized = str(provider_id).strip()
-    if not PROVIDER_ID_PATTERN.fullmatch(normalized):
+    try:
+        return normalize_provider_id(provider_id)
+    except ValueError as exc:
         raise ConfigEditorError(
-            "Provider ID must start with a lowercase letter and contain only "
-            "lowercase letters, digits, '_' or '-' (1-64 characters)"
-        )
-    return normalized
+            str(exc)
+        ) from exc
 
 
 @dataclass
@@ -130,11 +115,18 @@ class GlobalConfigDraft:
 
 
 def _sha256(path: Path) -> str:
+    """Return the raw digest used only for Configuration conflict detection.
+
+    This intentionally differs from provenance hashes: it fingerprints the
+    exact round-trip YAML bytes, including comments and formatting.
+    """
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _merge(existing: Any, updates: Mapping[str, Any]) -> Any:
-    result = copy.deepcopy(existing) if isinstance(existing, Mapping) else CommentedMap()
+    result: MutableMapping[str, Any] = (
+        copy.deepcopy(existing) if isinstance(existing, MutableMapping) else CommentedMap()
+    )
     for key, value in updates.items():
         if (
             key in result
@@ -172,7 +164,7 @@ class GlobalConfigEditor:
                 raise ConfigSerializationError("could not read global configuration") from exc
             if data is None:
                 data = CommentedMap()
-            if not isinstance(data, Mapping):
+            if not isinstance(data, MutableMapping):
                 raise ConfigSerializationError("global configuration must be a YAML mapping")
             draft = GlobalConfigDraft(
                 self.path, data, _sha256(self.path), True,
@@ -183,27 +175,15 @@ class GlobalConfigEditor:
 
     @staticmethod
     def _migrate_legacy_protocols(draft: GlobalConfigDraft) -> None:
-        protocols = {"responses": "openai", "anthropic": "anthropic"}
         for provider_id, provider in draft.providers.items():
-            if not isinstance(provider, Mapping) or "protocol" not in provider:
+            if not isinstance(provider, MutableMapping):
                 continue
-            protocol = provider.get("protocol")
-            migrated = protocols.get(protocol)
-            if migrated is None:
-                raise ConfigSerializationError(
-                    f"provider {provider_id!r} has unsupported legacy protocol"
-                )
-            configured_type = provider.get("type")
-            if configured_type is not None and configured_type != migrated:
-                raise ConfigSerializationError(
-                    f"provider {provider_id!r} has conflicting provider type"
-                )
-            warnings.warn(
-                f"provider {provider_id!r}: protocol is deprecated; use type: {migrated}",
-                FutureWarning, stacklevel=3,
-            )
-            provider.pop("protocol", None)
-            provider["type"] = migrated
+            try:
+                normalized = normalize_provider(str(provider_id), provider)
+            except ValueError as exc:
+                raise ConfigSerializationError(str(exc)) from exc
+            provider.clear()
+            provider.update(normalized)
 
     def set_model(self, draft: GlobalConfigDraft, role: str,
                   values: Mapping[str, Any]) -> None:
@@ -224,10 +204,10 @@ class GlobalConfigEditor:
             raise ConfigEditorError("Provider type must be openai or anthropic")
         self._assert_non_secret(values)
         provider = _merge(draft.providers.get(provider_id), values)
-        if provider_type is not None:
-            applicable_fields = PROVIDER_TYPE_FIELD_DEFAULTS[str(provider_type)]
-            for field in PROVIDER_TYPE_SPECIFIC_FIELDS - applicable_fields.keys():
-                provider.pop(field, None)
+        try:
+            provider = normalize_provider(provider_id, provider, warn_legacy=False)
+        except ValueError as exc:
+            raise ConfigEditorError(str(exc)) from exc
         draft.providers[provider_id] = provider
 
     @staticmethod
@@ -258,7 +238,7 @@ class GlobalConfigEditor:
             raise ConfigEditorError(f"provider {new_id!r} already exists")
         draft.providers[new_id] = draft.providers.pop(old_id)
         for model in draft.models.values():
-            if isinstance(model, Mapping) and model.get("provider") == old_id:
+            if isinstance(model, MutableMapping) and model.get("provider") == old_id:
                 model["provider"] = new_id
 
     def delete_provider(self, draft: GlobalConfigDraft, provider_id: str) -> None:
@@ -281,7 +261,7 @@ class GlobalConfigEditor:
             raise ConfigEditorError("credential value must not be empty")
         provider_id = validate_provider_id(provider_id)
         provider = draft.providers.get(provider_id)
-        if not isinstance(provider, Mapping):
+        if not isinstance(provider, MutableMapping):
             raise ConfigEditorError(f"unknown provider {provider_id!r}")
         old_id = provider.get("credential_id")
         new_id = str(credential_id or new_credential_id())
@@ -296,7 +276,7 @@ class GlobalConfigEditor:
 
         provider_id = validate_provider_id(provider_id)
         provider = draft.providers.get(provider_id)
-        if not isinstance(provider, Mapping):
+        if not isinstance(provider, MutableMapping):
             raise ConfigEditorError(f"unknown provider {provider_id!r}")
         credential_id = provider.pop("credential_id", None)
         draft.credential_updates.pop(provider_id, None)
@@ -431,12 +411,7 @@ def load_global_config(path: str | Path | None = None,
 
 __all__ = [
     "ConfigConflictError", "ConfigEditorError", "ConfigSerializationError",
-    "ConfigDraft", "ConfigurationEditor", "GlobalConfigDraft", "GlobalConfigEditor",
+    "GlobalConfigDraft", "GlobalConfigEditor",
     "ProviderInUseError", "validate_provider_id",
     "load_global_config",
 ]
-
-# Small aliases keep the editor discoverable for integrations that use the
-# shorter configuration vocabulary.
-ConfigDraft = GlobalConfigDraft
-ConfigurationEditor = GlobalConfigEditor

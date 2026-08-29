@@ -5,15 +5,22 @@ from __future__ import annotations
 import sys
 from importlib.resources import as_file, files
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuickControls2 import QQuickStyle
+def run_gui(argv: list[str] | None = None) -> int:
+    """Start the QML Configuration app without importing Qt on headless paths."""
+    try:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QGuiApplication, QIcon
+        from PySide6.QtQml import QQmlApplicationEngine
+        from PySide6.QtQuickControls2 import QQuickStyle
 
-from figure_tools.qml_controller import GuiController
-
-
-def run_qml_gui(argv: list[str] | None = None) -> int:
+        from figure_tools.qml_controller import GuiController
+    except ImportError:
+        print(
+            "The optional Configuration app is not installed. "
+            "Run `scientific-figure install-gui` first.",
+            file=sys.stderr,
+        )
+        return 1
     QQuickStyle.setStyle("Basic")
     app = QGuiApplication.instance() or QGuiApplication(list(argv or []))
     app.setApplicationName("Scientific Figure Builder")
@@ -35,8 +42,8 @@ def run_qml_gui(argv: list[str] | None = None) -> int:
         return app.exec()
 
 
-__all__ = ["run_qml_gui"]
+__all__ = ["run_gui"]
 
 
 if __name__ == "__main__":
-    raise SystemExit(run_qml_gui(sys.argv[1:]))
+    raise SystemExit(run_gui(sys.argv[1:]))

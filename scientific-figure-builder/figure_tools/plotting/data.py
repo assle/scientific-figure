@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from figure_tools.plotting.spec import PlotSpec
+from figure_tools.provenance import hash_file
 
 _FILTER_OPS = {
     ">=": lambda s, v: s >= v,
@@ -31,8 +31,7 @@ def load_source_data(path: str | Path) -> pd.DataFrame:
 
 
 def compute_content_hash(path: str | Path) -> str:
-    raw = Path(path).read_bytes()
-    return "sha256:" + hashlib.sha256(raw).hexdigest()
+    return hash_file(path)
 
 
 def _apply_filter(df: pd.DataFrame, flt: dict) -> pd.DataFrame:

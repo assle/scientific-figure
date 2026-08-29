@@ -53,8 +53,11 @@ def install_gui_component(runtime_dir: Path | None = None) -> Path:
         [
             uv,
             "run",
+            "--directory",
+            str(root),
             "python",
-            str(installer),
+            "-m",
+            "install.install_delivery",
             "--source-dir",
             str(root),
             "--codex",

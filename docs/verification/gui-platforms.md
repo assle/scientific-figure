@@ -23,7 +23,7 @@ passed, 3 skipped** (`uv run --extra gui pytest -q`). The two skipped acceptance
 tests require an explicitly configured real Provider and the optional
 PowerPoint desktop E2E test; neither is part of the no-network CI gate.
 `uv build --wheel` also completed successfully and the wheel contained
-`figure_tools/resources/gui.qss`, `figure_tools/resources/icon.svg`, the QML
+`figure_tools/resources/icon.svg`, the QML
 component bundle, and the delivery cleanup modules.
 
 ## Platform matrix

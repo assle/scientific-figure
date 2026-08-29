@@ -14,10 +14,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-try:
-    from .provider_environment import PROVIDER_ENV_VARS
-except ImportError:  # Direct execution from install.sh.
-    from provider_environment import PROVIDER_ENV_VARS
+from install.provider_environment import PROVIDER_ENV_VARS
 
 DEFAULT_MCP_NAME = "scientific-figure"
 

@@ -13,6 +13,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
+from figure_tools.provider_configuration import effective_model_route
+
 ROLE_TO_MODEL_CONFIG = {
     "phase_reasoning": "phase_reasoning",
     "generation": "image_generate",
@@ -29,10 +31,9 @@ def model_config_for_role(
     config_role = ROLE_TO_MODEL_CONFIG.get(role)
     if config_role is None:
         return None
-    model_config = models.get(config_role)
-    if model_config is None and config_role == "image_edit":
+    model_config = effective_model_route(config_role, models)
+    if config_role == "image_edit" and config_role not in models and model_config is not None:
         config_role = "image_generate"
-        model_config = models.get(config_role)
     if model_config is None:
         return None
     return config_role, model_config

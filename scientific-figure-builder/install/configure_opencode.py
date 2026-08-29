@@ -22,18 +22,8 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "figure_tools").is_dir():
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        break
-
-from figure_tools.jsonc_edit import load_jsonc, set_mcp_entry  # noqa: E402
-
-try:
-    from .provider_environment import PROVIDER_ENV_VARS
-except ImportError:  # Direct execution from install.sh.
-    from provider_environment import PROVIDER_ENV_VARS
+from figure_tools.jsonc_edit import load_jsonc, set_mcp_entry
+from install.provider_environment import PROVIDER_ENV_VARS
 
 DEFAULT_MCP_NAME = "scientific-figure"
 OPENCODE_SCHEMA = "https://opencode.ai/config.json"

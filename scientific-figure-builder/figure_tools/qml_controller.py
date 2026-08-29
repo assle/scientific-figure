@@ -19,19 +19,28 @@ from figure_tools.config_editor import (
     ConfigEditorError,
     GlobalConfigDraft,
     GlobalConfigEditor,
-    PROVIDER_TYPE_FIELD_DEFAULTS,
     validate_provider_id,
 )
 from figure_tools.connection_test import ConnectionTestResult, ConnectionTestService
+from figure_tools.provider_configuration import (
+    MODEL_ROLE_CATALOG,
+    PROVIDER_TYPE_FIELD_DEFAULTS,
+    normalize_provider,
+    normalize_provider_base_url,
+    route_compatibility,
+)
 from figure_tools.providers.auth import CredentialResolver, default_secret_store, sanitize_error
-from figure_tools.providers.generic_transport import normalize_provider_base_url
 
-ROLE_META = (
-    ("phase_reasoning", "阶段推理", "为每个生命周期阶段运行独立结构化推理"),
-    ("vision_analyze", "参考图分析", "读取参考图并提取结构与语义"),
-    ("image_generate", "图像生成", "生成隔离的非量化视觉素材"),
-    ("image_edit", "图像编辑", "使用参考图修订生成素材"),
-    ("vision_validate", "视觉验证", "检查素材与最终组合图"),
+_ROLE_PRESENTATION = {
+    "phase_reasoning": ("阶段推理", "为每个生命周期阶段运行独立结构化推理"),
+    "vision_analyze": ("参考图分析", "读取参考图并提取结构与语义"),
+    "image_generate": ("图像生成", "生成隔离的非量化视觉素材"),
+    "image_edit": ("图像编辑", "使用参考图修订生成素材"),
+    "vision_validate": ("视觉验证", "检查素材与最终组合图"),
+}
+ROLE_META = tuple(
+    (definition.role, *_ROLE_PRESENTATION[definition.role])
+    for definition in MODEL_ROLE_CATALOG
 )
 
 
@@ -123,49 +132,47 @@ class GuiController(QObject):
     def connectionRunning(self) -> bool:  # noqa: N802
         return self._connection_running
 
-    @Property("QVariantList", notify=dataChanged)
+    @Property("QVariantList", notify=dataChanged)  # pyright: ignore[reportArgumentType]
     def providerIds(self) -> list[str]:  # noqa: N802
+        return self._provider_ids()
+
+    def _provider_ids(self) -> list[str]:
         return [str(provider_id) for provider_id in self.draft.providers]
 
-    @Property("QVariantList", notify=dataChanged)
+    @Property("QVariantList", notify=dataChanged)  # pyright: ignore[reportArgumentType]
     def providers(self) -> list[dict[str, Any]]:
-        return [self._provider_view(provider_id) for provider_id in self.providerIds]
+        return [self._provider_view(provider_id) for provider_id in self._provider_ids()]
 
     @Property(str, notify=dataChanged)
     def selectedProviderId(self) -> str:  # noqa: N802
         return self._selected_provider
 
-    @Property("QVariantMap", notify=dataChanged)
+    @Property("QVariantMap", notify=dataChanged)  # pyright: ignore[reportArgumentType]
     def selectedProvider(self) -> dict[str, Any]:  # noqa: N802
         if not self._selected_provider:
             return {}
         return self._provider_view(self._selected_provider)
 
-    @Property("QVariantList", notify=dataChanged)
+    @Property("QVariantList", notify=dataChanged)  # pyright: ignore[reportArgumentType]
     def roles(self) -> list[dict[str, Any]]:
         return [copy.deepcopy(self._role_state[role]) for role, *_ in ROLE_META]
 
     @Property(str, notify=dataChanged)
     def warningText(self) -> str:  # noqa: N802
         warnings: list[str] = []
+        models = self._models_for_connection()
+        providers: dict[str, dict[str, Any]] = {}
+        for provider_id in self._provider_ids():
+            try:
+                providers[provider_id] = normalize_provider(
+                    provider_id, self._provider_view(provider_id), warn_legacy=False
+                )
+            except ValueError:
+                continue
         for role, state in self._role_state.items():
-            if role == "image_edit" and state["inherit"]:
-                generate = self._role_state["image_generate"]["provider"]
-                provider = self._provider_view(generate) if generate in self.draft.providers else {}
-                if provider and not provider.get("supports_image_edit", False):
-                    warnings.append("图像编辑继承的 Provider 未声明参考图编辑能力")
-                continue
-            provider_id = state["provider"]
-            if not provider_id:
-                continue
-            if provider_id not in self.draft.providers:
-                warnings.append(f"{state['label']} 引用了尚未配置的 Provider")
-                continue
-            provider_type = self._provider_view(provider_id).get("type", "")
-            if role in {"image_generate", "image_edit"} and provider_type != "openai":
-                warnings.append(f"{state['label']} 需要 OpenAI Compatible Provider")
-            if role == "phase_reasoning" and provider_type not in {"openai", "anthropic"}:
-                warnings.append(f"{state['label']} 需要 OpenAI 或 Anthropic Compatible Provider")
+            compatibility = route_compatibility(role, models, providers)
+            if not compatibility.compatible and compatibility.reason != "optional route is not configured":
+                warnings.append(f"{state['label']}：{compatibility.reason}")
         return "\n".join(warnings)
 
     def _provider_view(self, provider_id: str) -> dict[str, Any]:
@@ -335,24 +342,20 @@ class GuiController(QObject):
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ConfigEditorError("Base URL 必须是 http:// 或 https:// 地址")
         provider_type = str(provider.get("type", "openai"))
-        normalized: dict[str, Any] = {
+        candidate: dict[str, Any] = {
             "type": provider_type,
             "base_url": base_url,
             "key_env": str(provider.get("key_env", "")).strip(),
         }
-        for field, default in PROVIDER_TYPE_FIELD_DEFAULTS.get(
-            provider_type, {}
-        ).items():
-            value = provider.get(field, default)
-            normalized[field] = (
-                bool(value)
-                if isinstance(default, bool)
-                else str(value).strip() or default
-            )
-        return normalized
+        for field in PROVIDER_TYPE_FIELD_DEFAULTS.get(provider_type, {}):
+            candidate[field] = provider.get(field)
+        try:
+            return normalize_provider("draft", candidate, warn_legacy=False)
+        except ValueError as exc:
+            raise ConfigEditorError(str(exc)) from exc
 
     def _commit_drafts(self) -> None:
-        for provider_id in self.providerIds:
+        for provider_id in self._provider_ids():
             view = self._provider_view(provider_id)
             normalized = self._normalized_provider(view)
             self.editor.set_provider(

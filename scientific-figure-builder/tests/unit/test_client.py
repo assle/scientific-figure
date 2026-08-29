@@ -284,7 +284,7 @@ def test_validate_detects_missing_alpha(tmp_path: Path):
 
 
 def test_edit_produces_child_with_parent(tmp_path: Path):
-    from figure_tools.providers.client import file_hash
+    from figure_tools.provenance import hash_file
 
     client, _, _ = _client(tmp_path)
     parent = tmp_path / "parent.png"
@@ -294,7 +294,7 @@ def test_edit_produces_child_with_parent(tmp_path: Path):
                                    parent_asset_id="asset-1")
     assert out.is_file()
     assert meta["parent_asset_id"] == "asset-1"
-    assert meta["reference_hashes"] == [file_hash(parent)]
+    assert meta["reference_hashes"] == [hash_file(parent)]
 
 
 def test_edit_reuses_generation_model_when_override_is_absent(tmp_path: Path):

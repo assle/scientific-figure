@@ -9,16 +9,9 @@ editing the install scripts.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "figure_tools").is_dir():
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        break
-
-from figure_tools.install_paths import APP_NAME, PathEnvironment  # noqa: E402
+from figure_tools.install_paths import APP_NAME, PathEnvironment
 
 DEFAULT_ENV_VARS = (
     "SCIENTIFIC_FIGURE_CONFIG",
@@ -42,7 +35,7 @@ def _user_config_path() -> Path:
 
 def configured_key_envs() -> tuple[str, ...]:
     """Defaults plus any provider ``key_env`` names declared in the user config."""
-    names = list(DEFAULT_ENV_VARS)
+    names: list[str] = list(DEFAULT_ENV_VARS)
     try:
         import yaml
 

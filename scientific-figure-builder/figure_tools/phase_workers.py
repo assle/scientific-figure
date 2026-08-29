@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from typing import Any, Mapping
+
+from figure_tools.provenance import hash_json
 
 
 def stable_hash(value: Any) -> str:
-    payload = json.dumps(value, sort_keys=True, default=str).encode("utf-8")
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
+    return hash_json(value)
 
 
 class StructuredPhaseWorker:

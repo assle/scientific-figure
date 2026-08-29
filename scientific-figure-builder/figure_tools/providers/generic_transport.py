@@ -16,6 +16,10 @@ from figure_tools.providers.auth import (
     SecretRedactor,
     provider_key_env,
 )
+from figure_tools.provider_configuration import (
+    normalize_provider_base_url,
+    normalize_providers,
+)
 
 from figure_tools.providers.contracts import (
     extract_json,
@@ -30,28 +34,6 @@ from figure_tools.providers.transport import (
 )
 
 HTTP_OPENER = Callable[..., Any]
-_OPERATION_PATHS = (
-    "/images/generations",
-    "/v1/messages",
-    "/responses",
-    "/messages",
-)
-
-
-def _api_root(value: Any) -> str:
-    root = str(value or "").rstrip("/")
-    for operation_path in _OPERATION_PATHS:
-        if root.endswith(operation_path):
-            return root[:-len(operation_path)]
-    return root
-
-
-def normalize_provider_base_url(value: Any) -> str:
-    """Normalize complete operation URLs to the Provider API root."""
-
-    return _api_root(value)
-
-
 def _data_url(path: str | Path) -> str:
     path = Path(path)
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -241,10 +223,6 @@ def _responses_text(response: dict[str, Any]) -> str:
     return "".join(chunks)
 
 
-# Backward-compatible import for callers that used the pre-v1 internal name.
-ResponsesTransport = OpenAICompatibleTransport
-
-
 class AnthropicTransport(ProviderTransport):
     """Anthropic Messages-compatible vision transport."""
 
@@ -382,7 +360,7 @@ class ProviderRouter(ProviderTransport):
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
         self._routes: dict[str, str] = {}
         self._transports: dict[str, ProviderTransport] = {}
-        self._providers = providers
+        self._providers = normalize_providers(providers)
         if credentials is None:
             credentials = provider_credentials
         self._explicit_credentials = credentials is not None
@@ -401,19 +379,6 @@ class ProviderRouter(ProviderTransport):
             _internal_role, model_cfg = resolved
             provider_name = str(model_cfg.get("provider", "ark"))
             self._routes[role] = provider_name
-
-    @staticmethod
-    def _provider_type(provider: dict[str, Any]) -> str | None:
-        provider_type = provider.get("type")
-        if provider_type is not None:
-            return str(provider_type)
-        legacy_protocol = provider.get("protocol")
-        if not isinstance(legacy_protocol, str):
-            return None
-        return {
-            "responses": "openai",
-            "anthropic": "anthropic",
-        }.get(legacy_protocol)
 
     def _transport_for(self, provider_name: str) -> ProviderTransport:
         provider = self._providers.get(provider_name)
@@ -437,7 +402,7 @@ class ProviderRouter(ProviderTransport):
         current_value = credential.value if isinstance(credential, ResolvedCredential) else credential
         if transport is not None and getattr(transport, "api_key", None) == current_value:
             return transport
-        provider_type = self._provider_type(provider)
+        provider_type = provider["type"]
         if provider_type == "openai":
             transport = OpenAICompatibleTransport(
                 provider_name, provider, credential=credential,

@@ -68,8 +68,11 @@ def test_install_gui_component_syncs_the_gui_extra(tmp_path: Path, monkeypatch) 
     assert calls[0][0] == [
         "/usr/bin/uv",
         "run",
+        "--directory",
+        str(tmp_path.absolute()),
         "python",
-        str(installer),
+        "-m",
+        "install.install_delivery",
         "--source-dir",
         str(tmp_path.absolute()),
         "--codex",

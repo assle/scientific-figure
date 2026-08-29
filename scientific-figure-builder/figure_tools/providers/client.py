@@ -6,7 +6,6 @@ The API key is never serialized into artifacts, logs, or manifests.
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import threading
@@ -19,6 +18,7 @@ from typing import Any
 from PIL import Image
 
 from figure_tools.providers.auth import SecretRedactor, sanitize_error
+from figure_tools.provenance import hash_bytes, hash_file
 from figure_tools.providers.transport import (
     ProviderError,
     ProviderTransport,
@@ -31,12 +31,8 @@ from figure_tools.validation.image_checks import deterministic_image_checks
 from figure_tools.validation.summary import summarize_checks
 
 
-def file_hash(path: str | Path) -> str:
-    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def _sha(text: str) -> str:
-    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return hash_bytes(text.encode("utf-8"))
 
 
 class ProviderClient:
@@ -146,7 +142,7 @@ class ProviderClient:
                                  force: bool = False) -> dict[str, Any]:
         role = "reference_analysis"
         model = self._role_model(role)
-        img_hash = file_hash(image_path)
+        img_hash = hash_file(image_path)
         key = Cache.make_key(model, _sha(prompt or ""), {"image": img_hash}, [])
         if not force and self.cache is not None:
             cached = self.cache.get_bytes(key)
@@ -177,7 +173,7 @@ class ProviderClient:
         seed = parameters.get("seed") if isinstance(parameters, dict) else None
         meta: dict[str, Any] = {
             "path": str(path),
-            "content_hash": "sha256:" + hashlib.sha256(final_bytes).hexdigest(),
+            "content_hash": hash_bytes(final_bytes),
             "pixel_dimensions": list(img.size),
             "transparent": transparent,
             "model": self._role_model(role),
@@ -228,7 +224,7 @@ class ProviderClient:
         role = "edits"
         model = self._role_model(role)
         prompt_hash = _sha(prompt)
-        parent_hash = file_hash(parent_path)
+        parent_hash = hash_file(parent_path)
         ref_hashes = [parent_hash]
         key = Cache.make_key(model, prompt_hash, parameters, ref_hashes)
         out = Path(output_path)
@@ -256,7 +252,7 @@ class ProviderClient:
                              force: bool = False) -> dict[str, Any]:
         role = "validations"
         model = self._role_model(role)
-        img_hash = file_hash(image_path)
+        img_hash = hash_file(image_path)
         key = Cache.make_key(model, img_hash, {"checks": list(checks or [])}, [])
 
         det_checks = deterministic_image_checks(image_path, physical_size_mm)
@@ -307,7 +303,7 @@ class ProviderClient:
         """
         role = "final_validation"
         model = self._role_model(role)
-        img_hash = file_hash(image_path)
+        img_hash = hash_file(image_path)
         key = Cache.make_key(model, img_hash, {"checks": list(checks or [])}, [])
 
         multimodal: dict | None = None
@@ -341,7 +337,7 @@ class ProviderClient:
         """
         role = "validations"
         model = self._role_model(role)
-        img_hash = file_hash(crop_path)
+        img_hash = hash_file(crop_path)
         payload = {"mode": "local_region", "issue_type": issue_type,
                    "context": context}
         key = Cache.make_key(model, img_hash, payload, [])
@@ -359,6 +355,6 @@ class ProviderClient:
     # --- upload disclosure ----------------------------------------------
     def disclose_uploads(self, paths: list[str | Path]) -> list[dict[str, Any]]:
         return [
-            {"path": str(p), "content_hash": file_hash(p), "reason": "reference upload"}
+            {"path": str(p), "content_hash": hash_file(p), "reason": "reference upload"}
             for p in paths
         ]

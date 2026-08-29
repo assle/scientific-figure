@@ -19,17 +19,11 @@ import subprocess
 import sys
 import tomllib
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
 from typing import Callable, Sequence
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "figure_tools").is_dir():
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
-        break
-
-from figure_tools.install_paths import (  # noqa: E402
+from figure_tools.install_paths import (
     DeliveryPaths,
     PathEnvironment,
     active_runtime_metadata,
@@ -37,35 +31,22 @@ from figure_tools.install_paths import (  # noqa: E402
     read_active_runtime,
     resolve_delivery_paths,
 )
-from figure_tools.install_transaction import (  # noqa: E402
+from figure_tools.install_transaction import (
     InstallTransaction,
     prune_runtime_versions,
 )
 
-try:
-    from .configure_opencode import (
-        DEFAULT_MCP_NAME,
-        load_config,
-        mcp_entry_for_python,
-        render_mcp_merge,
-    )
-    from .configure_codex import (
-        codex_mcp_entry,
-        render_codex_mcp_config,
-        verify_codex_config,
-    )
-except ImportError:  # Direct execution from install.sh.
-    from configure_opencode import (
-        DEFAULT_MCP_NAME,
-        load_config,
-        mcp_entry_for_python,
-        render_mcp_merge,
-    )
-    from configure_codex import (
-        codex_mcp_entry,
-        render_codex_mcp_config,
-        verify_codex_config,
-    )
+from install.configure_opencode import (
+    DEFAULT_MCP_NAME,
+    load_config,
+    mcp_entry_for_python,
+    render_mcp_merge,
+)
+from install.configure_codex import (
+    codex_mcp_entry,
+    render_codex_mcp_config,
+    verify_codex_config,
+)
 
 SKILL_NAME = "scientific-figure-builder"
 RUNTIME_ITEMS = (
@@ -88,6 +69,58 @@ RUNTIME_ITEMS = (
 )
 SKILL_ITEMS = ("SKILL.md", "references", "schemas", "templates")
 COMMAND_SOURCE = Path("commands") / "scientific-figure.md"
+
+
+@dataclass(frozen=True)
+class InstallRequest:
+    source_dir: Path
+    paths: DeliveryPaths
+    target: str
+    scope: str
+    product_version: str
+    with_gui: bool = False
+
+    def __post_init__(self) -> None:
+        if self.target not in {"runtime", "opencode", "codex-legacy", "both"}:
+            raise ValueError(f"unsupported delivery target: {self.target}")
+        if self.scope not in {"global", "project"}:
+            raise ValueError(f"unsupported delivery scope: {self.scope}")
+        if self.product_version != self.paths.product_version:
+            raise ValueError("Install Request Product version does not match delivery paths")
+        expected_scope = "global" if self.paths.scope_id == "global" else "project"
+        if self.scope != expected_scope:
+            raise ValueError("Install Request scope does not match delivery paths")
+
+    @property
+    def install_opencode(self) -> bool:
+        return self.target in {"opencode", "both"}
+
+    @property
+    def install_codex(self) -> bool:
+        return self.target in {"codex-legacy", "both"}
+
+
+@dataclass(frozen=True)
+class InstallResult:
+    runtime: Path
+    runtime_python: Path
+    launcher: Path | None
+    launcher_warning: str | None
+    skill: Path
+    command: Path
+    config: Path
+    codex_skill: Path
+    codex_config: Path
+    mcp_tools: int
+    gui_installed: bool
+    active_runtime: dict[str, str]
+    transaction_id: str
+    transaction_log: Path
+    committed_paths: tuple[str, ...]
+    retained_paths: tuple[Path, ...]
+    pruned_paths: tuple[Path, ...]
+    legacy_runtime_retained: Path | None
+    runtime_backup: Path | None
 
 
 def read_product_version(source_dir: Path | None = None) -> str:
@@ -353,18 +386,18 @@ def smoke_test_mcp(runtime_python: Path, runtime_dir: Path) -> None:
         raise RuntimeError(f"MCP self-check expected 2 tools, found {len(tools)}")
 
 
-def install_delivery(
-    source_dir: Path,
-    paths: DeliveryPaths,
+def install(
+    request: InstallRequest,
     *,
     runtime_sync: Callable[..., Path] = sync_runtime,
     run_smoke_test: bool = True,
-    install_opencode: bool = True,
-    install_codex: bool = True,
-    with_gui: bool = False,
     failure_injector: Callable[[str], None] | None = None,
-) -> dict[str, object]:
-    source_dir = source_dir.resolve()
+) -> InstallResult:
+    source_dir = request.source_dir.resolve()
+    paths = request.paths
+    install_opencode = request.install_opencode
+    install_codex = request.install_codex
+    with_gui = request.with_gui
     preflight_install(
         source_dir,
         paths,
@@ -384,6 +417,9 @@ def install_delivery(
         if failure_injector is not None:
             failure_injector(stage)
 
+    active_runtime: dict[str, str] = {}
+    transaction_id = ""
+    committed_paths: list[str] = []
     with InstallTransaction(paths) as transaction:
         staged_runtime = transaction.stage_path("runtime")
         staged_opencode_skill = transaction.stage_path("opencode-skill")
@@ -488,42 +524,40 @@ def install_delivery(
         if launcher.parent.resolve() not in path_entries:
             launcher_warning = f"Add {launcher.parent} to PATH to use `scientific-figure`."
 
-    return {
-        "skill": str(paths.skill_dir),
-        "command": str(paths.command_file),
-        "runtime": str(paths.runtime_dir),
-        "runtime_python": str(runtime_python_path),
-        "config": str(paths.config_file),
-        "config_backup": None,
-        "runtime_backup": (
-            str(previous_runtime)
-            if previous_runtime is not None and previous_runtime != paths.runtime_dir
-            else None
-        ),
-        "skill_backup": None,
-        "command_backup": None,
-        "codex_skill": str(paths.codex_skill_dir),
-        "codex_skill_backup": None,
-        "codex_config": str(paths.codex_config_file),
-        "codex_config_backup": None,
-        "mcp_tools": 2,
-        "gui_installed": _gui_component_installed(runtime_python_path, paths.runtime_dir),
-        "active_runtime": active_runtime,
-        "transaction_id": transaction_id,
-        "transaction_log": str(
-            paths.transaction_log_dir / f"{transaction_id}.json"
-        ),
-        "committed_paths": committed_paths,
-        "pruned_runtimes": pruned_runtimes,
-        "legacy_runtime_retained": (
-            str(paths.legacy_runtime_dir)
-            if paths.legacy_runtime_dir is not None
-            and paths.legacy_runtime_dir.is_dir()
-            else None
-        ),
-        "launcher": str(launcher) if launcher else None,
-        "launcher_warning": launcher_warning,
-    }
+    legacy_runtime = (
+        paths.legacy_runtime_dir
+        if paths.legacy_runtime_dir is not None and paths.legacy_runtime_dir.is_dir()
+        else None
+    )
+    runtime_backup = (
+        previous_runtime
+        if previous_runtime is not None and previous_runtime != paths.runtime_dir
+        else None
+    )
+    retained_paths = tuple(
+        path for path in (legacy_runtime, runtime_backup) if path is not None
+    )
+    return InstallResult(
+        skill=paths.skill_dir,
+        command=paths.command_file,
+        runtime=paths.runtime_dir,
+        runtime_python=runtime_python_path,
+        config=paths.config_file,
+        runtime_backup=runtime_backup,
+        codex_skill=paths.codex_skill_dir,
+        codex_config=paths.codex_config_file,
+        mcp_tools=2,
+        gui_installed=_gui_component_installed(runtime_python_path, paths.runtime_dir),
+        active_runtime=active_runtime,
+        transaction_id=transaction_id,
+        transaction_log=paths.transaction_log_dir / f"{transaction_id}.json",
+        committed_paths=tuple(committed_paths),
+        retained_paths=retained_paths,
+        pruned_paths=tuple(Path(path) for path in pruned_runtimes),
+        legacy_runtime_retained=legacy_runtime,
+        launcher=launcher,
+        launcher_warning=launcher_warning,
+    )
 
 
 def verify_delivery(
@@ -545,8 +579,7 @@ def verify_delivery(
             )
         )
         checks["gui_resources"] = (
-            (paths.runtime_dir / "figure_tools" / "resources" / "gui.qss").is_file()
-            and (paths.runtime_dir / "figure_tools" / "resources" / "icon.svg").is_file()
+            (paths.runtime_dir / "figure_tools" / "resources" / "icon.svg").is_file()
             and (paths.runtime_dir / "figure_tools" / "resources" / "qml" / "Main.qml").is_file()
         )
     runtime_command: Path | None = None
@@ -591,7 +624,7 @@ def verify_delivery(
         )
         checks["cli_help"] = help_result.returncode == 0
         resource_result = subprocess.run(
-            [str(runtime_command), "-c", "from importlib.resources import files; from figure_tools.resources_loader import read_gui_resource; read_gui_resource('gui.qss'); read_gui_resource('icon.svg'); files('figure_tools.resources').joinpath('qml/Main.qml').read_text(encoding='utf-8')"],
+            [str(runtime_command), "-c", "from importlib.resources import files; from figure_tools.resources_loader import read_gui_resource; read_gui_resource('icon.svg'); files('figure_tools.resources').joinpath('qml/Main.qml').read_text(encoding='utf-8')"],
             cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
         )
         checks["gui_resource_import"] = resource_result.returncode == 0
@@ -774,25 +807,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         if args.verify:
-            result = verify_delivery(
+            verification = verify_delivery(
                 paths,
                 verify_opencode=install_opencode,
                 verify_codex=install_codex,
                 require_gui=args.with_gui,
             )
-            print(f"Installation verified: {result['mcp_tools']} MCP tools available.")
+            components = verification.get("components")
+            gui_installed = (
+                bool(components.get("gui")) if isinstance(components, dict) else False
+            )
+            print(
+                f"Installation verified: {verification['mcp_tools']} MCP tools available."
+            )
             print(
                 "  Core runtime:    installed\n"
-                f"  Configuration app: {'installed' if result['components']['gui'] else 'not installed'}"
+                f"  Configuration app: {'installed' if gui_installed else 'not installed'}"
             )
             return 0
-        result = install_delivery(
-            args.source_dir,
-            paths,
-            install_opencode=install_opencode,
-            install_codex=install_codex,
+        request = InstallRequest(
+            source_dir=args.source_dir,
+            paths=paths,
+            target=args.target,
+            scope="global" if paths.scope_id == "global" else "project",
+            product_version=product_version,
             with_gui=args.with_gui,
         )
+        result = install(request)
     except (
         OSError,
         RuntimeError,
@@ -808,29 +849,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print("Scientific Figure Builder installed successfully.")
     print(f"  Product version:   {paths.product_version}")
-    print(f"  Transaction log:   {result['transaction_log']}")
-    print(f"  MCP:     {result['mcp_tools']} tools verified")
+    print(f"  Transaction log:   {result.transaction_log}")
+    print(f"  MCP:     {result.mcp_tools} tools verified")
     print("  Core runtime:      installed")
-    if result["gui_installed"]:
+    if result.gui_installed:
         print("  Configuration app: installed")
     else:
         print("  Configuration app: not installed")
         print("  GUI install:       scientific-figure install-gui")
     if install_opencode:
-        print(f"  OpenCode skill:   {result['skill']}")
+        print(f"  OpenCode skill:   {result.skill}")
         print(f"  OpenCode command: /scientific-figure")
-        print(f"  OpenCode config:  {result['config']}")
+        print(f"  OpenCode config:  {result.config}")
     if install_codex:
-        print(f"  Codex skill:      {result['codex_skill']}")
-        print(f"  Codex config:     {result['codex_config']}")
-    if result.get("launcher"):
-        print(f"  Launcher:         {result['launcher']}")
-    if result.get("launcher_warning"):
-        print(f"  PATH warning:     {result['launcher_warning']}")
-    if result.get("legacy_runtime_retained"):
+        print(f"  Codex skill:      {result.codex_skill}")
+        print(f"  Codex config:     {result.codex_config}")
+    if result.launcher:
+        print(f"  Launcher:         {result.launcher}")
+    if result.launcher_warning:
+        print(f"  PATH warning:     {result.launcher_warning}")
+    if result.legacy_runtime_retained:
         print(
             "  Legacy runtime:    retained for rollback at "
-            f"{result['legacy_runtime_retained']}"
+            f"{result.legacy_runtime_retained}"
         )
     agents = []
     if install_opencode:
