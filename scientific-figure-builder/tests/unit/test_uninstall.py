@@ -6,8 +6,10 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from install.install_delivery import delivery_paths, launcher_text
-from install.uninstall_delivery import uninstall
+from install.uninstall_delivery import build_parser, uninstall
 
 
 def _layout(tmp_path: Path) -> dict[str, Path]:
@@ -129,3 +131,35 @@ def test_project_uninstall_removes_only_its_versioned_runtime(tmp_path: Path):
     assert not project_a.runtime_scope_dir.exists()
     assert global_paths.runtime_dir.is_dir()
     assert project_b.runtime_dir.is_dir()
+
+
+@pytest.mark.parametrize("target", ["runtime", "opencode", "codex"])
+def test_targeted_uninstall_preserves_unselected_products(
+    tmp_path: Path, target: str,
+):
+    layout = _layout(tmp_path)
+    paths = delivery_paths(**layout)
+    _seed(paths, tmp_path)
+    uninstall(
+        **layout,
+        remove_runtime=target == "runtime",
+        remove_opencode=target == "opencode",
+        remove_codex=target == "codex",
+    )
+    assert paths.runtime_scope_dir.exists() is (target != "runtime")
+    assert paths.skill_dir.exists() is (target != "opencode")
+    assert paths.command_file.exists() is (target != "opencode")
+    opencode_config = json.loads(paths.config_file.read_text(encoding="utf-8"))
+    assert ("scientific-figure" in opencode_config["mcp"]) is (target != "opencode")
+    assert paths.codex_skill_dir.exists() is (target != "codex")
+    codex_text = paths.codex_config_file.read_text(encoding="utf-8")
+    assert ("[mcp_servers.scientific-figure]" in codex_text) is (target != "codex")
+
+
+def test_uninstall_cli_targets_are_explicit():
+    parser = build_parser()
+    assert parser.parse_args([]).target == "runtime"
+    assert parser.parse_args(["--opencode"]).target == "opencode"
+    assert parser.parse_args(["--codex-legacy"]).target == "codex"
+    assert parser.parse_args(["--integrations"]).target == "integrations"
+    assert parser.parse_args(["--all"]).target == "all"

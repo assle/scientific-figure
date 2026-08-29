@@ -12,7 +12,7 @@ from typing import Mapping
 
 APP_NAME = "scientific-figure-builder"
 WINDOWS_APP_DIR = "ScientificFigureBuilder"
-INSTALL_COMMAND = "./install.sh --runtime-only"
+INSTALL_COMMAND = "./install.sh --codex"
 
 
 def install_root(

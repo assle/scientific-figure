@@ -100,7 +100,7 @@ opening or saving configuration.
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --runtime-only --with-gui
+./install.sh --codex --with-gui
 codex plugin marketplace add .
 codex plugin add scientific-figure-builder@scientific-figure
 ```
@@ -191,16 +191,20 @@ precedence over its environment fallback.
 ## Installation options
 
 ```bash
-./install.sh --runtime-only        # Core and CLI for the Native Codex plugin
-./install.sh --runtime-only --with-gui
-./install.sh                       # legacy Codex + OpenCode integration bundle
-./install.sh --with-gui            # legacy bundle plus Configuration app
-./install.sh --codex-only
-./install.sh --opencode-only
-./install.sh --project /path/to/project
-./install.sh --verify            # verify Core; report GUI status
-./install.sh --verify --with-gui # require both Core and GUI
+./install.sh                       # default: Core runtime and CLI only
+./install.sh --codex              # explicit Native Codex plugin prerequisite
+./install.sh --opencode           # Core plus OpenCode integration only
+./install.sh --all                # explicit legacy two-host integration
+./install.sh --opencode --project /path/to/project
+./install.sh --verify             # verify Core only; report GUI status
+./install.sh --verify --opencode  # verify Core and OpenCode integration
+./install.sh --verify --with-gui  # require Core and GUI
 ```
+
+Compatibility aliases remain during migration: `--runtime-only` maps to the
+default Core target, `--opencode-only` maps to `--opencode`, and
+`--codex-only` installs the deprecated manual Codex Skill/config integration.
+The supported Codex path is `--codex` followed by the Native plugin install.
 
 ### Filesystem layout
 
@@ -234,9 +238,12 @@ scope and that legacy runtime; a Project uninstall removes only its own scope.
 
 ```bash
 codex plugin remove scientific-figure-builder@scientific-figure
-./uninstall.sh                  # keep user config and Keyring credentials
-./uninstall.sh --config         # also clean referenced Keyring entries
-./uninstall.sh --project DIR    # remove one project-scoped integration
+./uninstall.sh                    # default: Core runtime and CLI only
+./uninstall.sh --opencode         # OpenCode integration only
+./uninstall.sh --codex-legacy     # deprecated manual Codex integration only
+./uninstall.sh --integrations     # both legacy integrations; keep Core
+./uninstall.sh --all              # Core, legacy integrations, config, credentials
+./uninstall.sh --runtime-only --project DIR
 ./uninstall.sh --dry-run
 codex plugin marketplace remove scientific-figure # optional: stop listing this repo
 ```

@@ -93,7 +93,7 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --runtime-only --with-gui
+./install.sh --codex --with-gui
 codex plugin marketplace add .
 codex plugin add scientific-figure-builder@scientific-figure
 ```
@@ -176,16 +176,19 @@ models:
 ## 安装选项
 
 ```bash
-./install.sh --runtime-only        # 原生 Codex 插件使用的核心与 CLI
-./install.sh --runtime-only --with-gui
-./install.sh                       # 旧 Codex + OpenCode 双宿主集成包
-./install.sh --with-gui            # 旧双宿主集成包 + 配置应用
-./install.sh --codex-only
-./install.sh --opencode-only
-./install.sh --project /path/to/project
-./install.sh --verify            # 验证核心并报告 GUI 状态
-./install.sh --verify --with-gui # 要求核心与 GUI 都已安装
+./install.sh                       # 默认：只安装核心运行时与 CLI
+./install.sh --codex              # 显式安装原生 Codex 插件前置运行时
+./install.sh --opencode           # 只安装核心与 OpenCode 集成
+./install.sh --all                # 显式安装旧双宿主集成
+./install.sh --opencode --project /path/to/project
+./install.sh --verify             # 只验证核心并报告 GUI 状态
+./install.sh --verify --opencode  # 验证核心与 OpenCode 集成
+./install.sh --verify --with-gui  # 要求核心与 GUI 都已安装
 ```
+
+迁移期保留兼容别名：`--runtime-only` 等价于默认 Core 目标，`--opencode-only` 等价于
+`--opencode`，`--codex-only` 只安装 deprecated 的手工 Codex Skill/config 集成。正式
+Codex 路径是 `--codex` 后通过 marketplace 安装原生插件。
 
 ### 文件系统布局
 
@@ -215,9 +218,12 @@ models:
 
 ```bash
 codex plugin remove scientific-figure-builder@scientific-figure
-./uninstall.sh                  # 保留用户配置和 Keyring 凭据
-./uninstall.sh --config         # 同时清理配置引用的 Keyring 条目
-./uninstall.sh --project DIR    # 删除指定项目集成
+./uninstall.sh                    # 默认：只删除核心运行时与 CLI
+./uninstall.sh --opencode         # 只删除 OpenCode 集成
+./uninstall.sh --codex-legacy     # 只删除 deprecated 手工 Codex 集成
+./uninstall.sh --integrations     # 删除两个旧集成，保留核心
+./uninstall.sh --all              # 删除核心、旧集成、配置和引用凭据
+./uninstall.sh --runtime-only --project DIR
 ./uninstall.sh --dry-run
 codex plugin marketplace remove scientific-figure # 可选：不再列出这个 repo
 ```

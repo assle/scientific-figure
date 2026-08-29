@@ -104,7 +104,7 @@ def test_plugin_adapter_uses_canonical_install_prefix(
 
 def test_plugin_adapter_missing_runtime_is_actionable(tmp_path: Path) -> None:
     launcher = _launcher_module()
-    with pytest.raises(RuntimeError, match="./install.sh --runtime-only"):
+    with pytest.raises(RuntimeError, match="./install.sh --codex"):
         launcher.active_runtime(tmp_path)
 
 

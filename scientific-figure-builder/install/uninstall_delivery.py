@@ -92,6 +92,9 @@ def uninstall(
     include_config: bool = False,
     dry_run: bool = False,
     bin_dir: Path | None = None,
+    remove_runtime: bool = True,
+    remove_opencode: bool = True,
+    remove_codex: bool = True,
 ) -> dict[str, Any]:
     paths = delivery_paths(
         config_home=config_home, data_home=data_home,
@@ -103,22 +106,47 @@ def uninstall(
     )
     removed: list[str] = []
     warnings: list[str] = []
-    if project_dir is None:
-        targets = [
+    targets: list[Path] = []
+    config_candidates: list[Path] = []
+
+    if remove_runtime:
+        targets.extend([
             paths.runtime_scope_dir, paths.state_dir, paths.cache_dir, paths.session_dir,
-            paths.skill_dir, paths.command_file,
-            paths.codex_skill_dir,
-        ]
-        if paths.legacy_runtime_dir is not None:
+        ])
+        if project_dir is None and paths.legacy_runtime_dir is not None:
             targets.append(paths.legacy_runtime_dir)
-        if paths.launcher_file is not None and paths.launcher_file.exists():
+        if project_dir is None and paths.launcher_file is not None and paths.launcher_file.exists():
             content = paths.launcher_file.read_text(encoding="utf-8", errors="replace")
             if LAUNCHER_MARKER in content:
                 targets.append(paths.launcher_file)
             else:
                 warnings.append(f"left unrelated launcher untouched: {paths.launcher_file}")
-        config_candidates = [config_home / "opencode" / name for name in ("opencode.json", "opencode.jsonc")]
-        config_candidates.append(codex_home / "config.toml")
+
+    if remove_opencode:
+        targets.extend((paths.skill_dir, paths.command_file))
+        if project_dir is None:
+            config_candidates.extend(
+                config_home / "opencode" / name
+                for name in ("opencode.json", "opencode.jsonc")
+            )
+        else:
+            config_candidates.extend([
+                project_dir / ".opencode" / "opencode.json",
+                project_dir / ".opencode" / "opencode.jsonc",
+                paths.config_file,
+            ])
+
+    if remove_codex:
+        targets.append(paths.codex_skill_dir)
+        if project_dir is None:
+            config_candidates.append(codex_home / "config.toml")
+        else:
+            config_candidates.extend([
+                project_dir / ".codex" / "config.toml",
+                paths.codex_config_file,
+            ])
+
+    if project_dir is None:
         if include_config:
             user_config = config_home / NAME / "config.yaml"
             active = read_active_runtime(paths.active_runtime_file)
@@ -136,33 +164,53 @@ def uninstall(
                 targets.append(config_home / NAME)
             else:
                 warnings.append("user config was retained because credential cleanup failed")
-    else:
-        targets = [
-            paths.runtime_scope_dir, paths.state_dir, paths.cache_dir, paths.session_dir,
-            paths.skill_dir, paths.command_file, paths.codex_skill_dir,
-        ]
-        config_candidates = [
-            project_dir / ".opencode" / name for name in ("opencode.json", "opencode.jsonc")
-        ] + [project_dir / ".codex" / "config.toml", paths.config_file, paths.codex_config_file]
 
-    for target in targets:
+    for target in dict.fromkeys(targets):
         if remove_path(target, dry_run=dry_run):
             removed.append(str(target))
-    for config in config_candidates:
+    for config in dict.fromkeys(config_candidates):
         changed = remove_codex_mcp(config) if config.suffix == ".toml" else remove_opencode_mcp(config)
         if changed:
             removed.append(str(config))
     return {"removed": removed, "warnings": warnings, "dry_run": dry_run}
 
 
-def main(argv: list[str] | None = None) -> int:
-    path_environment = PathEnvironment.from_environ()
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Uninstall Scientific Figure Builder safely.")
     parser.add_argument("--config", action="store_true", help="also remove global config and its credentials")
-    parser.add_argument("--all", action="store_true", help="global uninstall plus config")
+    targets = parser.add_mutually_exclusive_group()
+    targets.add_argument(
+        "--runtime-only", dest="target", action="store_const", const="runtime",
+        help="Remove only the Core runtime and CLI.",
+    )
+    targets.add_argument(
+        "--opencode", dest="target", action="store_const", const="opencode",
+        help="Remove only the OpenCode Agent integration.",
+    )
+    targets.add_argument(
+        "--codex-legacy", dest="target", action="store_const", const="codex",
+        help="Remove only the deprecated manual Codex integration.",
+    )
+    targets.add_argument(
+        "--integrations", dest="target", action="store_const", const="integrations",
+        help="Remove both legacy Agent integrations but keep the Core runtime.",
+    )
+    targets.add_argument(
+        "--all", dest="target", action="store_const", const="all",
+        help="Remove Core, legacy integrations, Global config, and referenced credentials.",
+    )
+    parser.set_defaults(target="runtime")
     parser.add_argument("--project", type=Path)
     parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    path_environment = PathEnvironment.from_environ()
+    args = build_parser().parse_args(argv)
+    remove_runtime = args.target in {"runtime", "all"}
+    remove_opencode = args.target in {"opencode", "integrations", "all"}
+    remove_codex = args.target in {"codex", "integrations", "all"}
     result = uninstall(
         config_home=path_environment.config_root,
         data_home=path_environment.legacy_data_root,
@@ -173,8 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         codex_home=path_environment.codex_home,
         bin_dir=path_environment.launcher_dir,
         project_dir=args.project,
-        include_config=args.config or args.all,
+        include_config=args.config or args.target == "all",
         dry_run=args.dry_run,
+        remove_runtime=remove_runtime,
+        remove_opencode=remove_opencode,
+        remove_codex=remove_codex,
     )
     print("Dry run — nothing changed." if args.dry_run else "Uninstall complete.")
     for path in result["removed"]:

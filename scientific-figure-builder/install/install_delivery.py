@@ -249,6 +249,17 @@ def _replace_file(source: Path, destination: Path) -> Path | None:
     return backup
 
 
+def runtime_python(runtime_dir: Path) -> Path:
+    candidates = (
+        runtime_dir / ".venv" / "bin" / "python",
+        runtime_dir / ".venv" / "Scripts" / "python.exe",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.absolute()
+    raise RuntimeError("Dependency installation completed, but runtime Python was not found")
+
+
 def sync_runtime(runtime_dir: Path, with_gui: bool = False) -> Path:
     uv = shutil.which("uv")
     if uv is None:
@@ -260,14 +271,7 @@ def sync_runtime(runtime_dir: Path, with_gui: bool = False) -> Path:
         command.extend(("--extra", "gui"))
     command.extend(("--directory", str(runtime_dir)))
     subprocess.run(command, check=True)
-    candidates = (
-        runtime_dir / ".venv" / "bin" / "python",
-        runtime_dir / ".venv" / "Scripts" / "python.exe",
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.absolute()
-    raise RuntimeError("Dependency installation completed, but runtime Python was not found")
+    return runtime_python(runtime_dir)
 
 
 def _gui_component_installed(runtime_python: Path, runtime_dir: Path) -> bool:
@@ -509,6 +513,9 @@ def verify_delivery(
             if command:
                 runtime_command = Path(command)
 
+    if runtime_command is None:
+        runtime_command = runtime_python(paths.runtime_dir)
+
     if runtime_command is not None and runtime_command.is_file():
         help_result = subprocess.run(
             [str(runtime_command), "-m", "figure_tools", "--help"],
@@ -565,27 +572,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     target_group = parser.add_mutually_exclusive_group()
     target_group.add_argument(
+        "--codex",
+        dest="target",
+        action="store_const",
+        const="runtime",
+        help="Install the Core runtime for the Native Codex plugin.",
+    )
+    target_group.add_argument(
+        "--opencode",
+        dest="target",
+        action="store_const",
+        const="opencode",
+        help="Install the Core runtime and OpenCode integration only.",
+    )
+    target_group.add_argument(
+        "--all",
+        dest="target",
+        action="store_const",
+        const="both",
+        help="Explicitly install both legacy Agent integrations.",
+    )
+    target_group.add_argument(
         "--opencode-only",
         dest="target",
         action="store_const",
         const="opencode",
-        help="Install only the OpenCode skill/command/MCP entry.",
+        help="Deprecated alias for --opencode.",
     )
     target_group.add_argument(
         "--codex-only",
         dest="target",
         action="store_const",
-        const="codex",
-        help="Install only the Codex skill/MCP entry.",
+        const="codex-legacy",
+        help="Deprecated legacy Codex Skill/config installation.",
     )
     target_group.add_argument(
         "--runtime-only",
         dest="target",
         action="store_const",
         const="runtime",
-        help="Install only the Core runtime and global CLI for a Native plugin.",
+        help="Compatibility alias for the default Core runtime installation.",
     )
-    parser.set_defaults(target="both")
+    parser.set_defaults(target="runtime")
     parser.add_argument(
         "--config-home",
         type=Path,
@@ -648,9 +676,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
+    compatibility_messages = {
+        "--runtime-only": "--runtime-only is a compatibility alias; use ./install.sh or --codex.",
+        "--opencode-only": "--opencode-only is deprecated; use --opencode.",
+        "--codex-only": (
+            "--codex-only installs the deprecated manual Codex integration; "
+            "use --codex and install the Native plugin from the repo marketplace."
+        ),
+    }
+    for option, message in compatibility_messages.items():
+        if option in raw_argv:
+            print(f"Compatibility notice: {message}", file=sys.stderr)
     install_opencode = args.target in {"both", "opencode"}
-    install_codex = args.target in {"both", "codex"}
+    install_codex = args.target in {"both", "codex-legacy"}
     product_version = read_product_version(args.source_dir)
     paths = delivery_paths(
         config_home=args.config_home.expanduser(),
