@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/style-bible.schema.json",
+  "title": "Style Bible",
+  "description": "Reusable visual style contract (plan section 7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "palette",
+    "view",
+    "projection",
+    "lighting",
+    "material",
+    "stroke_widths",
+    "fonts",
+    "equation_style",
+    "background",
+    "shadow",
+    "forbidden_elements",
+    "style_reference_hashes"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "palette": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "view": { "type": "string", "minLength": 1 },
+    "projection": { "type": "string", "minLength": 1 },
+    "lighting": { "type": "string", "minLength": 1 },
+    "material": { "type": "string", "minLength": 1 },
+    "stroke_widths": {
+      "type": "object",
+      "additionalProperties": { "type": "number", "minimum": 0 }
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "sizes"],
+      "properties": {
+        "family": { "type": "string", "minLength": 1 },
+        "sizes": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        }
+      }
+    },
+    "equation_style": { "type": "string", "minLength": 1 },
+    "background": { "type": "string", "minLength": 1 },
+    "shadow": { "type": "string", "minLength": 1 },
+    "forbidden_elements": { "type": "array", "items": { "type": "string" } },
+    "style_reference_hashes": { "type": "array", "items": { "type": "string" } }
+  }
+}

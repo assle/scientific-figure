@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/plot-spec.schema.json",
+  "title": "Plot Spec",
+  "description": "Spec consumed by the fixed plot renderer (plan section 7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "chart_type",
+    "recipe_version",
+    "source_data",
+    "column_mapping",
+    "units",
+    "series",
+    "errors",
+    "transformations",
+    "filters",
+    "axes",
+    "scales",
+    "ticks",
+    "legends",
+    "labels",
+    "figure",
+    "export",
+    "validation_expectations"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "chart_type": {
+      "type": "string",
+      "enum": ["line", "scatter", "bar", "heatmap", "error_bar", "multipanel"]
+    },
+    "recipe_version": { "type": "string", "minLength": 1 },
+    "source_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "content_hash"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "content_hash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "column_mapping": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "series": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["series_id", "x", "y"],
+        "properties": {
+          "series_id": { "type": "string", "minLength": 1 },
+          "x": { "type": "string" },
+          "y": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "errors": { "type": "array", "items": { "type": "object" } },
+    "transformations": { "type": "array", "items": { "type": "object" } },
+    "filters": { "type": "array", "items": { "type": "object" } },
+    "axes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "string" },
+        "y": { "type": "string" }
+      }
+    },
+    "scales": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "enum": ["linear", "log", "symlog"] }
+    },
+    "ticks": {
+      "type": "object",
+      "additionalProperties": { "type": "array" }
+    },
+    "legends": { "type": "array", "items": { "type": "object" } },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "x", "y"],
+      "properties": {
+        "title": { "type": "string" },
+        "x": { "type": "string" },
+        "y": { "type": "string" }
+      }
+    },
+    "figure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimensions", "style"],
+      "properties": {
+        "dimensions": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "style": { "type": "string", "minLength": 1 }
+      }
+    },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["formats", "dpi"],
+      "properties": {
+        "formats": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["png", "svg", "pdf"] },
+          "minItems": 1
+        },
+        "dpi": { "type": "integer", "minimum": 72 },
+        "export_target": { "type": "string", "enum": ["general", "ppt"] }
+      }
+    },
+    "validation_expectations": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    }
+  }
+}

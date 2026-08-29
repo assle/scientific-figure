@@ -1,0 +1,6 @@
+interface:
+  display_name: "Scientific Figure Builder"
+  short_description: "Run reproducible scientific-figure workflows"
+  default_prompt: "Use $scientific-figure-builder and follow the next action returned by the lifecycle orchestrator."
+policy:
+  allow_implicit_invocation: false

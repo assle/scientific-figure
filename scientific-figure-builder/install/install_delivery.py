@@ -578,6 +578,13 @@ def build_parser() -> argparse.ArgumentParser:
         const="codex",
         help="Install only the Codex skill/MCP entry.",
     )
+    target_group.add_argument(
+        "--runtime-only",
+        dest="target",
+        action="store_const",
+        const="runtime",
+        help="Install only the Core runtime and global CLI for a Native plugin.",
+    )
     parser.set_defaults(target="both")
     parser.add_argument(
         "--config-home",
@@ -718,7 +725,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         agents.append("OpenCode")
     if install_codex:
         agents.append("Codex")
-    print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
+    if agents:
+        print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
+    else:
+        print("Core runtime ready for the Scientific Figure Builder Native plugin.")
     print(
         "Provider credentials use the system credential store when configured; "
         "environment-backed values were not written to disk."

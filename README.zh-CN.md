@@ -28,9 +28,9 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-当前 `0.2.0` 开发版本以面向 Codex 和 OpenCode 的 **Agent 集成包** 交付，尚不是
-原生 Codex 插件：标准插件清单以及由宿主管理的安装、升级和卸载生命周期仍在建设中。
-这个区分既准确描述当前安装契约，也明确了项目正在走向干净、规范化插件交付的方向。
+当前 `0.2.0` 开发版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
+核心运行时。原生插件负责 Codex 中 Workflow Skill 与 MCP 声明的发现、启停、升级和
+移除；独立核心运行时让确定性执行与可选配置应用不进入宿主插件缓存。
 
 | 组件 | 职责 |
 |---|---|
@@ -88,17 +88,19 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 
 ## 快速开始
 
-### 1. 安装
+### 1. 安装核心运行时与 Codex 插件
 
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --with-gui
+./install.sh --runtime-only --with-gui
+codex plugin marketplace add .
+codex plugin add scientific-figure-builder@scientific-figure
 ```
 
-这个桌面快速开始会安装核心运行时和可选配置应用。轻量默认命令 `./install.sh` 只安装
-核心运行时、工作流 Skill，以及 Codex/OpenCode 使用的双入口生命周期 MCP 服务。
-两种全局安装都会创建 `~/.local/bin/scientific-figure` 启动器。
+核心命令只安装确定性引擎、生命周期 MCP 服务、CLI 和可选配置应用，不修改 Codex
+配置；repo marketplace 随后让 Codex 原生安装并管理插件。无桌面环境可省略
+`--with-gui`。OpenCode 用户使用独立入口 `./install.sh --opencode-only`。
 
 ### 2. 配置 Provider
 
@@ -174,8 +176,10 @@ models:
 ## 安装选项
 
 ```bash
-./install.sh                     # 默认：只安装核心运行时
-./install.sh --with-gui          # 核心运行时 + 配置应用
+./install.sh --runtime-only        # 原生 Codex 插件使用的核心与 CLI
+./install.sh --runtime-only --with-gui
+./install.sh                       # 旧 Codex + OpenCode 双宿主集成包
+./install.sh --with-gui            # 旧双宿主集成包 + 配置应用
 ./install.sh --codex-only
 ./install.sh --opencode-only
 ./install.sh --project /path/to/project
@@ -210,14 +214,18 @@ models:
 <summary><strong>安全卸载</strong></summary>
 
 ```bash
+codex plugin remove scientific-figure-builder@scientific-figure
 ./uninstall.sh                  # 保留用户配置和 Keyring 凭据
 ./uninstall.sh --config         # 同时清理配置引用的 Keyring 条目
 ./uninstall.sh --project DIR    # 删除指定项目集成
 ./uninstall.sh --dry-run
+codex plugin marketplace remove scientific-figure # 可选：不再列出这个 repo
 ```
 
-卸载器会删除所选运行时 scope 中的全部版本及可选 GUI，同时只删除本工具标记的
-启动器和 MCP 条目。全局卸载还会删除保留的旧运行时；Keyring 清理失败时会保留用户配置。
+原生插件移除会删除其缓存 Skill 和 MCP 声明，不创建或遗留顶层 Codex MCP 条目，并
+保留独立核心运行时、Global configuration 和 Keyring 凭据。源码卸载器删除所选运行时
+scope 的全部版本及可选 GUI，同时只清理旧安装器拥有的启动器和 MCP 条目。全局卸载
+还会删除保留的旧运行时；Keyring 清理失败时会保留用户配置。
 </details>
 
 ## 版本管理

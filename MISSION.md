@@ -12,8 +12,8 @@
 
 ## Current delivery
 - 当前开发版本为 `0.2.0`，最新固定发布为 `v0.1.0`，项目处于 1.0 前的接口稳定化阶段。
-- 当前交付物是 Codex/OpenCode Agent 集成包，不是原生 Codex 插件。
-- 原生插件是目标交付形态；它将标准化 Skill、MCP、资源和宿主管理的生命周期。
+- 当前交付物包括原生 Codex 插件、独立 OpenCode Agent 集成和版本隔离的核心运行时。
+- Codex 插件拥有 Skill 与 MCP 声明的宿主生命周期；核心运行时、配置和凭据独立保存。
 
 ## Constraints
 - Provider 保持可配置，不把任何模型供应商设为内置默认。

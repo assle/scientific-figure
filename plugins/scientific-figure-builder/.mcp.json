@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "scientific-figure": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "./scripts/mcp_launcher.py"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "SCIENTIFIC_FIGURE_INSTALL_HOME",
+        "SCIENTIFIC_FIGURE_CONFIG",
+        "SCIENTIFIC_FIGURE_PROJECT_DIR",
+        "SCIENTIFIC_FIGURE_CACHE_DIR",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "SCI_FIG_IMAGE_GENERATE",
+        "SCI_FIG_IMAGE_EDIT",
+        "SCI_FIG_VISION_ANALYZE",
+        "SCI_FIG_VISION_VALIDATE"
+      ]
+    }
+  }
+}

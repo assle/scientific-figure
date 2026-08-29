@@ -1,0 +1,20 @@
+{
+  "name": "scientific-figure",
+  "interface": {
+    "displayName": "Scientific Figure"
+  },
+  "plugins": [
+    {
+      "name": "scientific-figure-builder",
+      "source": {
+        "source": "local",
+        "path": "./plugins/scientific-figure-builder"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

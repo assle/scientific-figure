@@ -45,6 +45,7 @@ uv run pytest
 一次正式发布应完成以下步骤：
 
 1. 更新 `pyproject.toml` 的 Product version，并同步 `SKILL.md` 与 `CITATION.cff`。
+   运行 `python3 scripts/sync_plugin_bundle.py`，使原生插件 Skill 快照和清单版本同步。
 2. 运行 `uv lock`，使锁文件记录相同的本地包版本。
 3. 运行完整测试，并验证 `scientific-figure --version` 与 MCP `serverInfo.version`。
 4. 创建带 `v` 前缀且与 Product version 一致的不可变 Git tag。

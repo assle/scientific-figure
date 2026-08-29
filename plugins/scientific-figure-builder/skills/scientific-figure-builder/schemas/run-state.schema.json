@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/run-state.schema.json",
+  "title": "Run State",
+  "description": "Resumable run state with call/retry accounting (plan section 7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "parent_run_id",
+    "current_step",
+    "steps",
+    "calls",
+    "retries",
+    "cache_hits",
+    "approval_checkpoints",
+    "resume"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "parent_run_id": { "type": ["string", "null"] },
+    "current_step": { "type": "string", "minLength": 1 },
+    "current_phase": { "type": "string", "minLength": 1 },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "status", "output_hashes"],
+        "properties": {
+          "step": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "running", "completed", "failed", "skipped"]
+          },
+          "output_hashes": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "calls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["counts", "budget"],
+      "properties": {
+        "counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "retries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transient", "quality"],
+      "properties": {
+        "transient": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "quality": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "cache_hits": { "type": "integer", "minimum": 0 },
+    "artifacts": { "type": "object", "additionalProperties": { "type": "object" } },
+    "audit_log": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "details"],
+        "properties": {
+          "event": {"type": "string", "minLength": 1},
+          "details": {"type": "object"}
+        }
+      }
+    },
+    "approval_checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkpoint", "status"],
+        "properties": {
+          "checkpoint": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }
+        }
+      }
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_step"],
+      "properties": {
+        "from_step": { "type": "string", "minLength": 1 },
+        "invalidate_downstream": { "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "scientific-figure-builder",
+  "version": "0.2.0",
+  "description": "Reproducible scientific-figure workflows backed by a local lifecycle MCP server.",
+  "author": {
+    "name": "assle",
+    "url": "https://github.com/assle"
+  },
+  "homepage": "https://github.com/assle/scientific-figure",
+  "repository": "https://github.com/assle/scientific-figure",
+  "license": "MIT",
+  "keywords": [
+    "science",
+    "figures",
+    "visualization",
+    "mcp",
+    "reproducibility"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Scientific Figure Builder",
+    "shortDescription": "Build reproducible publication figures.",
+    "longDescription": "Plan, render, validate, repair, and export publication-ready scientific figures through a governed lifecycle. Deterministic Python and SVG paths own data, text, equations, layout, and export; configured providers handle eligible image and multimodal work.",
+    "developerName": "assle",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/assle/scientific-figure",
+    "defaultPrompt": [
+      "Create a publication-ready figure from my data.",
+      "Plan and validate a reproducible multipanel figure.",
+      "Export my scientific figure as PNG, SVG, and PDF."
+    ],
+    "brandColor": "#3B6FF5",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg"
+  },
+  "mcpServers": "./.mcp.json"
+}

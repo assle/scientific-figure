@@ -26,7 +26,7 @@ _Avoid_: plugin, product installation, project configuration
 
 **Agent integration bundle**:
 A coordinated but host-managed delivery of the Workflow Skill, Lifecycle MCP server, Core runtime, and one or more Agent integrations.
-_Avoid_: Native plugin, Skill, MCP
+_Avoid_: Native plugin, current Codex delivery, Skill, MCP
 
 **Native plugin**:
 A host-installable package with a standard plugin identity that owns its bundled Skills, MCP servers, resources, and enable, upgrade, and uninstall lifecycle.

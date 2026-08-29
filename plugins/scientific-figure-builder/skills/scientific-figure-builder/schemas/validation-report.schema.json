@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/validation-report.schema.json",
+  "title": "Validation Report",
+  "description": "Deterministic + multimodal validation results (plan section 11).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "checks", "summary"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "run_id": { "type": "string", "minLength": 1 },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check_id", "scope", "level", "status"],
+        "properties": {
+          "check_id": { "type": "string", "minLength": 1 },
+          "scope": { "type": "string", "minLength": 1 },
+          "level": { "type": "string", "enum": ["error", "warning"] },
+          "status": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+          "detail": { "type": "string" },
+          "bbox": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "element_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "method": { "type": "string" },
+          "evidence_path": { "type": "string" },
+          "repair_action": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["errors", "warnings", "passed", "blocking"],
+      "properties": {
+        "errors": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "blocking": { "type": "boolean" }
+      }
+    }
+  }
+}

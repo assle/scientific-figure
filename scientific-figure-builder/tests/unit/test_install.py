@@ -383,6 +383,31 @@ def test_installer_gui_option_is_explicit():
     parser = build_parser()
     assert parser.parse_args([]).with_gui is False
     assert parser.parse_args(["--with-gui"]).with_gui is True
+    assert parser.parse_args(["--runtime-only"]).target == "runtime"
+
+
+def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path):
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    result = install_delivery(
+        Path(__file__).resolve().parents[2],
+        paths,
+        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        run_smoke_test=False,
+        install_opencode=False,
+        install_codex=False,
+    )
+    assert Path(result["runtime"]).is_dir()
+    assert Path(result["launcher"]).is_file()
+    assert not paths.skill_dir.exists()
+    assert not paths.codex_skill_dir.exists()
+    assert not paths.config_file.exists()
+    assert not paths.codex_config_file.exists()
 
 
 def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypatch):

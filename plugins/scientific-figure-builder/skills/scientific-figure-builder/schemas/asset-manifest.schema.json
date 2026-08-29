@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/asset-manifest.schema.json",
+  "title": "Asset Manifest",
+  "description": "Manifest of all figure assets with provenance (plan section 7).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assets"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/asset" }
+    }
+  },
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_id",
+        "type",
+        "path",
+        "content_hash",
+        "pixel_dimensions",
+        "transparent",
+        "z_order",
+        "validation_result"
+      ],
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["image_asset", "data_plot", "vector_element", "text", "equation"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "content_hash": { "type": "string", "minLength": 1 },
+        "generation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "parameters"],
+          "properties": {
+            "model": { "type": "string", "minLength": 1 },
+            "parameters": { "type": "object" }
+          }
+        },
+        "prompt_hash": { "type": "string" },
+        "reference_hashes": { "type": "array", "items": { "type": "string" } },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["endpoint_id", "timestamp"],
+          "properties": {
+            "endpoint_id": { "type": "string", "minLength": 1 },
+            "seed": { "type": ["integer", "null"] },
+            "timestamp": { "type": "string", "minLength": 1 }
+          }
+        },
+        "pixel_dimensions": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "transparent": { "type": "boolean" },
+        "placement": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "panel_id": { "type": "string" },
+            "bbox": {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "z_order": { "type": "integer" },
+        "style_anchor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["is_anchor"],
+          "properties": {
+            "is_anchor": { "type": "boolean" },
+            "anchor_of": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "validation_result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "string", "enum": ["pass", "fail", "pending"] },
+            "detail": { "type": "string" }
+          }
+        },
+        "parent_asset_id": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

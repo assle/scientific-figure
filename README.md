@@ -30,11 +30,11 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The current `0.2.0` development line ships as an **Agent integration bundle** for
-Codex and OpenCode. It is not yet a Native Codex plugin: the standard plugin
-manifest and host-managed install, upgrade, and uninstall lifecycle are planned
-work. This distinction keeps today's installation contract accurate while the
-project moves toward a clean, standardized plugin distribution.
+The current `0.2.0` development line ships a **Native Codex plugin**, an OpenCode
+Agent integration, and an independently versioned Core runtime. The Native plugin
+owns Codex discovery, enablement, upgrade, and removal of its Workflow Skill and
+MCP declaration; the separate Core runtime keeps deterministic execution and the
+optional Configuration app outside the host plugin cache.
 
 | Component | Responsibility |
 |---|---|
@@ -95,18 +95,21 @@ opening or saving configuration.
 
 ## Quick start
 
-### 1. Install
+### 1. Install the Core runtime and Codex plugin
 
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --with-gui
+./install.sh --runtime-only --with-gui
+codex plugin marketplace add .
+codex plugin add scientific-figure-builder@scientific-figure
 ```
 
-This desktop quick start installs the Core runtime and optional Configuration app.
-The lightweight default, `./install.sh`, installs only the Core runtime, Workflow
-Skill, and two-tool Lifecycle MCP server for Codex and OpenCode. Both modes create
-`~/.local/bin/scientific-figure` for a Global installation.
+The Core runtime command installs deterministic engines, the lifecycle MCP server,
+the CLI, and the optional Configuration app without editing Codex configuration.
+The repo marketplace then lets Codex install and own the Native plugin. Omit
+`--with-gui` for a headless Core runtime. OpenCode users install its separate
+Agent integration with `./install.sh --opencode-only`.
 
 ### 2. Configure Providers
 
@@ -188,8 +191,10 @@ precedence over its environment fallback.
 ## Installation options
 
 ```bash
-./install.sh                     # Core runtime only (default)
-./install.sh --with-gui          # Core plus Configuration app
+./install.sh --runtime-only        # Core and CLI for the Native Codex plugin
+./install.sh --runtime-only --with-gui
+./install.sh                       # legacy Codex + OpenCode integration bundle
+./install.sh --with-gui            # legacy bundle plus Configuration app
 ./install.sh --codex-only
 ./install.sh --opencode-only
 ./install.sh --project /path/to/project
@@ -228,16 +233,21 @@ scope and that legacy runtime; a Project uninstall removes only its own scope.
 <summary><strong>Uninstall safely</strong></summary>
 
 ```bash
+codex plugin remove scientific-figure-builder@scientific-figure
 ./uninstall.sh                  # keep user config and Keyring credentials
 ./uninstall.sh --config         # also clean referenced Keyring entries
 ./uninstall.sh --project DIR    # remove one project-scoped integration
 ./uninstall.sh --dry-run
+codex plugin marketplace remove scientific-figure # optional: stop listing this repo
 ```
 
-The uninstaller removes every version in the selected runtime scope, including
-the optional GUI when present, plus only this tool's marked launcher and MCP
-entries. A Global uninstall also removes the retained legacy runtime. If Keyring
-cleanup fails, user configuration is retained.
+Native plugin removal deletes its cached Skill and MCP declaration without
+creating or leaving a top-level Codex MCP entry. It deliberately preserves the
+independent Core runtime, Global configuration, and Keyring credentials. The
+source uninstaller removes every version in the selected runtime scope, including
+the optional GUI, plus only legacy installer-owned launcher and MCP entries. A
+Global uninstall also removes the retained legacy runtime. If Keyring cleanup
+fails, user configuration is retained.
 </details>
 
 ## Versioning

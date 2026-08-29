@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/figure-brief.schema.json",
+  "title": "Figure Brief",
+  "description": "Versioned user intent and delivery constraints produced by Intake.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "brief_id",
+    "figure_id",
+    "run_id",
+    "request",
+    "intent",
+    "inputs",
+    "delivery",
+    "language",
+    "style",
+    "assumptions",
+    "uncertainties",
+    "required_clarifications",
+    "status",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "artifact_type": {"const": "figure_brief"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "figure_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "request": {"type": "object"},
+    "intent": {"type": "string"},
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_figures", "data_sources"],
+      "properties": {
+        "reference_figures": {"type": "array", "items": {"type": "string"}},
+        "data_sources": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export_target": {"type": "string", "enum": ["general", "ppt"]},
+        "figure_width_cm": {"type": "number", "exclusiveMinimum": 0},
+        "include_pptx": {"type": "boolean"}
+      }
+    },
+    "language": {"type": ["string", "null"], "enum": ["zh", "en", null]},
+    "style": {"type": ["string", "null"]},
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "uncertainties": {"type": "array", "items": {"type": "string"}},
+    "required_clarifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "question", "default"],
+        "properties": {
+          "field": {"type": "string", "minLength": 1},
+          "question": {"type": "string", "minLength": 1},
+          "default": {}
+        }
+      }
+    },
+    "status": {"type": "string", "enum": ["draft", "ready"]},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "prompt_version", "prompt_hash", "request_hash"],
+      "properties": {
+        "phase": {"const": "intake"},
+        "prompt_version": {"type": "string", "minLength": 1},
+        "prompt_hash": {"type": "string", "minLength": 1},
+        "request_hash": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
