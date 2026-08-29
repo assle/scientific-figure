@@ -377,7 +377,11 @@ class ProviderRouter(ProviderTransport):
             if resolved is None:
                 continue
             _internal_role, model_cfg = resolved
-            provider_name = str(model_cfg.get("provider", "ark"))
+            provider_name = model_cfg.get("provider")
+            if not isinstance(provider_name, str) or not provider_name:
+                raise ProviderError(
+                    f"model role {_internal_role!r} requires an explicit Provider ID"
+                )
             self._routes[role] = provider_name
 
     def _transport_for(self, provider_name: str) -> ProviderTransport:

@@ -23,6 +23,7 @@ from typing import Any
 from figure_tools.config import user_config_path
 from figure_tools.provider_configuration import (
     PROVIDER_TYPE_FIELD_DEFAULTS,
+    migrate_legacy_provider,
     normalize_provider,
     normalize_provider_id,
 )
@@ -179,7 +180,7 @@ class GlobalConfigEditor:
             if not isinstance(provider, MutableMapping):
                 continue
             try:
-                normalized = normalize_provider(str(provider_id), provider)
+                normalized = migrate_legacy_provider(str(provider_id), provider)
             except ValueError as exc:
                 raise ConfigSerializationError(str(exc)) from exc
             provider.clear()

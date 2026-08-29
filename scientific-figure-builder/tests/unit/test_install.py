@@ -21,10 +21,13 @@ from install.configure_opencode import (
 )
 from install.install_delivery import (
     InstallRequest,
+    LegacyCodexDeliveryAdapter,
     LAUNCHER_MARKER,
+    OpenCodeDeliveryAdapter,
     build_parser,
     delivery_paths,
     install,
+    host_delivery_adapters,
     launcher_text,
     sync_runtime,
     validate_launcher_target,
@@ -532,6 +535,7 @@ def test_install_request_is_the_single_target_scope_and_version_interface(tmp_pa
     assert request.install_opencode is True
     assert request.install_codex is False
     assert request.with_gui is True
+    assert isinstance(host_delivery_adapters(request)[0], OpenCodeDeliveryAdapter)
     with pytest.raises(ValueError, match="scope"):
         InstallRequest(
             source_dir=request.source_dir,
@@ -540,6 +544,18 @@ def test_install_request_is_the_single_target_scope_and_version_interface(tmp_pa
             scope="project",
             product_version=paths.product_version,
         )
+
+    both = InstallRequest(
+        source_dir=request.source_dir,
+        paths=paths,
+        target="both",
+        scope="global",
+        product_version=paths.product_version,
+    )
+    assert [type(adapter) for adapter in host_delivery_adapters(both)] == [
+        OpenCodeDeliveryAdapter,
+        LegacyCodexDeliveryAdapter,
+    ]
 
 
 def test_cli_translates_flags_into_an_install_request(tmp_path: Path, monkeypatch, capsys):

@@ -40,6 +40,10 @@ DEFAULT_BUDGET = {
 _UNSET = object()
 
 
+class RuntimeContextError(RuntimeError):
+    """A Runtime Context construction failure with a redacted message."""
+
+
 def default_runtime_cache_dir() -> Path:
     explicit = os.environ.get("SCIENTIFIC_FIGURE_CACHE_DIR")
     if explicit:
@@ -144,12 +148,15 @@ class RuntimeContextFactory:
                 }
             budget: dict[str, int] = {}
         else:
-            transport = self.transport_factory(
-                models,
-                providers,
-                credentials=live_credentials,
-                redactor=redactor,
-            )
+            try:
+                transport = self.transport_factory(
+                    models,
+                    providers,
+                    credentials=live_credentials,
+                    redactor=redactor,
+                )
+            except Exception as exc:  # adapters may echo credentials in failures
+                raise RuntimeContextError(redactor.safe_exception(exc)) from exc
             budget = dict(DEFAULT_BUDGET)
             if "phase_reasoning" not in models:
                 budget.pop("phase_reasoning", None)
@@ -197,6 +204,7 @@ class RuntimeContextFactory:
 __all__ = [
     "DEFAULT_BUDGET",
     "RuntimeContext",
+    "RuntimeContextError",
     "RuntimeContextFactory",
     "default_runtime_cache_dir",
     "load_run_state",

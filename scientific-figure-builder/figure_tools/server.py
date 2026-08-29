@@ -49,7 +49,10 @@ def _initialize(arguments: dict[str, Any]) -> dict[str, Any]:
 def _advance(arguments: dict[str, Any]) -> dict[str, Any]:
     run_dir = Path(arguments["run_dir"])
     project_dir = _project_dir_for(arguments)
-    context = RuntimeContextFactory().create(project_dir, run_dir)
+    try:
+        context = RuntimeContextFactory().create(project_dir, run_dir)
+    except Exception as exc:  # construction errors are already secret-safe
+        raise PublicToolError(str(exc)) from exc
     orchestrator = FigureOrchestrator(
         request=arguments.get("request"),
         config=context.effective_config,

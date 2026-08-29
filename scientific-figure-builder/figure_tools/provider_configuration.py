@@ -95,6 +95,36 @@ def normalize_provider(
     *,
     warn_legacy: bool = True,
 ) -> dict[str, Any]:
+    normalized = migrate_legacy_provider(
+        provider_id, provider, warn_legacy=warn_legacy
+    )
+    provider_type = normalized.get("type")
+
+    provider_type = str(provider_type)
+    normalized["type"] = provider_type
+    if "base_url" in normalized:
+        normalized["base_url"] = normalize_provider_base_url(normalized["base_url"])
+    defaults = PROVIDER_TYPE_FIELD_DEFAULTS[provider_type]
+    for name in PROVIDER_TYPE_SPECIFIC_FIELDS - defaults.keys():
+        normalized.pop(name, None)
+    for name, default in defaults.items():
+        value = normalized.get(name, default)
+        normalized[name] = (
+            bool(value)
+            if isinstance(default, bool)
+            else ("" if value is None else str(value).strip()) or default
+        )
+    return normalized
+
+
+def migrate_legacy_provider(
+    provider_id: str,
+    provider: Mapping[str, Any],
+    *,
+    warn_legacy: bool = True,
+) -> dict[str, Any]:
+    """Migrate only legacy type metadata without applying editable defaults."""
+
     normalized = copy.deepcopy(dict(provider))
     provider_type = normalized.get("type")
     legacy_protocol = normalized.get("protocol")
@@ -124,20 +154,7 @@ def normalize_provider(
             f"provider {provider_id!r} has unsupported type {provider_type!r}; "
             f"expected one of {', '.join(PROVIDER_TYPES)}"
         )
-    provider_type = str(provider_type)
-    normalized["type"] = provider_type
-    if "base_url" in normalized:
-        normalized["base_url"] = normalize_provider_base_url(normalized["base_url"])
-    defaults = PROVIDER_TYPE_FIELD_DEFAULTS[provider_type]
-    for name in PROVIDER_TYPE_SPECIFIC_FIELDS - defaults.keys():
-        normalized.pop(name, None)
-    for name, default in defaults.items():
-        value = normalized.get(name, default)
-        normalized[name] = (
-            bool(value)
-            if isinstance(default, bool)
-            else str(value).strip() or default
-        )
+    normalized["type"] = str(provider_type)
     return normalized
 
 
@@ -296,6 +313,7 @@ __all__ = [
     "configured_model_routes",
     "effective_model_route",
     "merge_model_route_sources",
+    "migrate_legacy_provider",
     "normalize_provider",
     "normalize_provider_base_url",
     "normalize_provider_id",

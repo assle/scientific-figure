@@ -54,6 +54,18 @@ def test_figure_brief_change_invalidates_every_dependent_artifact(tmp_path):
     assert "plans/figure_plan.json" in plan.removed_paths
 
 
+def test_clarification_submission_replaces_the_draft_brief_and_request(tmp_path):
+    invalidator, state = _prepared_run(tmp_path)
+    request_path = tmp_path / "plans" / "request.json"
+    request_path.write_text("request", encoding="utf-8")
+
+    invalidator.for_clarification_submission()
+
+    assert not (tmp_path / "plans" / "figure_brief.json").exists()
+    assert not request_path.exists()
+    assert state.step_status("intake") == "pending"
+
+
 def test_figure_plan_change_preserves_the_new_plan_and_invalidates_derived_outputs(tmp_path):
     invalidator, state = _prepared_run(tmp_path)
 

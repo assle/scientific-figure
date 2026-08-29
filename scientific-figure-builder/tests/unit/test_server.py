@@ -8,6 +8,7 @@ from pathlib import Path
 
 import figure_tools.server as server
 from figure_tools.runtime_context import RuntimeContextFactory
+from figure_tools.state import RunState
 
 
 ROOT = Path(__file__).parents[2]
@@ -48,6 +49,16 @@ def _request():
         "style": "default",
         "auto_execute": True,
     }
+
+
+def _use_offline_runtime(monkeypatch, tmp_path):
+    factory = RuntimeContextFactory(
+        config_loader=lambda _project: {"models": {}, "providers": {}},
+        environ={},
+        cache_dir=tmp_path / "cache",
+    )
+    monkeypatch.setattr(server, "RuntimeContextFactory", lambda: factory)
+    return factory
 
 
 def test_initialize_and_tools_list_expose_exactly_two_public_tools(monkeypatch):
@@ -104,12 +115,7 @@ def test_public_schema_rejection_happens_at_tools_call(monkeypatch):
 def test_advance_call_delegates_through_runtime_context_and_orchestrator(
     monkeypatch, tmp_path
 ):
-    factory = RuntimeContextFactory(
-        config_loader=lambda _project: {"models": {}, "providers": {}},
-        environ={},
-        cache_dir=tmp_path / "cache",
-    )
-    monkeypatch.setattr(server, "RuntimeContextFactory", lambda: factory)
+    _use_offline_runtime(monkeypatch, tmp_path)
     response = _rpc(
         monkeypatch,
         {
@@ -130,6 +136,158 @@ def test_advance_call_delegates_through_runtime_context_and_orchestrator(
     assert payload["status"] == "completed"
     assert payload["phase"] == "export"
     assert (tmp_path / "run" / "plans" / "figure_plan.json").is_file()
+
+
+def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
+    _use_offline_runtime(monkeypatch, tmp_path)
+    clarification_request = _request()
+    clarification_request.update({
+        "export_target": None,
+        "figure_width_cm": None,
+        "language": None,
+        "style": None,
+    })
+    clarification_run = tmp_path / "clarification-run"
+    approval_request = _request()
+    approval_request["auto_execute"] = False
+    approval_run = tmp_path / "approval-run"
+    responses = _rpc(
+        monkeypatch,
+        {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(clarification_run), "request": clarification_request,
+            }},
+        },
+        {
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(clarification_run),
+                "action": {"action": "submit_clarifications", "answers": {
+                    "export_target": "general", "figure_width_cm": 14.0,
+                    "language": "en", "style": "default",
+                }},
+            }},
+        },
+        {
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(approval_run), "request": approval_request,
+            }},
+        },
+        {
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(approval_run), "action": "approve_plan",
+            }},
+        },
+        {
+            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(approval_run), "action": "resume",
+            }},
+        },
+    )
+    payloads = [
+        json.loads(response["result"]["content"][0]["text"])
+        for response in responses
+    ]
+    assert payloads[0]["next_action"] == "submit_clarifications"
+    assert payloads[1]["status"] == "completed"
+    assert payloads[2]["next_action"] == "approve_plan"
+    assert payloads[3]["status"] == "completed"
+    assert payloads[4]["status"] == "completed"
+
+
+def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation(
+    monkeypatch, tmp_path
+):
+    _use_offline_runtime(monkeypatch, tmp_path)
+    request = _request()
+    request["panels"] = [
+        {
+            "panel_id": f"panel-{index}",
+            "bbox": [index / 3, 0, 1 / 3, 1],
+            "physical_size": [60, 112.5],
+            "elements": [{
+                "element_id": f"asset-{index}",
+                "type": "image_asset",
+                "prompt": f"asset {index}",
+            }],
+        }
+        for index in range(3)
+    ]
+    run_dir = tmp_path / "style-run"
+    responses = _rpc(
+        monkeypatch,
+        {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "run_dir": str(run_dir),
+                "base_dir": str(ROOT), "request": request,
+            }},
+        },
+        {
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "run_dir": str(run_dir),
+                "base_dir": str(ROOT), "action": "approve_style_anchor",
+            }},
+        },
+    )
+    payloads = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
+    assert payloads[0]["next_action"] == "approve_style_anchor"
+    assert payloads[1]["status"] == "completed"
+    assert RunState.load(run_dir / "run_state.json").calls_used("generation") == 3
+
+
+def test_json_rpc_covers_repair_and_force_export(monkeypatch, tmp_path):
+    _use_offline_runtime(monkeypatch, tmp_path)
+    broken = _request()
+    broken["panels"][0]["elements"][0]["plot_spec"] = str(
+        FIXTURES / "missing.json"
+    )
+    repair_run = tmp_path / "repair-run"
+    force_run = tmp_path / "force-run"
+    messages = []
+    for message_id, run_dir in ((1, repair_run), (3, force_run)):
+        messages.append({
+            "jsonrpc": "2.0", "id": message_id, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(run_dir), "request": broken,
+            }},
+        })
+        action = (
+            {"action": "apply_repair", "repairs": [{
+                "asset_id": "curve", "route": "python",
+                "plot_spec": str(FIXTURES / "plot_spec_line.json"),
+            }]}
+            if run_dir == repair_run
+            else {"action": "force_export", "reason": "explicit test override"}
+        )
+        messages.append({
+            "jsonrpc": "2.0", "id": message_id + 1, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(run_dir), "action": action,
+            }},
+        })
+    responses = _rpc(monkeypatch, *messages)
+    payloads = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
+    assert payloads[0]["next_action"] == "repair_required"
+    assert payloads[1]["status"] == "completed"
+    assert payloads[2]["next_action"] == "repair_required"
+    assert payloads[3]["status"] == "completed"
+    export_result = json.loads(
+        (force_run / "plans" / "export_result.json").read_text()
+    )
+    assert export_result["forced"] is True
 
 
 def test_runtime_errors_are_redacted_before_protocol_output(monkeypatch, tmp_path):
@@ -168,3 +326,25 @@ def test_runtime_errors_are_redacted_before_protocol_output(monkeypatch, tmp_pat
 
     assert "sk-secret" not in response["error"]["message"]
     assert "***REDACTED***" in response["error"]["message"]
+
+
+def test_runtime_context_construction_errors_use_the_safe_protocol_path(
+    monkeypatch, tmp_path
+):
+    class BrokenFactory:
+        def create(self, project_dir, run_dir):
+            raise RuntimeError("***REDACTED*** context construction failed")
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", BrokenFactory)
+    response = _rpc(
+        monkeypatch,
+        {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {
+                "name": "advance_figure_workflow",
+                "arguments": {"run_dir": str(tmp_path / "run")},
+            },
+        },
+    )[0]
+
+    assert response["error"]["message"] == "***REDACTED*** context construction failed"

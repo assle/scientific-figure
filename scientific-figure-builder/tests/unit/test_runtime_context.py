@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from figure_tools.providers.auth import MemorySecretStore
 from figure_tools.providers.transport import MockProviderTransport
-from figure_tools.runtime_context import RuntimeContextFactory
+from figure_tools.runtime_context import RuntimeContextError, RuntimeContextFactory
 from figure_tools.state import RunState
 
 
@@ -105,3 +107,21 @@ def test_factory_uses_the_same_state_adapter_for_new_and_resumed_runs(tmp_path):
     assert state_calls[0][0] == tmp_path / "named-run" / "run_state.json"
     assert context.state.step_status("intake") == "completed"
     assert context.store.run_dir == tmp_path / "named-run"
+
+
+def test_transport_construction_errors_are_redacted(tmp_path):
+    def broken_transport(*_args, **_kwargs):
+        raise RuntimeError("transport rejected sk-secret")
+
+    factory = RuntimeContextFactory(
+        config_loader=lambda _project: _config(),
+        secret_store=MemorySecretStore({"cred-live": "sk-secret"}),
+        environ={},
+        transport_factory=broken_transport,
+        cache_dir=tmp_path / "cache",
+    )
+
+    with pytest.raises(RuntimeContextError) as raised:
+        factory.create(tmp_path / "project", tmp_path / "run")
+    assert "sk-secret" not in str(raised.value)
+    assert "***REDACTED***" in str(raised.value)

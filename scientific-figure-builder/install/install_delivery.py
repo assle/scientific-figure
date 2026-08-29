@@ -21,7 +21,7 @@ import tomllib
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
-from typing import Callable, Sequence
+from typing import Callable, Protocol, Sequence
 
 from figure_tools.install_paths import (
     DeliveryPaths,
@@ -121,6 +121,114 @@ class InstallResult:
     pruned_paths: tuple[Path, ...]
     legacy_runtime_retained: Path | None
     runtime_backup: Path | None
+
+
+@dataclass(frozen=True)
+class StagedHostPath:
+    staged: Path
+    destination: Path
+    stage: str
+
+
+class HostDeliveryAdapter(Protocol):
+    """One real host-specific delivery implementation."""
+
+    def preflight(self, paths: DeliveryPaths) -> None: ...
+
+    def targets(self, paths: DeliveryPaths) -> tuple[Path, ...]: ...
+
+    def stage(
+        self,
+        transaction: InstallTransaction,
+        source_dir: Path,
+        paths: DeliveryPaths,
+        runtime_python_path: Path,
+    ) -> tuple[StagedHostPath, ...]: ...
+
+
+class OpenCodeDeliveryAdapter:
+    def preflight(self, paths: DeliveryPaths) -> None:
+        load_config(paths.config_file)
+
+    def targets(self, paths: DeliveryPaths) -> tuple[Path, ...]:
+        return paths.skill_dir, paths.command_file, paths.config_file
+
+    def stage(
+        self,
+        transaction: InstallTransaction,
+        source_dir: Path,
+        paths: DeliveryPaths,
+        runtime_python_path: Path,
+    ) -> tuple[StagedHostPath, ...]:
+        skill = transaction.stage_path("opencode-skill")
+        _copy_selected(source_dir, skill, SKILL_ITEMS)
+        command = transaction.stage_path("opencode-command.md")
+        shutil.copy2(source_dir / COMMAND_SOURCE, command)
+        existing_text = (
+            paths.config_file.read_text(encoding="utf-8")
+            if paths.config_file.exists()
+            else ""
+        )
+        config = _write_staged_text(
+            transaction.stage_path("opencode-config.json"),
+            render_mcp_merge(
+                existing_text,
+                DEFAULT_MCP_NAME,
+                mcp_entry_for_python(runtime_python_path),
+            ),
+        )
+        return (
+            StagedHostPath(skill, paths.skill_dir, "opencode_skill"),
+            StagedHostPath(command, paths.command_file, "opencode_command"),
+            StagedHostPath(config, paths.config_file, "opencode_config"),
+        )
+
+
+class LegacyCodexDeliveryAdapter:
+    def preflight(self, paths: DeliveryPaths) -> None:
+        if paths.codex_config_file.exists():
+            text = paths.codex_config_file.read_text(encoding="utf-8")
+            if text.strip():
+                tomllib.loads(text)
+
+    def targets(self, paths: DeliveryPaths) -> tuple[Path, ...]:
+        return paths.codex_skill_dir, paths.codex_config_file
+
+    def stage(
+        self,
+        transaction: InstallTransaction,
+        source_dir: Path,
+        paths: DeliveryPaths,
+        runtime_python_path: Path,
+    ) -> tuple[StagedHostPath, ...]:
+        skill = transaction.stage_path("codex-skill")
+        _copy_selected(source_dir, skill, SKILL_ITEMS)
+        existing_text = (
+            paths.codex_config_file.read_text(encoding="utf-8")
+            if paths.codex_config_file.exists()
+            else ""
+        )
+        config = _write_staged_text(
+            transaction.stage_path("codex-config.toml"),
+            render_codex_mcp_config(
+                existing_text,
+                DEFAULT_MCP_NAME,
+                codex_mcp_entry(runtime_python_path, paths.runtime_dir),
+            ),
+        )
+        return (
+            StagedHostPath(skill, paths.codex_skill_dir, "codex_skill"),
+            StagedHostPath(config, paths.codex_config_file, "codex_config"),
+        )
+
+
+def host_delivery_adapters(request: InstallRequest) -> tuple[HostDeliveryAdapter, ...]:
+    adapters: list[HostDeliveryAdapter] = []
+    if request.install_opencode:
+        adapters.append(OpenCodeDeliveryAdapter())
+    if request.install_codex:
+        adapters.append(LegacyCodexDeliveryAdapter())
+    return tuple(adapters)
 
 
 def read_product_version(source_dir: Path | None = None) -> str:
@@ -288,19 +396,14 @@ def preflight_install(
     source_dir: Path,
     paths: DeliveryPaths,
     *,
-    install_opencode: bool,
-    install_codex: bool,
+    host_adapters: Sequence[HostDeliveryAdapter],
     with_gui: bool,
 ) -> None:
     """Validate every known failure mode before creating transaction state."""
 
     validate_source(source_dir)
-    if install_opencode:
-        load_config(paths.config_file)
-    if install_codex and paths.codex_config_file.exists():
-        text = paths.codex_config_file.read_text(encoding="utf-8")
-        if text.strip():
-            tomllib.loads(text)
+    for adapter in host_adapters:
+        adapter.preflight(paths)
     validate_launcher_target(paths.launcher_file)
 
     targets = [
@@ -312,10 +415,8 @@ def preflight_install(
     ]
     if paths.launcher_file is not None:
         targets.append(paths.launcher_file)
-    if install_opencode:
-        targets.extend((paths.skill_dir, paths.command_file, paths.config_file))
-    if install_codex:
-        targets.extend((paths.codex_skill_dir, paths.codex_config_file))
+    for adapter in host_adapters:
+        targets.extend(adapter.targets(paths))
     for target in targets:
         parent = _nearest_existing_parent(target.parent)
         if not os.access(parent, os.W_OK):
@@ -395,14 +496,12 @@ def install(
 ) -> InstallResult:
     source_dir = request.source_dir.resolve()
     paths = request.paths
-    install_opencode = request.install_opencode
-    install_codex = request.install_codex
+    adapters = host_delivery_adapters(request)
     with_gui = request.with_gui
     preflight_install(
         source_dir,
         paths,
-        install_opencode=install_opencode,
-        install_codex=install_codex,
+        host_adapters=adapters,
         with_gui=with_gui,
     )
     previous_active = read_active_runtime(paths.active_runtime_file)
@@ -422,19 +521,20 @@ def install(
     committed_paths: list[str] = []
     with InstallTransaction(paths) as transaction:
         staged_runtime = transaction.stage_path("runtime")
-        staged_opencode_skill = transaction.stage_path("opencode-skill")
-        staged_codex_skill = transaction.stage_path("codex-skill")
         _copy_selected(source_dir, staged_runtime, RUNTIME_ITEMS)
-        if install_opencode:
-            _copy_selected(source_dir, staged_opencode_skill, SKILL_ITEMS)
-        if install_codex:
-            _copy_selected(source_dir, staged_codex_skill, SKILL_ITEMS)
 
         staged_runtime_python = runtime_sync(staged_runtime, with_gui)
         if run_smoke_test:
             smoke_test_mcp(staged_runtime_python, staged_runtime)
         runtime_python_relative = staged_runtime_python.relative_to(staged_runtime)
         final_runtime_python = paths.runtime_dir / runtime_python_relative
+        staged_host_paths = tuple(
+            staged
+            for adapter in adapters
+            for staged in adapter.stage(
+                transaction, source_dir, paths, final_runtime_python
+            )
+        )
 
         staged_launcher = None
         if paths.launcher_file is not None:
@@ -442,41 +542,6 @@ def install(
                 transaction.stage_path("launcher"),
                 launcher_text(final_runtime_python),
                 executable=True,
-            )
-
-        staged_command = None
-        staged_opencode_config = None
-        if install_opencode:
-            staged_command = transaction.stage_path("opencode-command.md")
-            shutil.copy2(source_dir / COMMAND_SOURCE, staged_command)
-            existing_text = (
-                paths.config_file.read_text(encoding="utf-8")
-                if paths.config_file.exists()
-                else ""
-            )
-            opencode_text = render_mcp_merge(
-                existing_text,
-                DEFAULT_MCP_NAME,
-                mcp_entry_for_python(final_runtime_python),
-            )
-            staged_opencode_config = _write_staged_text(
-                transaction.stage_path("opencode-config.json"), opencode_text
-            )
-
-        staged_codex_config = None
-        if install_codex:
-            existing_text = (
-                paths.codex_config_file.read_text(encoding="utf-8")
-                if paths.codex_config_file.exists()
-                else ""
-            )
-            codex_text = render_codex_mcp_config(
-                existing_text,
-                DEFAULT_MCP_NAME,
-                codex_mcp_entry(final_runtime_python, paths.runtime_dir),
-            )
-            staged_codex_config = _write_staged_text(
-                transaction.stage_path("codex-config.toml"), codex_text
             )
 
         active_runtime = active_runtime_metadata(paths)
@@ -487,24 +552,18 @@ def install(
 
         transaction.replace(staged_runtime, paths.runtime_dir)
         inject("runtime")
-        if install_opencode:
-            transaction.replace(staged_opencode_skill, paths.skill_dir)
-            inject("opencode_skill")
-        if install_codex:
-            transaction.replace(staged_codex_skill, paths.codex_skill_dir)
-            inject("codex_skill")
+        staged_by_stage = {item.stage: item for item in staged_host_paths}
+        for stage in ("opencode_skill", "codex_skill"):
+            if item := staged_by_stage.get(stage):
+                transaction.replace(item.staged, item.destination)
+                inject(stage)
         if staged_launcher is not None and paths.launcher_file is not None:
             transaction.replace(staged_launcher, paths.launcher_file)
             inject("launcher")
-        if staged_command is not None:
-            transaction.replace(staged_command, paths.command_file)
-            inject("opencode_command")
-        if staged_opencode_config is not None:
-            transaction.replace(staged_opencode_config, paths.config_file)
-            inject("opencode_config")
-        if staged_codex_config is not None:
-            transaction.replace(staged_codex_config, paths.codex_config_file)
-            inject("codex_config")
+        for stage in ("opencode_command", "opencode_config", "codex_config"):
+            if item := staged_by_stage.get(stage):
+                transaction.replace(item.staged, item.destination)
+                inject(stage)
         transaction.replace(staged_active_runtime, paths.active_runtime_file)
         inject("active_runtime")
         transaction.commit()

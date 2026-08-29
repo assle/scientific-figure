@@ -6,12 +6,6 @@ import copy
 from typing import Any, Mapping
 
 from figure_tools.provenance import hash_json
-
-
-def stable_hash(value: Any) -> str:
-    return hash_json(value)
-
-
 class StructuredPhaseWorker:
     """Offline production worker for deterministic phase reasoning.
 
@@ -72,7 +66,7 @@ class StructuredPhaseWorker:
                 "phase": "intake",
                 "prompt_version": invocation.prompt_version,
                 "prompt_hash": str(invocation.context["prompt_hash"]),
-                "request_hash": stable_hash(request),
+                "request_hash": hash_json(request),
             },
         }
 
@@ -91,7 +85,7 @@ class StructuredPhaseWorker:
         )
         request["brief_ref"] = {
             "artifact": "plans/figure_brief.json",
-            "content_hash": stable_hash(brief),
+            "content_hash": hash_json(brief),
         }
         plan = create_figure_plan(
             request, style_bible_ref=request.get("style") or "default",
@@ -148,15 +142,15 @@ class StructuredPhaseWorker:
             "run_id": str(invocation.context["run_id"]),
             "plan_ref": {
                 "artifact": "plans/figure_plan.json",
-                "content_hash": stable_hash(plan),
+                "content_hash": hash_json(plan),
             },
             "execution_ref": {
                 "artifact": "plans/execution_result.json",
-                "content_hash": stable_hash(execution),
+                "content_hash": hash_json(execution),
             },
             "validation_ref": {
                 "artifact": "validation/final.json",
-                "content_hash": stable_hash(validation),
+                "content_hash": hash_json(validation),
             },
             "repairs": repairs,
             "status": "pending" if repairs else "unresolved",

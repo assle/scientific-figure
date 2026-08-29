@@ -291,6 +291,14 @@ def test_provider_router_rejects_unknown_provider():
         router.post("reference_analysis", "vision-model", {})
 
 
+def test_provider_router_requires_an_explicit_provider_id():
+    with pytest.raises(ProviderError, match="Provider ID"):
+        ProviderRouter(
+            {"vision_analyze": {"model": "vision-model"}},
+            {"ark": {"type": "openai", "base_url": "https://example.test"}},
+        )
+
+
 def test_provider_router_reuses_generation_provider_for_optional_edits(
     tmp_path: Path, monkeypatch,
 ):

@@ -24,12 +24,18 @@ from figure_tools.config_editor import (
 from figure_tools.connection_test import ConnectionTestResult, ConnectionTestService
 from figure_tools.provider_configuration import (
     MODEL_ROLE_CATALOG,
+    PROVIDER_TYPES,
     PROVIDER_TYPE_FIELD_DEFAULTS,
     normalize_provider,
     normalize_provider_base_url,
     route_compatibility,
 )
-from figure_tools.providers.auth import CredentialResolver, default_secret_store, sanitize_error
+from figure_tools.providers.auth import (
+    CredentialResolver,
+    default_secret_store,
+    provider_key_env,
+    sanitize_error,
+)
 
 _ROLE_PRESENTATION = {
     "phase_reasoning": ("阶段推理", "为每个生命周期阶段运行独立结构化推理"),
@@ -179,21 +185,40 @@ class GuiController(QObject):
         provider = self.draft.providers.get(provider_id, {})
         base = dict(provider) if isinstance(provider, Mapping) else {}
         base.update(self._provider_drafts.get(provider_id, {}))
+        provider_type = str(base.get("type", PROVIDER_TYPES[0]))
+        try:
+            canonical = normalize_provider(
+                provider_id,
+                {**base, "type": provider_type},
+                warn_legacy=False,
+            )
+        except ValueError:
+            canonical = {**base, "type": provider_type}
+        anthropic_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["anthropic"]
+        openai_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["openai"]
         return {
             "id": provider_id,
-            "type": str(base.get("type", "openai")),
-            "base_url": str(base.get("base_url", "")),
-            "key_env": str(base.get("key_env", "")),
+            "type": provider_type,
+            "base_url": str(canonical.get("base_url", "")),
+            "key_env": str(canonical.get("key_env", "")),
             "credential_id": str(base.get("credential_id", "")),
             "credential_status": (
                 "Keyring 已配置" if base.get("credential_id")
                 else "环境变量回退" if base.get("key_env")
                 else "未配置"
             ),
-            "auth_scheme": str(base.get("auth_scheme", "x-api-key")),
-            "messages_path": str(base.get("messages_path", "/messages")),
-            "anthropic_version": str(base.get("anthropic_version", "2023-06-01")),
-            "supports_image_edit": bool(base.get("supports_image_edit", False)),
+            "auth_scheme": str(canonical.get(
+                "auth_scheme", anthropic_defaults["auth_scheme"]
+            )),
+            "messages_path": str(canonical.get(
+                "messages_path", anthropic_defaults["messages_path"]
+            )),
+            "anthropic_version": str(canonical.get(
+                "anthropic_version", anthropic_defaults["anthropic_version"]
+            )),
+            "supports_image_edit": bool(canonical.get(
+                "supports_image_edit", openai_defaults["supports_image_edit"]
+            )),
             "api_key": str(base.get("api_key", "")),
         }
 
@@ -265,11 +290,12 @@ class GuiController(QObject):
             provider_id = validate_provider_id(provider_id)
             if provider_id in self.draft.providers:
                 raise ConfigEditorError("Provider ID 已存在")
+            provider_type = PROVIDER_TYPES[0]
             self.editor.set_provider(self.draft, provider_id, {
-                "type": "openai",
+                "type": provider_type,
                 "base_url": "",
-                "key_env": f"{provider_id.upper()}_API_KEY",
-                "supports_image_edit": False,
+                "key_env": provider_key_env(provider_id, {"type": provider_type}),
+                **PROVIDER_TYPE_FIELD_DEFAULTS[provider_type],
             })
         except Exception as exc:  # noqa: BLE001
             self._notify(sanitize_error(exc), "error")

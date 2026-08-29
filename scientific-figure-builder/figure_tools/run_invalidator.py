@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
@@ -58,6 +57,22 @@ class RunInvalidator:
             ),
             cleared_steps=("planning", "planning_approval", *_EXECUTION_STEPS),
             cleared_artifacts=("figure_plan", *_EXECUTION_ARTIFACTS),
+        ))
+
+    def for_clarification_submission(self) -> InvalidationPlan:
+        return self.apply(InvalidationPlan(
+            removed_paths=(
+                "plans/figure_brief.json",
+                "plans/request.json",
+                "plans/figure_plan.json",
+                "plans/layout_wireframe.svg",
+                "plans/layout_analysis.json",
+                *_EXECUTION_PATHS,
+            ),
+            cleared_steps=(
+                "intake", "planning", "planning_approval", *_EXECUTION_STEPS,
+            ),
+            cleared_artifacts=("figure_brief", "figure_plan", *_EXECUTION_ARTIFACTS),
         ))
 
     def after_figure_plan_change(self) -> InvalidationPlan:
@@ -121,11 +136,7 @@ class RunInvalidator:
         for artifact in plan.cleared_artifacts:
             self.state.clear_artifact(artifact)
         for relative in plan.removed_paths:
-            path = self.store.path(relative)
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
+            self.store.delete(relative)
         self.store.ensure_structure()
         return plan
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -93,6 +94,13 @@ class RunStore:
         finally:
             temporary.unlink(missing_ok=True)
         return self.reference(relative_path)
+
+    def delete(self, relative_path: str | Path) -> None:
+        path = self.path(relative_path)
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
 
     def validate(self, value: Mapping[str, Any], schema: str) -> None:
         self._validate(value, schema)

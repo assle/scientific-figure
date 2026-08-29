@@ -18,6 +18,7 @@ from figure_tools.lifecycle_prompts import (
     prompt_for,
 )
 from figure_tools.phase_workers import StructuredPhaseWorker
+from figure_tools.provenance import hash_file
 from figure_tools.run_invalidator import RunInvalidator
 from figure_tools.run_store import RunStore
 
@@ -87,6 +88,7 @@ class FigureOrchestrator:
             self.request = self._load_request_from_brief()
         if self.request is None:
             raise ValueError("request is required to start a figure run")
+        assert self.request is not None
         if action_name == "apply_repair":
             self._apply_repair(action_data)
             return self.advance("resume")
@@ -117,16 +119,38 @@ class FigureOrchestrator:
                 self._next_plan_revision = int(plan.get("revision", 1)) + 1
                 self.invalidator.after_figure_brief_change()
                 plan = self._planning(brief)
+            else:
+                recorded_plan_hash = self.state.output_hashes("planning").get(
+                    "figure_plan"
+                )
+                current_plan_hash = self.store.hash_json(plan)
+                if recorded_plan_hash and recorded_plan_hash != current_plan_hash:
+                    self.store.validate(plan, "figure-plan.schema.json")
+                    self.invalidator.after_figure_plan_change()
+                    from figure_tools.execution import FigureExecution
+
+                    FigureExecution(
+                        self.request,
+                        self.config,
+                        self.run_dir,
+                        self.provider,
+                        self.state,
+                        base_dir=self.base_dir,
+                        compose_dpi=self.compose_dpi,
+                    ).prepare_plan_artifacts(plan)
         self.state.mark_step("planning", "completed", {
             "figure_plan": self.store.hash_json(plan),
         })
         self._record_artifact("figure_brief", "plans/figure_brief.json")
         self._record_artifact("figure_plan", "plans/figure_plan.json")
 
-        if (action_name in (None, "start", "resume")
-                and self.state.step_status("export") == "completed"
-                and (self.run_dir / "exports").exists()):
-            return self._completed_result()
+        if (
+            action_name in (None, "start", "resume")
+            and self.state.step_status("export") == "completed"
+        ):
+            if self._completed_artifacts_current(plan):
+                return self._completed_result()
+            self._reconcile_stale_completion(plan)
 
         plan_approved = self.state.step_status("planning_approval") == "completed"
         if action_name == "approve_plan":
@@ -159,13 +183,13 @@ class FigureOrchestrator:
             self.request, self.config, self.run_dir, self.provider, self.state,
             base_dir=self.base_dir, compose_dpi=self.compose_dpi,
         )
-        existing_execution = self._existing_execution()
+        existing_execution = self._existing_execution(plan)
         if existing_execution is not None:
             execution_result, execution = existing_execution
         else:
-            layout_path = self.run_dir / "plans" / "layout_analysis.json"
-            layout_report = (json.loads(layout_path.read_text(encoding="utf-8"))
-                             if layout_path.is_file() else {})
+            layout_report = (
+                self.store.load_optional_json("plans/layout_analysis.json") or {}
+            )
             pre_rendered_assets = self.store.load_optional_json("plans/pre_rendered_assets.json") or {}
             execution = execution_module.execute_plan(
                 plan, export_target=self._export_target(),
@@ -175,6 +199,7 @@ class FigureOrchestrator:
             )
             if execution.get("paused"):
                 if execution.get("pause_reason") == "style_anchor_approval":
+                    self.state.request_approval("style_anchor_approval", "pending")
                     self.state.mark_step("execution", "pending")
                     return self._paused(
                         "execution", "approve_style_anchor",
@@ -185,10 +210,11 @@ class FigureOrchestrator:
                     )
                 return self._paused("execution", execution.get("pause_reason", "continue"))
 
+            if action_name == "approve_style_anchor":
+                self.state.request_approval("style_anchor_approval", "approved")
+
             execution_result = self._write_execution_result(execution, plan)
-            pre_rendered_path = self.run_dir / "plans" / "pre_rendered_assets.json"
-            if pre_rendered_path.exists():
-                pre_rendered_path.unlink()
+            self.store.delete("plans/pre_rendered_assets.json")
             self.state.mark_step("execution", "completed", {
                 "execution_result": self.store.hash_json(execution_result),
             })
@@ -325,14 +351,8 @@ class FigureOrchestrator:
         draft = self.store.load_optional_json("plans/figure_brief.json")
         if draft is not None and draft.get("status") != "draft":
             raise ValueError("clarifications can only update a draft Figure brief")
-        self.invalidator.after_figure_brief_change()
+        self.invalidator.for_clarification_submission()
         self.request.update(dict(answers))
-        for rel in ("plans/figure_brief.json", "plans/request.json"):
-            path = self.run_dir / rel
-            if path.exists():
-                path.unlink()
-        self.state.clear_step("intake")
-        self.state.clear_artifact("figure_brief")
 
     def _intake(self) -> dict[str, Any]:
         assert self.request is not None
@@ -406,9 +426,7 @@ class FigureOrchestrator:
             "prompt_hash": self._prompt_hash(phase),
             "allowed_tools": list(invocation.allowed_tools),
         })
-        (self.run_dir / "prompts" / f"{phase}.txt").write_text(
-            invocation.prompt, encoding="utf-8",
-        )
+        self.store.commit_text(f"prompts/{phase}.txt", invocation.prompt)
         return self.worker.run(invocation)
 
     def _write_execution_result(self, result: Mapping[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
@@ -517,21 +535,139 @@ class FigureOrchestrator:
         return artifact
 
     def _existing_execution(
-        self,
+        self, plan: Mapping[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]] | None:
         if self.state.step_status("execution") != "completed":
             return None
-        execution_result = self.store.load_optional_json("plans/execution_result.json")
-        manifest = self.store.load_optional_json("asset_manifest.json")
-        if (execution_result is None or manifest is None
-                or not (self.run_dir / "assembly").is_dir()
-                or not (self.run_dir / "validation" / "final.json").is_file()):
+        if not self._execution_artifacts_current(plan):
             return None
+        execution_result = self.store.load_json(
+            "plans/execution_result.json", schema="execution-result.schema.json"
+        )
+        manifest = self.store.load_json(
+            "asset_manifest.json", schema="asset-manifest.schema.json"
+        )
         return execution_result, {
             "paused": False,
             "manifest": manifest,
             "validation_reports": list(execution_result.get("validation_reports", [])),
         }
+
+    def _execution_artifacts_current(self, plan: Mapping[str, Any]) -> bool:
+        try:
+            execution = self.store.load_json(
+                "plans/execution_result.json", schema="execution-result.schema.json"
+            )
+            manifest = self.store.load_json(
+                "asset_manifest.json", schema="asset-manifest.schema.json"
+            )
+            final = self.store.load_json(
+                "validation/final.json", schema="validation-report.schema.json"
+            )
+        except Exception:  # corrupt or missing artifacts are never reusable
+            return False
+        if (execution.get("plan_ref") or {}).get("content_hash") != self.store.hash_json(plan):
+            return False
+        references = (
+            (execution.get("asset_manifest"), "asset_manifest.json"),
+            (execution.get("plots"), "plots"),
+            (execution.get("vectors"), "vectors"),
+            (execution.get("assembly"), "assembly"),
+        )
+        if any(not self._reference_matches(reference, relative) for reference, relative in references):
+            return False
+        for reference in execution.get("layout_manifests", []):
+            path = Path(str(reference.get("path", "")))
+            try:
+                relative = path.relative_to(self.run_dir)
+            except ValueError:
+                return False
+            if not self._reference_matches(reference, relative):
+                return False
+        reports = execution.get("validation_reports") or []
+        if reports and self.store.hash_json(reports[-1]) != self.store.hash_json(final):
+            return False
+        return self._manifest_assets_current(manifest)
+
+    def _completed_artifacts_current(self, plan: Mapping[str, Any]) -> bool:
+        if not self._execution_artifacts_current(plan):
+            return False
+        state_artifacts = {
+            "figure_brief": "plans/figure_brief.json",
+            "figure_plan": "plans/figure_plan.json",
+            "execution_result": "plans/execution_result.json",
+            "validation_report": "validation/final.json",
+            "export_result": "plans/export_result.json",
+            "exports": "exports",
+        }
+        if any(
+            not self._reference_matches(self.state.artifact(name), relative)
+            for name, relative in state_artifacts.items()
+        ):
+            return False
+        try:
+            export_result = self.store.load_json(
+                "plans/export_result.json", schema="export-result.schema.json"
+            )
+        except Exception:
+            return False
+        return (
+            self._reference_matches(
+                export_result.get("validation_ref"), "validation/final.json"
+            )
+            and self._reference_matches(export_result.get("assembly_ref"), "assembly")
+        )
+
+    def _reconcile_stale_completion(self, plan: Mapping[str, Any]) -> None:
+        if not self._execution_artifacts_current(plan):
+            manifest = self.store.load_optional_json("asset_manifest.json")
+            self._remove_corrupt_manifest_assets(manifest)
+            reusable = self._reusable_raster_assets(manifest)
+            if reusable:
+                self.store.commit_json("plans/pre_rendered_assets.json", reusable)
+            self.invalidator.after_assembly_change()
+            return
+        self.invalidator.for_export_rerun()
+
+    def _reference_matches(
+        self, reference: Any, relative_path: str | Path,
+    ) -> bool:
+        if not isinstance(reference, Mapping):
+            return False
+        current = self.store.reference(relative_path)
+        return (
+            current["exists"] is True
+            and reference.get("exists", True) is True
+            and reference.get("content_hash") == current["content_hash"]
+        )
+
+    @staticmethod
+    def _manifest_assets_current(manifest: Mapping[str, Any]) -> bool:
+        for asset in manifest.get("assets", []):
+            path = Path(str(asset.get("path", "")))
+            if not path.is_file() or asset.get("content_hash") != hash_file(path):
+                return False
+        return True
+
+    def _remove_corrupt_manifest_assets(
+        self, manifest: Mapping[str, Any] | None,
+    ) -> None:
+        for asset in (manifest or {}).get("assets", []):
+            path = Path(str(asset.get("path", "")))
+            if path.is_file() and asset.get("content_hash") == hash_file(path):
+                continue
+            asset_id = str(asset.get("asset_id", ""))
+            asset_type = asset.get("type")
+            if asset_type == "data_plot":
+                self.store.delete(f"plots/{asset_id}")
+            elif asset_type in {"text", "label", "annotation", "equation", "vector_element"}:
+                self.store.delete(f"vectors/{asset_id}.svg")
+            elif asset_type == "image_asset":
+                try:
+                    relative = path.relative_to(self.run_dir)
+                except ValueError:
+                    continue
+                self.store.delete(relative)
 
     def _completed_result(self) -> dict[str, Any]:
         self.state.mark_phase("export")
@@ -572,6 +708,8 @@ class FigureOrchestrator:
         if ((repair_plan.get("validation_ref") or {}).get("content_hash")
                 != self.store.hash_json(validation_report)):
             raise ValueError("Repair plan references a different Validation report")
+        manifest = self.store.load_optional_json("asset_manifest.json")
+        pre_rendered = self._reusable_raster_assets(manifest)
         elements = {
             el["element_id"]: el
             for panel in self.request.get("panels", [])
@@ -617,7 +755,6 @@ class FigureOrchestrator:
             elif element.get("type") == "image_asset":
                 if route != "image_edit":
                     raise ValueError(f"invalid raster repair route: {route}")
-                manifest = self.store.load_optional_json("asset_manifest.json")
                 manifest_asset = next(
                     (asset for asset in (manifest or {}).get("assets", [])
                      if asset.get("asset_id") == asset_id),
@@ -639,9 +776,7 @@ class FigureOrchestrator:
                     parent_path, prompt, {}, output_path=parent_path,
                     parent_asset_id=asset_id,
                 )
-                pre_rendered = self.store.load_optional_json("plans/pre_rendered_assets.json") or {}
                 pre_rendered[asset_id] = meta
-                self.store.commit_json("plans/pre_rendered_assets.json", pre_rendered)
             else:
                 raise ValueError(f"asset {asset_id!r} is not repairable")
         self.store.validate(plan, "figure-plan.schema.json")
@@ -655,7 +790,47 @@ class FigureOrchestrator:
         })
         self._record_artifact("figure_plan", "plans/figure_plan.json")
         self.store.commit_json("plans/request.json", json.loads(json.dumps(self.request, default=str)))
+        if pre_rendered:
+            self.store.commit_json("plans/pre_rendered_assets.json", pre_rendered)
         self.invalidator.after_repairs(repaired_routes)
+        if "python" in repaired_routes.values():
+            from figure_tools.execution import FigureExecution
+
+            FigureExecution(
+                self.request,
+                self.config,
+                self.run_dir,
+                self.provider,
+                self.state,
+                base_dir=self.base_dir,
+                compose_dpi=self.compose_dpi,
+            ).prepare_plan_artifacts(plan)
+
+    @staticmethod
+    def _reusable_raster_assets(
+        manifest: Mapping[str, Any] | None,
+    ) -> dict[str, dict[str, Any]]:
+        reusable: dict[str, dict[str, Any]] = {}
+        for asset in (manifest or {}).get("assets", []):
+            if asset.get("type") != "image_asset":
+                continue
+            path = Path(str(asset.get("path", "")))
+            generation = asset.get("generation") or {}
+            if not path.is_file() or not isinstance(generation, Mapping):
+                continue
+            reusable[str(asset["asset_id"])] = {
+                "path": str(path),
+                "content_hash": asset.get("content_hash"),
+                "model": generation.get("model"),
+                "parameters": dict(generation.get("parameters") or {}),
+                "prompt_hash": asset.get("prompt_hash"),
+                "reference_hashes": list(asset.get("reference_hashes") or []),
+                "pixel_dimensions": list(asset.get("pixel_dimensions") or []),
+                "transparent": bool(asset.get("transparent")),
+                "provenance": dict(asset.get("provenance") or {}),
+                "parent_asset_id": asset.get("parent_asset_id"),
+            }
+        return reusable
 
     def _export_target(self) -> str:
         from figure_tools.vector.svg_normalize import resolve_export_target

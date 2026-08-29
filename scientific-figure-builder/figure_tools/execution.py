@@ -82,13 +82,16 @@ class FigureExecution:
         if len(ai_elements) >= 3:
             anchor_id = ai_elements[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
+            anchor_meta = None
             if not anchor_path.exists():
-                self.provider.generate_image_asset(
+                anchor_meta = self.provider.generate_image_asset(
                     ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
             if not style_anchor_approved:
-                self.state.request_approval("style_anchor_approval", "pending")
+                if anchor_meta is not None:
+                    self.store.commit_json(
+                        "plans/pre_rendered_assets.json", {anchor_id: anchor_meta}
+                    )
                 return {"paused": True, "pause_reason": "style_anchor_approval"}
-            self.state.request_approval("style_anchor_approval", "approved")
 
         manifest_assets, validation_reports, placements, text_placements = \
             self._render_assets(plan, ai_elements, export_target,
@@ -368,9 +371,14 @@ class FigureExecution:
                 try:
                     spec = load_plot_spec(el["plot_spec"])
                     out = self.run_dir / "plots" / asset_id
-                    render_plot(spec, output_dir=out, base_dir=self.base_dir,
-                                export_target=export_target)
                     path = out / "plot.png"
+                    if not path.is_file():
+                        render_plot(
+                            spec,
+                            output_dir=out,
+                            base_dir=self.base_dir,
+                            export_target=export_target,
+                        )
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
@@ -430,13 +438,13 @@ class FigureExecution:
         for i, label in enumerate(self.request.get("labels", [])):
             asset_id = label["element_id"]
             svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
-            svg_path.parent.mkdir(parents=True, exist_ok=True)
-            canvas = SvgCanvas(width=200, height=40)
-            canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
-            svg = normalize_svg_bytes(
-                canvas.to_string().encode("utf-8"), export_target=export_target
-            ).decode("utf-8")
-            self.store.commit_text(f"vectors/{asset_id}.svg", svg)
+            if not svg_path.is_file():
+                canvas = SvgCanvas(width=200, height=40)
+                canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
+                svg = normalize_svg_bytes(
+                    canvas.to_string().encode("utf-8"), export_target=export_target
+                ).decode("utf-8")
+                self.store.commit_text(f"vectors/{asset_id}.svg", svg)
             manifest_assets.append(self._vector_meta(asset_id, "text", svg_path, plan))
             panel = self.request["panels"][i] if i < len(self.request["panels"]) else None
             if panel is not None:

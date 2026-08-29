@@ -260,6 +260,51 @@ def test_changed_figure_brief_cannot_reuse_an_old_plan(tmp_path: Path):
     assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
 
+def test_externally_revised_plan_invalidates_execution_before_resume(tmp_path: Path):
+    orchestrator, run_dir, _client = _orchestrator(tmp_path, _request())
+    assert orchestrator.advance()["status"] == "completed"
+    plan_path = run_dir / "plans" / "figure_plan.json"
+    plan = json.loads(plan_path.read_text())
+    plan["canvas"]["width"] += 1
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    resumed = orchestrator.advance("resume")
+
+    assert resumed["status"] == "completed"
+    execution = json.loads(
+        (run_dir / "plans" / "execution_result.json").read_text()
+    )
+    assert execution["plan_ref"]["content_hash"] == hash_json(plan)
+
+
+def test_completed_resume_repairs_changed_export_without_provider_calls(tmp_path: Path):
+    orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
+    assert orchestrator.advance()["status"] == "completed"
+    exported = run_dir / "exports" / "figure.png"
+    exported.write_bytes(b"corrupt export")
+    calls_before = list(client.transport.calls)
+
+    resumed = orchestrator.advance("resume")
+
+    assert resumed["status"] == "completed"
+    assert exported.read_bytes() == (run_dir / "assembly" / "figure.png").read_bytes()
+    assert client.transport.calls == calls_before
+
+
+def test_completed_resume_restores_a_changed_paid_asset_from_cache(tmp_path: Path):
+    orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
+    assert orchestrator.advance()["status"] == "completed"
+    asset = run_dir / "assets" / "fiber.png"
+    asset.write_bytes(b"corrupt raster")
+    generation_before = client.state.calls_used("generation")
+
+    resumed = orchestrator.advance("resume")
+
+    assert resumed["status"] == "completed"
+    assert asset.read_bytes() != b"corrupt raster"
+    assert client.state.calls_used("generation") == generation_before
+
+
 def test_resume_completed_run_reuses_artifacts_without_provider_calls(tmp_path: Path):
     orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
     first = orchestrator.advance()
@@ -363,9 +408,10 @@ def test_deterministic_repair_rerenders_source_and_reaches_export(tmp_path: Path
     request["panels"][0]["elements"][0]["plot_spec"] = str(
         FIXTURES / "does_not_exist.json"
     )
-    orchestrator, run_dir, _ = _orchestrator(tmp_path, request)
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
     paused = orchestrator.advance()
     assert paused["next_action"] == "repair_required"
+    generation_calls = client.state.calls_used("generation")
     unrelated_marker = run_dir / "assets" / "unrelated.marker"
     unrelated_marker.write_text("preserve", encoding="utf-8")
 
@@ -379,7 +425,9 @@ def test_deterministic_repair_rerenders_source_and_reaches_export(tmp_path: Path
     })
 
     assert repaired["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_calls
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
+    assert (run_dir / "plans" / "layout_analysis.json").is_file()
     assert (run_dir / "exports" / "figure.png").is_file()
     assert not (run_dir / "plans" / "repair_plan.json").exists()
     assert unrelated_marker.read_text(encoding="utf-8") == "preserve"

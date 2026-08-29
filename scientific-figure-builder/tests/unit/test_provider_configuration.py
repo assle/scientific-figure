@@ -74,6 +74,14 @@ def test_normalization_removes_fields_for_the_other_provider_type_and_adds_defau
     assert "anthropic_version" not in openai
     assert openai["supports_image_edit"] is True
 
+    defaults = normalize_provider("p", {
+        "type": "anthropic",
+        "auth_scheme": None,
+        "messages_path": "",
+    })
+    assert defaults["auth_scheme"] == "x-api-key"
+    assert defaults["messages_path"] == "/messages"
+
 
 def test_model_routes_ignore_placeholders_apply_environment_and_inherit_image_edit():
     models = configured_model_routes({
