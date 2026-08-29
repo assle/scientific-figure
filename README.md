@@ -197,6 +197,33 @@ precedence over its environment fallback.
 ./install.sh --verify --with-gui # require both Core and GUI
 ```
 
+### Filesystem layout
+
+Code, the private virtual environment, and dependencies live in a versioned
+application-payload prefix rather than `XDG_DATA_HOME`:
+
+| Category | Unix default | Windows default |
+|---|---|---|
+| Global Core runtime | `~/.local/lib/scientific-figure-builder/global/runtimes/<version>` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\global\runtimes\<version>` |
+| Project Core runtime | `~/.local/lib/scientific-figure-builder/projects/<project-id>/runtimes/<version>` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\projects\<project-id>\runtimes\<version>` |
+| Global configuration | `$XDG_CONFIG_HOME/scientific-figure-builder/config.yaml` | `%APPDATA%\scientific-figure-builder\config.yaml` |
+| Application state root | `$XDG_STATE_HOME/scientific-figure-builder` | `%LOCALAPPDATA%\State\scientific-figure-builder` |
+| Application cache root | `$XDG_CACHE_HOME/scientific-figure-builder` | `%LOCALAPPDATA%\Cache\scientific-figure-builder` |
+| Launcher | `~/.local/bin/scientific-figure` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\bin\scientific-figure.cmd` |
+
+Absolute XDG overrides are honored. `SCIENTIFIC_FIGURE_INSTALL_HOME` overrides
+the application-payload prefix and `SCIENTIFIC_FIGURE_BIN_DIR` overrides the
+launcher directory. Project paths are hashed only to create an isolated runtime
+identity; user projects remain where the user put them.
+
+Each Agent integration points to an exact Product version. Installing a newer
+version builds and verifies a new runtime before switching the active-runtime
+record, so a failed upgrade leaves the previous runtime and integration usable.
+When the old `$XDG_DATA_HOME/scientific-figure-builder` runtime is detected, a
+successful Global installation records it as the migration source and retains
+it for rollback. A full Global uninstall removes both the versioned runtime
+scope and that legacy runtime; a Project uninstall removes only its own scope.
+
 <details>
 <summary><strong>Uninstall safely</strong></summary>
 
@@ -207,8 +234,9 @@ precedence over its environment fallback.
 ./uninstall.sh --dry-run
 ```
 
-The uninstaller removes the complete private runtime, including the optional GUI
-when present, plus only this tool's marked launcher and MCP entries. If Keyring
+The uninstaller removes every version in the selected runtime scope, including
+the optional GUI when present, plus only this tool's marked launcher and MCP
+entries. A Global uninstall also removes the retained legacy runtime. If Keyring
 cleanup fails, user configuration is retained.
 </details>
 

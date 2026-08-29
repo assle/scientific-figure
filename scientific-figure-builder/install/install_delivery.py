@@ -19,10 +19,25 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import uuid
-from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path, PurePath
 from typing import Callable, Sequence
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "figure_tools").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
+from figure_tools.install_paths import (  # noqa: E402
+    DeliveryPaths,
+    PathEnvironment,
+    activate_runtime,
+    active_runtime_matches,
+    resolve_delivery_paths,
+)
 
 try:
     from .configure_opencode import (
@@ -72,70 +87,55 @@ SKILL_ITEMS = ("SKILL.md", "references", "schemas", "templates")
 COMMAND_SOURCE = Path("commands") / "scientific-figure.md"
 
 
-@dataclass(frozen=True)
-class DeliveryPaths:
-    runtime_dir: Path
-    skill_dir: Path
-    command_file: Path
-    config_file: Path
-    codex_skill_dir: Path
-    codex_config_file: Path
-    launcher_file: Path | None = None
+def read_product_version(source_dir: Path | None = None) -> str:
+    root = source_dir or Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(project["project"]["version"])
 
 
-def default_config_home() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-
-
-def default_data_home() -> Path:
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-
-
-def default_codex_home() -> Path:
-    return Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+def default_path_environment() -> PathEnvironment:
+    return PathEnvironment.from_environ()
 
 
 def delivery_paths(
     *,
-    config_home: Path,
-    data_home: Path,
+    config_home: Path | None = None,
+    data_home: Path | None = None,
+    state_home: Path | None = None,
+    cache_home: Path | None = None,
+    session_home: Path | None = None,
+    install_home: Path | None = None,
     project_dir: Path | None = None,
     codex_home: Path | None = None,
     bin_dir: Path | None = None,
+    product_version: str | None = None,
+    environment: PathEnvironment | None = None,
 ) -> DeliveryPaths:
-    if project_dir is None:
-        opencode_home = config_home / "opencode"
-        codex_home = codex_home or default_codex_home()
-        json_file = opencode_home / "opencode.json"
-        jsonc_file = json_file.with_suffix(".jsonc")
-        config_file = (
-            jsonc_file if jsonc_file.exists() and not json_file.exists() else json_file
-        )
-        codex_config_file = codex_home / "config.toml"
-        launcher_file = (bin_dir or (Path.home() / ".local" / "bin")) / (
-            "scientific-figure.cmd" if os.name == "nt" else "scientific-figure"
-        )
-    else:
-        project_dir = project_dir.resolve()
-        opencode_home = project_dir / ".opencode"
-        codex_home = codex_home or (project_dir / ".codex")
-        candidates = (
-            project_dir / "opencode.json",
-            project_dir / "opencode.jsonc",
-            opencode_home / "opencode.json",
-            opencode_home / "opencode.jsonc",
-        )
-        config_file = next((path for path in candidates if path.exists()), candidates[0])
-        codex_config_file = codex_home / "config.toml"
-        launcher_file = None
-    return DeliveryPaths(
-        runtime_dir=data_home / SKILL_NAME,
-        skill_dir=opencode_home / "skills" / SKILL_NAME,
-        command_file=opencode_home / "commands" / "scientific-figure.md",
-        config_file=config_file,
-        codex_skill_dir=codex_home / "skills" / SKILL_NAME,
-        codex_config_file=codex_config_file,
-        launcher_file=launcher_file,
+    resolved = environment or default_path_environment()
+    overrides: dict[str, Path] = {}
+    if config_home is not None:
+        overrides["config_root"] = config_home.expanduser().absolute()
+    if data_home is not None:
+        overrides["data_root"] = data_home.expanduser().absolute()
+        overrides["legacy_data_root"] = data_home.expanduser().absolute()
+    if state_home is not None:
+        overrides["state_root"] = state_home.expanduser().absolute()
+    if cache_home is not None:
+        overrides["cache_root"] = cache_home.expanduser().absolute()
+    if session_home is not None:
+        overrides["session_root"] = session_home.expanduser().absolute()
+    if install_home is not None:
+        overrides["install_root"] = install_home.expanduser().absolute()
+    if codex_home is not None:
+        overrides["codex_home"] = codex_home.expanduser().absolute()
+    if bin_dir is not None:
+        overrides["launcher_dir"] = bin_dir.expanduser().absolute()
+    if overrides:
+        resolved = replace(resolved, **overrides)
+    return resolve_delivery_paths(
+        resolved,
+        product_version or read_product_version(),
+        project_dir,
     )
 
 
@@ -424,6 +424,8 @@ def install_delivery(
             backup=True,
         )
 
+    active_runtime = activate_runtime(paths)
+
     return {
         "skill": str(paths.skill_dir),
         "command": str(paths.command_file),
@@ -440,6 +442,13 @@ def install_delivery(
         "codex_config_backup": codex_config_result["backup"],
         "mcp_tools": 2,
         "gui_installed": _gui_component_installed(runtime_python, paths.runtime_dir),
+        "active_runtime": active_runtime,
+        "legacy_runtime_retained": (
+            str(paths.legacy_runtime_dir)
+            if paths.legacy_runtime_dir is not None
+            and paths.legacy_runtime_dir.is_dir()
+            else None
+        ),
         "launcher": str(launcher) if launcher else None,
         "launcher_warning": launcher_warning,
     }
@@ -454,6 +463,7 @@ def verify_delivery(
 ) -> dict[str, object]:
     checks: dict[str, bool] = {
         "runtime": (paths.runtime_dir / "figure_tools" / "server.py").is_file(),
+        "active_runtime": active_runtime_matches(paths),
     }
     if paths.launcher_file is not None:
         checks["launcher"] = (
@@ -536,6 +546,7 @@ def verify_delivery(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    path_environment = default_path_environment()
     parser = argparse.ArgumentParser(
         description=(
             "Install and configure Scientific Figure Builder for OpenCode and Codex."
@@ -571,13 +582,49 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config-home",
         type=Path,
-        default=default_config_home(),
+        default=path_environment.config_root,
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--data-home",
         type=Path,
-        default=default_data_home(),
+        default=path_environment.legacy_data_root,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--state-home",
+        type=Path,
+        default=path_environment.state_root,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--cache-home",
+        type=Path,
+        default=path_environment.cache_root,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--session-home",
+        type=Path,
+        default=path_environment.session_root,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--install-home",
+        type=Path,
+        default=path_environment.install_root,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--bin-dir",
+        type=Path,
+        default=path_environment.launcher_dir,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--codex-home",
+        type=Path,
+        default=path_environment.codex_home,
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -597,10 +644,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     install_opencode = args.target in {"both", "opencode"}
     install_codex = args.target in {"both", "codex"}
+    product_version = read_product_version(args.source_dir)
     paths = delivery_paths(
         config_home=args.config_home.expanduser(),
         data_home=args.data_home.expanduser(),
+        state_home=args.state_home.expanduser(),
+        cache_home=args.cache_home.expanduser(),
+        session_home=args.session_home.expanduser(),
+        install_home=args.install_home.expanduser(),
+        bin_dir=args.bin_dir.expanduser(),
+        codex_home=args.codex_home.expanduser(),
         project_dir=args.project,
+        product_version=product_version,
     )
     try:
         if args.verify:
@@ -634,6 +689,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     print("Scientific Figure Builder installed successfully.")
+    print(f"  Product version:   {paths.product_version}")
     print(f"  MCP:     {result['mcp_tools']} tools verified")
     print("  Core runtime:      installed")
     if result["gui_installed"]:
@@ -652,6 +708,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  Launcher:         {result['launcher']}")
     if result.get("launcher_warning"):
         print(f"  PATH warning:     {result['launcher_warning']}")
+    if result.get("legacy_runtime_retained"):
+        print(
+            "  Legacy runtime:    retained for rollback at "
+            f"{result['legacy_runtime_retained']}"
+        )
     agents = []
     if install_opencode:
         agents.append("OpenCode")

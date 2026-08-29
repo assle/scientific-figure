@@ -40,4 +40,6 @@
 
 普通卸载保留用户配置和 Keyring 凭据。`--config`/`--all` 只读取全局配置中列出的
 `credential_id`，按固定服务名清理对应条目；Keyring 清理失败时保留配置，不删除
-其他系统凭据。启动器只有包含 Scientific Figure Builder 标记时才会删除。
+其他系统凭据。启动器只有包含 Scientific Figure Builder 标记时才会删除。全局卸载
+删除全局运行时 scope 的全部版本和保留的旧数据目录运行时；项目卸载只删除由该项目
+路径标识的隔离 scope，不删除其他项目或全局运行时。

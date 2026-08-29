@@ -207,12 +207,24 @@ _Avoid_: configured Agent, main model role, Scientific Figure Builder Agent
 ## Delivery
 
 **Global installation**:
-A user-scoped delivery of the Configuration app and Agent integrations that can be used across projects.
+A user-scoped delivery with a version-isolated Core runtime and Agent integrations that can be used across projects.
 _Avoid_: Global configuration, system installation, project setup
 
 **Project installation**:
-A delivery of Agent integrations for one project that does not own the Global configuration or global Configuration app launcher.
+A delivery of Agent integrations and an isolated Core runtime for one project that does not own the Global configuration or global Configuration app launcher.
 _Avoid_: Project configuration, local environment, per-run setup
+
+**Runtime scope**:
+The set of coexisting Product-version runtimes owned by one Global installation or one Project installation.
+_Avoid_: runtime directory, virtual environment, project
+
+**Active runtime**:
+The verified Product-version runtime currently selected by one Runtime scope's Agent integrations.
+_Avoid_: latest version, current branch, running process
+
+**Legacy runtime**:
+An installation at the former data-directory location retained only as a recoverable migration source until Global uninstall.
+_Avoid_: active runtime, backup version, project runtime
 
 ## Validation
 

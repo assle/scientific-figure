@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "figure_tools").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
+from figure_tools.install_paths import PathEnvironment, read_active_runtime  # noqa: E402
 
 try:
     from .auth_cleanup import cleanup_keyring_credentials
@@ -76,6 +83,10 @@ def uninstall(
     *,
     config_home: Path,
     data_home: Path,
+    install_home: Path | None = None,
+    state_home: Path | None = None,
+    cache_home: Path | None = None,
+    session_home: Path | None = None,
     codex_home: Path,
     project_dir: Path | None = None,
     include_config: bool = False,
@@ -84,15 +95,22 @@ def uninstall(
 ) -> dict[str, Any]:
     paths = delivery_paths(
         config_home=config_home, data_home=data_home,
+        install_home=install_home,
+        state_home=state_home,
+        cache_home=cache_home,
+        session_home=session_home,
         project_dir=project_dir, codex_home=codex_home, bin_dir=bin_dir,
     )
     removed: list[str] = []
     warnings: list[str] = []
     if project_dir is None:
         targets = [
-            paths.runtime_dir, paths.skill_dir, paths.command_file,
+            paths.runtime_scope_dir, paths.state_dir, paths.cache_dir, paths.session_dir,
+            paths.skill_dir, paths.command_file,
             paths.codex_skill_dir,
         ]
+        if paths.legacy_runtime_dir is not None:
+            targets.append(paths.legacy_runtime_dir)
         if paths.launcher_file is not None and paths.launcher_file.exists():
             content = paths.launcher_file.read_text(encoding="utf-8", errors="replace")
             if LAUNCHER_MARKER in content:
@@ -103,8 +121,14 @@ def uninstall(
         config_candidates.append(codex_home / "config.toml")
         if include_config:
             user_config = config_home / NAME / "config.yaml"
+            active = read_active_runtime(paths.active_runtime_file)
+            credential_runtime = (
+                Path(active["runtime_dir"])
+                if active is not None and Path(active["runtime_dir"]).is_dir()
+                else paths.runtime_dir
+            )
             ok, cleanup_warning = cleanup_keyring_credentials(
-                user_config, dry_run=dry_run, runtime_dir=paths.runtime_dir,
+                user_config, dry_run=dry_run, runtime_dir=credential_runtime,
             )
             if cleanup_warning:
                 warnings.append(cleanup_warning)
@@ -113,7 +137,10 @@ def uninstall(
             else:
                 warnings.append("user config was retained because credential cleanup failed")
     else:
-        targets = [paths.skill_dir, paths.command_file, paths.codex_skill_dir]
+        targets = [
+            paths.runtime_scope_dir, paths.state_dir, paths.cache_dir, paths.session_dir,
+            paths.skill_dir, paths.command_file, paths.codex_skill_dir,
+        ]
         config_candidates = [
             project_dir / ".opencode" / name for name in ("opencode.json", "opencode.jsonc")
         ] + [project_dir / ".codex" / "config.toml", paths.config_file, paths.codex_config_file]
@@ -129,7 +156,7 @@ def uninstall(
 
 
 def main(argv: list[str] | None = None) -> int:
-    home = Path.home()
+    path_environment = PathEnvironment.from_environ()
     parser = argparse.ArgumentParser(description="Uninstall Scientific Figure Builder safely.")
     parser.add_argument("--config", action="store_true", help="also remove global config and its credentials")
     parser.add_argument("--all", action="store_true", help="global uninstall plus config")
@@ -137,9 +164,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     result = uninstall(
-        config_home=Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")),
-        data_home=Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")),
-        codex_home=Path(os.environ.get("CODEX_HOME", home / ".codex")),
+        config_home=path_environment.config_root,
+        data_home=path_environment.legacy_data_root,
+        install_home=path_environment.install_root,
+        state_home=path_environment.state_root,
+        cache_home=path_environment.cache_root,
+        session_home=path_environment.session_root,
+        codex_home=path_environment.codex_home,
+        bin_dir=path_environment.launcher_dir,
         project_dir=args.project,
         include_config=args.config or args.all,
         dry_run=args.dry_run,

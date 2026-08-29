@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from figure_tools.install_paths import discover_runtime_directory
 
 
 GUI_INSTALL_COMMAND = "scientific-figure install-gui"
@@ -23,25 +24,9 @@ def gui_available() -> bool:
 def runtime_directory() -> Path:
     """Locate the installed source runtime that owns ``pyproject.toml``."""
 
-    explicit = os.environ.get("SCIENTIFIC_FIGURE_RUNTIME_DIR")
-    candidates: list[Path] = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-
-    executable = Path(sys.executable).absolute()
-    if (
-        executable.parent.name.lower() in {"bin", "scripts"}
-        and executable.parent.parent.name == ".venv"
-    ):
-        candidates.append(executable.parent.parent.parent)
-    candidates.append(Path(__file__).resolve().parents[1])
-
-    for candidate in candidates:
-        if (candidate / "pyproject.toml").is_file() and (candidate / "uv.lock").is_file():
-            return candidate.absolute()
-    raise RuntimeError(
-        "could not locate the Scientific Figure Builder Core runtime; "
-        "rerun the source installer with `--with-gui`"
+    return discover_runtime_directory(
+        executable=Path(sys.executable),
+        module_file=Path(__file__),
     )
 
 

@@ -183,6 +183,29 @@ models:
 ./install.sh --verify --with-gui # 要求核心与 GUI 都已安装
 ```
 
+### 文件系统布局
+
+代码、私有虚拟环境和依赖使用带版本的应用载荷前缀，不再放入 `XDG_DATA_HOME`：
+
+| 类别 | Unix 默认位置 | Windows 默认位置 |
+|---|---|---|
+| 全局核心运行时 | `~/.local/lib/scientific-figure-builder/global/runtimes/<version>` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\global\runtimes\<version>` |
+| 项目核心运行时 | `~/.local/lib/scientific-figure-builder/projects/<project-id>/runtimes/<version>` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\projects\<project-id>\runtimes\<version>` |
+| 全局配置 | `$XDG_CONFIG_HOME/scientific-figure-builder/config.yaml` | `%APPDATA%\scientific-figure-builder\config.yaml` |
+| 应用状态根目录 | `$XDG_STATE_HOME/scientific-figure-builder` | `%LOCALAPPDATA%\State\scientific-figure-builder` |
+| 应用缓存根目录 | `$XDG_CACHE_HOME/scientific-figure-builder` | `%LOCALAPPDATA%\Cache\scientific-figure-builder` |
+| 启动器 | `~/.local/bin/scientific-figure` | `%LOCALAPPDATA%\Programs\ScientificFigureBuilder\bin\scientific-figure.cmd` |
+
+安装器接受绝对 XDG 覆盖；`SCIENTIFIC_FIGURE_INSTALL_HOME` 可覆盖应用载荷前缀，
+`SCIENTIFIC_FIGURE_BIN_DIR` 可覆盖启动器目录。项目路径只用于生成隔离运行时标识，
+不会移动用户项目。
+
+每个 Agent 集成都指向一个确切 Product version。升级会先建立并验证新运行时，再切换
+活动运行时记录，因此失败升级不会破坏旧版本。检测到旧
+`$XDG_DATA_HOME/scientific-figure-builder` 运行时时，成功的全局安装会记录迁移来源并
+保留旧目录用于回滚。完整全局卸载会同时删除版本化运行时 scope 和旧运行时；项目卸载
+只删除自己的隔离 scope。
+
 <details>
 <summary><strong>安全卸载</strong></summary>
 
@@ -193,8 +216,8 @@ models:
 ./uninstall.sh --dry-run
 ```
 
-卸载器会删除完整私有运行时及其中的可选 GUI，同时只删除本工具标记的启动器和 MCP
-条目；Keyring 清理失败时会保留用户配置。
+卸载器会删除所选运行时 scope 中的全部版本及可选 GUI，同时只删除本工具标记的
+启动器和 MCP 条目。全局卸载还会删除保留的旧运行时；Keyring 清理失败时会保留用户配置。
 </details>
 
 ## 版本管理

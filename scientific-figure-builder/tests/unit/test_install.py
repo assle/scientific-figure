@@ -28,6 +28,7 @@ from install.install_delivery import (
     validate_launcher_target,
     verify_delivery,
 )
+from figure_tools.install_paths import activate_runtime, read_active_runtime
 
 MCP_ENTRY = {
     "type": "local",
@@ -138,6 +139,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     global_paths = delivery_paths(
         config_home=config_home,
         data_home=data_home,
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -146,12 +148,16 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     )
     assert global_paths.config_file == config_home / "opencode" / "opencode.json"
     assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
+    assert global_paths.runtime_dir == (
+        tmp_path / "install" / "global" / "runtimes" / "0.2.0"
+    )
 
     project = tmp_path / "project"
     project.mkdir()
     project_paths = delivery_paths(
         config_home=config_home,
         data_home=data_home,
+        install_home=tmp_path / "install",
         project_dir=project,
         codex_home=project / ".codex",
         bin_dir=tmp_path / "bin",
@@ -161,6 +167,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     )
     assert project_paths.config_file == project / "opencode.json"
     assert project_paths.launcher_file is None
+    assert project_paths.runtime_dir != global_paths.runtime_dir
 
 
 def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
@@ -172,6 +179,7 @@ def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
     paths = delivery_paths(
         config_home=config_home,
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -186,6 +194,7 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         project_dir=project,
         codex_home=project / ".codex",
         bin_dir=tmp_path / "bin",
@@ -207,6 +216,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -226,6 +236,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
     assert paths.command_file.is_file()
     assert result["mcp_tools"] == 2
+    assert result["active_runtime"]["version"] == "0.2.0"
     assert Path(result["launcher"]).is_file()
     assert LAUNCHER_MARKER in Path(result["launcher"]).read_text(encoding="utf-8")
 
@@ -250,6 +261,7 @@ def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path)
     launcher.write_text("#!/bin/sh\necho unrelated\n", encoding="utf-8")
     paths = delivery_paths(
         config_home=tmp_path / "config", data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
     )
     with pytest.raises(RuntimeError, match="unrelated launcher"):
@@ -285,6 +297,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -346,6 +359,7 @@ def test_install_delivery_forwards_gui_selection(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -378,6 +392,7 @@ def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypa
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
+        install_home=tmp_path / "install",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -393,3 +408,57 @@ def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypa
     assert result["components"] == {"core": True, "gui": False}
     with pytest.raises(RuntimeError, match="gui_component"):
         verify_delivery(paths, require_gui=True)
+
+
+def test_failed_upgrade_preserves_previous_active_runtime(tmp_path: Path):
+    environment_kwargs = {
+        "config_home": tmp_path / "config",
+        "data_home": tmp_path / "data",
+        "install_home": tmp_path / "install",
+        "codex_home": tmp_path / "codex",
+        "bin_dir": tmp_path / "bin",
+    }
+    previous = delivery_paths(product_version="0.1.0", **environment_kwargs)
+    previous.runtime_dir.mkdir(parents=True)
+    (previous.runtime_dir / "kept.txt").write_text("previous", encoding="utf-8")
+    activate_runtime(previous)
+    upgrade = delivery_paths(product_version="0.2.0", **environment_kwargs)
+
+    def _fail_upgrade(_runtime: Path, _with_gui: bool) -> Path:
+        raise RuntimeError("upgrade failed")
+
+    with pytest.raises(RuntimeError, match="upgrade failed"):
+        install_delivery(
+            Path(__file__).resolve().parents[2],
+            upgrade,
+            runtime_sync=_fail_upgrade,
+            run_smoke_test=False,
+        )
+
+    assert (previous.runtime_dir / "kept.txt").read_text(encoding="utf-8") == "previous"
+    assert not upgrade.runtime_dir.exists()
+    assert read_active_runtime(previous.active_runtime_file)["version"] == "0.1.0"
+
+
+def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: Path):
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "legacy-data",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    assert paths.legacy_runtime_dir is not None
+    paths.legacy_runtime_dir.mkdir(parents=True)
+    (paths.legacy_runtime_dir / "old.txt").write_text("rollback", encoding="utf-8")
+    result = install_delivery(
+        Path(__file__).resolve().parents[2],
+        paths,
+        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        run_smoke_test=False,
+    )
+    assert result["legacy_runtime_retained"] == str(paths.legacy_runtime_dir)
+    assert (paths.legacy_runtime_dir / "old.txt").read_text(encoding="utf-8") == "rollback"
+    assert result["active_runtime"]["migrated_from"] == str(
+        paths.legacy_runtime_dir.absolute()
+    )

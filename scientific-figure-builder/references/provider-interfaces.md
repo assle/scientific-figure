@@ -181,7 +181,9 @@ The acceptance tests disable this cache (the client is built with `cache=None`)
 so a run reflects fresh provider calls rather than a cached pass. To force a
 fresh production-call instead of a cache hit, pass `force=True` on the client
 method, or clear the shared cache directory
-(`$(python -c 'import tempfile,pathlib;print(pathlib.Path(tempfile.gettempdir())/"scientific-figure-cache")')`).
+(`$XDG_CACHE_HOME/scientific-figure-builder/runtime`, defaulting to
+`~/.cache/scientific-figure-builder/runtime` on Unix). Set the absolute
+`SCIENTIFIC_FIGURE_CACHE_DIR` override when an isolated cache is required.
 
 Credentials are never cached and never written to logs, manifests, or run
 directories; the acceptance run asserts no key appears anywhere in the run tree.

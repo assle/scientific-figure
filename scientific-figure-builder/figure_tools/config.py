@@ -15,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from figure_tools.install_paths import APP_NAME, PathEnvironment
 from figure_tools._resources import template_path
 
 PROJECT_DIR_NAME = ".scientific-figure"
@@ -67,8 +68,7 @@ def user_config_path() -> Path:
     explicit_path = os.environ.get("SCIENTIFIC_FIGURE_CONFIG")
     if explicit_path:
         return Path(explicit_path)
-    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return config_home / USER_CONFIG_DIR_NAME / "config.yaml"
+    return PathEnvironment.from_environ().config_root / APP_NAME / "config.yaml"
 
 
 def load_user_config() -> dict[str, Any]:

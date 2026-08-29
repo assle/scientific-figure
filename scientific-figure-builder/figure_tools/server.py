@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -47,8 +46,20 @@ from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.svg_normalize import normalize_svg_bytes
 from figure_tools.vector.wireframe import generate_wireframe
+from figure_tools.install_paths import APP_NAME, PathEnvironment
 
-_CACHE_DIR = Path(tempfile.gettempdir()) / "scientific-figure-cache"
+
+def _default_cache_dir() -> Path:
+    explicit = os.environ.get("SCIENTIFIC_FIGURE_CACHE_DIR")
+    if explicit:
+        path = Path(explicit).expanduser()
+        if not path.is_absolute():
+            raise ValueError("SCIENTIFIC_FIGURE_CACHE_DIR must be an absolute path")
+        return path
+    return PathEnvironment.from_environ().cache_root / APP_NAME / "runtime"
+
+
+_CACHE_DIR = _default_cache_dir()
 # Default per-run paid-call budget (plan section 12).
 _DEFAULT_BUDGET = {
     "phase_reasoning": 10,
