@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -68,15 +69,45 @@ def test_clarification_submission_replaces_the_draft_brief_and_request(tmp_path)
 
 def test_figure_plan_change_preserves_the_new_plan_and_invalidates_derived_outputs(tmp_path):
     invalidator, state = _prepared_run(tmp_path)
+    previous = {
+        "panels": [{"panel_id": "a", "bbox": [0, 0, 1, 1]}],
+        "assets": [
+            {"asset_id": "plot-a", "type": "data_plot", "source": {"plot_spec": "a"}},
+            {"asset_id": "label-a", "type": "text", "source": {"content": "A"}},
+            {"asset_id": "raster-a", "type": "image_asset", "source": {"prompt": "A"}},
+        ],
+        "delivery": {"export_target": "general"},
+    }
+    current = copy.deepcopy(previous)
+    current["panels"][0]["bbox"] = [0.1, 0, 0.9, 1]
 
-    invalidator.after_figure_plan_change()
+    invalidator.after_figure_plan_change(previous, current)
 
     assert (tmp_path / "plans/figure_plan.json").exists()
     assert not (tmp_path / "plans/layout_analysis.json").exists()
-    assert not (tmp_path / "plots/plot-a/plot.png").exists()
+    assert (tmp_path / "plots/plot-a/plot.png").exists()
+    assert (tmp_path / "vectors/label-a.svg").exists()
+    assert (tmp_path / "assets/raster-a.png").exists()
+    assert not (tmp_path / "assembly/figure.png").exists()
     assert state.step_status("planning") == "completed"
     assert state.step_status("planning_approval") == "pending"
     assert state.step_status("execution") == "pending"
+
+
+def test_figure_plan_source_change_invalidates_only_the_changed_asset(tmp_path):
+    invalidator, _state = _prepared_run(tmp_path)
+    previous = {"assets": [
+        {"asset_id": "plot-a", "type": "data_plot", "source": {"plot_spec": "old"}},
+        {"asset_id": "raster-a", "type": "image_asset", "source": {"prompt": "same"}},
+    ]}
+    current = copy.deepcopy(previous)
+    current["assets"][0]["source"]["plot_spec"] = "new"
+
+    invalidator.after_figure_plan_change(previous, current)
+
+    assert not (tmp_path / "plots/plot-a/plot.png").exists()
+    assert (tmp_path / "plots/plot-b/plot.png").exists()
+    assert (tmp_path / "assets/raster-a.png").exists()
 
 
 @pytest.mark.parametrize(

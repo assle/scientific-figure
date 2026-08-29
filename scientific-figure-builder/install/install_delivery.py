@@ -128,6 +128,7 @@ class StagedHostPath:
     staged: Path
     destination: Path
     stage: str
+    priority: int
 
 
 class HostDeliveryAdapter(Protocol):
@@ -178,9 +179,9 @@ class OpenCodeDeliveryAdapter:
             ),
         )
         return (
-            StagedHostPath(skill, paths.skill_dir, "opencode_skill"),
-            StagedHostPath(command, paths.command_file, "opencode_command"),
-            StagedHostPath(config, paths.config_file, "opencode_config"),
+            StagedHostPath(skill, paths.skill_dir, "opencode_skill", 10),
+            StagedHostPath(command, paths.command_file, "opencode_command", 40),
+            StagedHostPath(config, paths.config_file, "opencode_config", 50),
         )
 
 
@@ -217,8 +218,8 @@ class LegacyCodexDeliveryAdapter:
             ),
         )
         return (
-            StagedHostPath(skill, paths.codex_skill_dir, "codex_skill"),
-            StagedHostPath(config, paths.codex_config_file, "codex_config"),
+            StagedHostPath(skill, paths.codex_skill_dir, "codex_skill", 20),
+            StagedHostPath(config, paths.codex_config_file, "codex_config", 60),
         )
 
 
@@ -536,13 +537,16 @@ def install(
             )
         )
 
-        staged_launcher = None
+        staged_delivery_paths = list(staged_host_paths)
         if paths.launcher_file is not None:
             staged_launcher = _write_staged_text(
                 transaction.stage_path("launcher"),
                 launcher_text(final_runtime_python),
                 executable=True,
             )
+            staged_delivery_paths.append(StagedHostPath(
+                staged_launcher, paths.launcher_file, "launcher", 30
+            ))
 
         active_runtime = active_runtime_metadata(paths)
         staged_active_runtime = _write_staged_text(
@@ -552,18 +556,9 @@ def install(
 
         transaction.replace(staged_runtime, paths.runtime_dir)
         inject("runtime")
-        staged_by_stage = {item.stage: item for item in staged_host_paths}
-        for stage in ("opencode_skill", "codex_skill"):
-            if item := staged_by_stage.get(stage):
-                transaction.replace(item.staged, item.destination)
-                inject(stage)
-        if staged_launcher is not None and paths.launcher_file is not None:
-            transaction.replace(staged_launcher, paths.launcher_file)
-            inject("launcher")
-        for stage in ("opencode_command", "opencode_config", "codex_config"):
-            if item := staged_by_stage.get(stage):
-                transaction.replace(item.staged, item.destination)
-                inject(stage)
+        for item in sorted(staged_delivery_paths, key=lambda staged: staged.priority):
+            transaction.replace(item.staged, item.destination)
+            inject(item.stage)
         transaction.replace(staged_active_runtime, paths.active_runtime_file)
         inject("active_runtime")
         transaction.commit()

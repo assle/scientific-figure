@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from figure_tools.config import load_config
 from figure_tools.install_paths import APP_NAME, PathEnvironment
@@ -38,6 +38,7 @@ DEFAULT_BUDGET = {
 }
 
 _UNSET = object()
+_T = TypeVar("_T")
 
 
 class RuntimeContextError(RuntimeError):
@@ -110,21 +111,33 @@ class RuntimeContextFactory:
         project_path = Path(project_dir)
         run_path = Path(run_dir)
         store = RunStore(run_path)
-        store.ensure_structure()
+        secrets = self._environment_secrets()
+        self._safe_call(store.ensure_structure, secrets)
 
-        effective_config = self.config_loader(project_path)
+        effective_config = self._safe_call(
+            lambda: self.config_loader(project_path), secrets
+        )
         raw_providers = effective_config.get("providers")
         provider_mapping = raw_providers if isinstance(raw_providers, Mapping) else {}
-        providers = normalize_providers(provider_mapping)
-        models = configured_model_routes(
-            effective_config,
-            environ=self.environ,
+        providers = self._safe_call(
+            lambda: normalize_providers(provider_mapping), secrets
         )
-        credentials = resolve_provider_credentials(
-            providers,
-            secret_store=self.secret_store,
-            environ=self.environ,
+        models = self._safe_call(
+            lambda: configured_model_routes(
+                effective_config,
+                environ=self.environ,
+            ),
+            secrets,
         )
+        credentials = self._safe_call(
+            lambda: resolve_provider_credentials(
+                providers,
+                secret_store=self.secret_store,
+                environ=self.environ,
+            ),
+            secrets,
+        )
+        secrets.extend(item.value for item in credentials.values())
         referenced_providers = {
             str(route.get("provider"))
             for route in models.values()
@@ -148,42 +161,54 @@ class RuntimeContextFactory:
                 }
             budget: dict[str, int] = {}
         else:
-            try:
-                transport = self.transport_factory(
+            transport = self._safe_call(
+                lambda: self.transport_factory(
                     models,
                     providers,
                     credentials=live_credentials,
                     redactor=redactor,
-                )
-            except Exception as exc:  # adapters may echo credentials in failures
-                raise RuntimeContextError(redactor.safe_exception(exc)) from exc
+                ),
+                secrets,
+            )
             budget = dict(DEFAULT_BUDGET)
             if "phase_reasoning" not in models:
                 budget.pop("phase_reasoning", None)
             if "image_edit" not in models:
                 budget.pop("edits", None)
 
-        state = self.state_loader(
-            run_path / "run_state.json",
-            run_path.name,
-            budget,
+        state = self._safe_call(
+            lambda: self.state_loader(
+                run_path / "run_state.json",
+                run_path.name,
+                budget,
+            ),
+            secrets,
         )
-        cache = self.cache_factory(self.cache_dir or default_runtime_cache_dir())
+        cache = self._safe_call(
+            lambda: self.cache_factory(self.cache_dir or default_runtime_cache_dir()),
+            secrets,
+        )
         api_keys = [credential.value for credential in live_credentials.values()]
-        client = ProviderClient(
-            models,
-            transport,
-            api_key=api_keys[0] if api_keys else None,
-            api_keys=api_keys,
-            redactor=redactor,
-            state=state,
-            cache=cache,
-            output_dir=run_path,
+        client = self._safe_call(
+            lambda: ProviderClient(
+                models,
+                transport,
+                api_key=api_keys[0] if api_keys else None,
+                api_keys=api_keys,
+                redactor=redactor,
+                state=state,
+                cache=cache,
+                output_dir=run_path,
+            ),
+            secrets,
         )
-        worker = (
-            ProviderPhaseWorker(client)
-            if model_config_for_role(models, "phase_reasoning") is not None
-            else StructuredPhaseWorker()
+        worker = self._safe_call(
+            lambda: (
+                ProviderPhaseWorker(client)
+                if model_config_for_role(models, "phase_reasoning") is not None
+                else StructuredPhaseWorker()
+            ),
+            secrets,
         )
         return RuntimeContext(
             project_dir=project_path,
@@ -199,6 +224,23 @@ class RuntimeContextFactory:
             store=store,
             offline=offline,
         )
+
+    def _environment_secrets(self) -> list[str]:
+        secret_markers = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")
+        return [
+            str(value)
+            for name, value in self.environ.items()
+            if value and any(marker in name.upper() for marker in secret_markers)
+        ]
+
+    @staticmethod
+    def _safe_call(operation: Callable[[], _T], secrets: list[str]) -> _T:
+        try:
+            return operation()
+        except RuntimeContextError:
+            raise
+        except Exception as exc:
+            raise RuntimeContextError(SecretRedactor(secrets).safe_exception(exc)) from exc
 
 
 __all__ = [

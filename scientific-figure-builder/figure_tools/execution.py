@@ -421,7 +421,17 @@ class FigureExecution:
     def _safe_gen_ai(self, panel, el, pre_rendered_meta=None):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
-            if pre_rendered_meta is not None and Path(pre_rendered_meta["path"]).exists():
+            reusable_path = (
+                Path(pre_rendered_meta["path"])
+                if pre_rendered_meta is not None and pre_rendered_meta.get("path")
+                else None
+            )
+            if (
+                pre_rendered_meta is not None
+                and reusable_path is not None
+                and reusable_path.is_file()
+                and pre_rendered_meta.get("content_hash") == hash_file(reusable_path)
+            ):
                 report = self.provider.validate_image_asset(
                     path, physical_size_mm=tuple(panel["physical_size"])
                 )

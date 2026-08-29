@@ -331,11 +331,15 @@ def test_runtime_errors_are_redacted_before_protocol_output(monkeypatch, tmp_pat
 def test_runtime_context_construction_errors_use_the_safe_protocol_path(
     monkeypatch, tmp_path
 ):
-    class BrokenFactory:
-        def create(self, project_dir, run_dir):
-            raise RuntimeError("***REDACTED*** context construction failed")
+    def broken_config(_project):
+        raise RuntimeError("context construction leaked context-secret")
 
-    monkeypatch.setattr(server, "RuntimeContextFactory", BrokenFactory)
+    factory = RuntimeContextFactory(
+        config_loader=broken_config,
+        environ={"OPENAI_API_KEY": "context-secret"},
+        cache_dir=tmp_path / "cache",
+    )
+    monkeypatch.setattr(server, "RuntimeContextFactory", lambda: factory)
     response = _rpc(
         monkeypatch,
         {
@@ -347,4 +351,5 @@ def test_runtime_context_construction_errors_use_the_safe_protocol_path(
         },
     )[0]
 
-    assert response["error"]["message"] == "***REDACTED*** context construction failed"
+    assert "context-secret" not in response["error"]["message"]
+    assert "***REDACTED***" in response["error"]["message"]

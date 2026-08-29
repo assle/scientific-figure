@@ -126,7 +126,10 @@ class FigureOrchestrator:
                 current_plan_hash = self.store.hash_json(plan)
                 if recorded_plan_hash and recorded_plan_hash != current_plan_hash:
                     self.store.validate(plan, "figure-plan.schema.json")
-                    self.invalidator.after_figure_plan_change()
+                    previous_plan = self.store.load_optional_json(
+                        f"plans/figure_plan.v{plan.get('revision', 1)}.json"
+                    )
+                    self.invalidator.after_figure_plan_change(previous_plan, plan)
                     from figure_tools.execution import FigureExecution
 
                     FigureExecution(
@@ -574,7 +577,7 @@ class FigureOrchestrator:
             (execution.get("vectors"), "vectors"),
             (execution.get("assembly"), "assembly"),
         )
-        if any(not self._reference_matches(reference, relative) for reference, relative in references):
+        if any(not self.store.reference_matches(reference, relative) for reference, relative in references):
             return False
         for reference in execution.get("layout_manifests", []):
             path = Path(str(reference.get("path", "")))
@@ -582,7 +585,7 @@ class FigureOrchestrator:
                 relative = path.relative_to(self.run_dir)
             except ValueError:
                 return False
-            if not self._reference_matches(reference, relative):
+            if not self.store.reference_matches(reference, relative):
                 return False
         reports = execution.get("validation_reports") or []
         if reports and self.store.hash_json(reports[-1]) != self.store.hash_json(final):
@@ -601,7 +604,7 @@ class FigureOrchestrator:
             "exports": "exports",
         }
         if any(
-            not self._reference_matches(self.state.artifact(name), relative)
+            not self.store.reference_matches(self.state.artifact(name), relative)
             for name, relative in state_artifacts.items()
         ):
             return False
@@ -612,34 +615,21 @@ class FigureOrchestrator:
         except Exception:
             return False
         return (
-            self._reference_matches(
+            self.store.reference_matches(
                 export_result.get("validation_ref"), "validation/final.json"
             )
-            and self._reference_matches(export_result.get("assembly_ref"), "assembly")
+            and self.store.reference_matches(export_result.get("assembly_ref"), "assembly")
         )
 
     def _reconcile_stale_completion(self, plan: Mapping[str, Any]) -> None:
         if not self._execution_artifacts_current(plan):
             manifest = self.store.load_optional_json("asset_manifest.json")
-            self._remove_corrupt_manifest_assets(manifest)
             reusable = self._reusable_raster_assets(manifest)
             if reusable:
                 self.store.commit_json("plans/pre_rendered_assets.json", reusable)
-            self.invalidator.after_assembly_change()
+            self.invalidator.after_corrupt_execution(manifest)
             return
         self.invalidator.for_export_rerun()
-
-    def _reference_matches(
-        self, reference: Any, relative_path: str | Path,
-    ) -> bool:
-        if not isinstance(reference, Mapping):
-            return False
-        current = self.store.reference(relative_path)
-        return (
-            current["exists"] is True
-            and reference.get("exists", True) is True
-            and reference.get("content_hash") == current["content_hash"]
-        )
 
     @staticmethod
     def _manifest_assets_current(manifest: Mapping[str, Any]) -> bool:
@@ -649,25 +639,6 @@ class FigureOrchestrator:
                 return False
         return True
 
-    def _remove_corrupt_manifest_assets(
-        self, manifest: Mapping[str, Any] | None,
-    ) -> None:
-        for asset in (manifest or {}).get("assets", []):
-            path = Path(str(asset.get("path", "")))
-            if path.is_file() and asset.get("content_hash") == hash_file(path):
-                continue
-            asset_id = str(asset.get("asset_id", ""))
-            asset_type = asset.get("type")
-            if asset_type == "data_plot":
-                self.store.delete(f"plots/{asset_id}")
-            elif asset_type in {"text", "label", "annotation", "equation", "vector_element"}:
-                self.store.delete(f"vectors/{asset_id}.svg")
-            elif asset_type == "image_asset":
-                try:
-                    relative = path.relative_to(self.run_dir)
-                except ValueError:
-                    continue
-                self.store.delete(relative)
 
     def _completed_result(self) -> dict[str, Any]:
         self.state.mark_phase("export")
@@ -816,7 +787,11 @@ class FigureOrchestrator:
                 continue
             path = Path(str(asset.get("path", "")))
             generation = asset.get("generation") or {}
-            if not path.is_file() or not isinstance(generation, Mapping):
+            if (
+                not path.is_file()
+                or asset.get("content_hash") != hash_file(path)
+                or not isinstance(generation, Mapping)
+            ):
                 continue
             reusable[str(asset["asset_id"])] = {
                 "path": str(path),

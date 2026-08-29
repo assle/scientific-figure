@@ -412,6 +412,8 @@ def test_deterministic_repair_rerenders_source_and_reaches_export(tmp_path: Path
     paused = orchestrator.advance()
     assert paused["next_action"] == "repair_required"
     generation_calls = client.state.calls_used("generation")
+    raster_asset = run_dir / "assets" / "fiber.png"
+    raster_asset.write_bytes(b"corrupt unrelated raster")
     unrelated_marker = run_dir / "assets" / "unrelated.marker"
     unrelated_marker.write_text("preserve", encoding="utf-8")
 
@@ -426,6 +428,7 @@ def test_deterministic_repair_rerenders_source_and_reaches_export(tmp_path: Path
 
     assert repaired["status"] == "completed"
     assert client.state.calls_used("generation") == generation_calls
+    assert raster_asset.read_bytes() != b"corrupt unrelated raster"
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
     assert (run_dir / "plans" / "layout_analysis.json").is_file()
     assert (run_dir / "exports" / "figure.png").is_file()

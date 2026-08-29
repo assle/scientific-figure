@@ -169,6 +169,20 @@ class RunStore:
             "content_hash": content_hash,
         }
 
+    def reference_matches(
+        self,
+        reference: Any,
+        relative_path: str | Path,
+    ) -> bool:
+        if not isinstance(reference, Mapping):
+            return False
+        current = self.reference(relative_path)
+        return (
+            current["exists"] is True
+            and reference.get("exists", True) is True
+            and reference.get("content_hash") == current["content_hash"]
+        )
+
     @staticmethod
     def _path_hash(path: Path) -> str:
         if path.suffix == ".json":

@@ -367,7 +367,7 @@ class GuiController(QObject):
             parsed = urlparse(base_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ConfigEditorError("Base URL 必须是 http:// 或 https:// 地址")
-        provider_type = str(provider.get("type", "openai"))
+        provider_type = str(provider.get("type", PROVIDER_TYPES[0]))
         candidate: dict[str, Any] = {
             "type": provider_type,
             "base_url": base_url,

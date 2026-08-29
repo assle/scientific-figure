@@ -125,3 +125,32 @@ def test_transport_construction_errors_are_redacted(tmp_path):
         factory.create(tmp_path / "project", tmp_path / "run")
     assert "sk-secret" not in str(raised.value)
     assert "***REDACTED***" in str(raised.value)
+
+
+def test_early_configuration_and_late_cache_errors_are_redacted(tmp_path):
+    def broken_config(_project):
+        raise RuntimeError("config failed with env-secret")
+
+    early = RuntimeContextFactory(
+        config_loader=broken_config,
+        environ={"OPENAI_API_KEY": "env-secret"},
+        cache_dir=tmp_path / "cache",
+    )
+    with pytest.raises(RuntimeContextError) as early_error:
+        early.create(tmp_path / "project", tmp_path / "early-run")
+    assert "env-secret" not in str(early_error.value)
+
+    def broken_cache(_path):
+        raise RuntimeError("cache failed with keyring-secret")
+
+    late = RuntimeContextFactory(
+        config_loader=lambda _project: _config(),
+        secret_store=MemorySecretStore({"cred-live": "keyring-secret"}),
+        environ={},
+        transport_factory=lambda *_args, **_kwargs: MockProviderTransport(),
+        cache_factory=broken_cache,
+        cache_dir=tmp_path / "cache",
+    )
+    with pytest.raises(RuntimeContextError) as late_error:
+        late.create(tmp_path / "project", tmp_path / "late-run")
+    assert "keyring-secret" not in str(late_error.value)
