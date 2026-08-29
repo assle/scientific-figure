@@ -33,6 +33,7 @@ from figure_tools.providers.auth import (
     sanitize_error,
 )
 from figure_tools.providers.generic_transport import normalize_provider_base_url
+from figure_tools.components import GUI_INSTALL_COMMAND
 
 try:  # Keep import failure local to the GUI entry point.
     from PySide6.QtCore import QThread, Qt, Signal
@@ -739,7 +740,11 @@ def run_gui(argv: list[str] | None = None) -> int:
     """Start the Qt Quick configuration window and return its exit code."""
 
     if QApplication is None:
-        print("GUI requires the PySide6 optional dependency", file=sys.stderr)
+        print(
+            "Scientific Figure Builder GUI is not installed.\n"
+            f"Install it with: {GUI_INSTALL_COMMAND}",
+            file=sys.stderr,
+        )
         return 1
     from figure_tools.qml_gui import run_qml_gui
 

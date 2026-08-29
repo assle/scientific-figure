@@ -11,7 +11,7 @@
 - Product version、Schema version、Phase prompt version 和 recipe version 各自具有清晰兼容性语义。
 
 ## Current delivery
-- 当前开发版本为 `0.1.0`，处于 1.0 前的接口稳定化阶段。
+- 当前开发版本为 `0.2.0`，最新固定发布为 `v0.1.0`，项目处于 1.0 前的接口稳定化阶段。
 - 当前交付物是 Codex/OpenCode Agent 集成包，不是原生 Codex 插件。
 - 原生插件是目标交付形态；它将标准化 Skill、MCP、资源和宿主管理的生命周期。
 

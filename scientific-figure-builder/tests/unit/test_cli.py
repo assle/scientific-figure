@@ -36,3 +36,21 @@ def test_cli_reports_installed_product_version(capsys):
     rc = main(["--version"])
     assert rc == 0
     assert capsys.readouterr().out.strip() == f"scientific-figure {__version__}"
+
+
+def test_cli_installs_optional_gui_component(tmp_path: Path, monkeypatch, capsys):
+    import figure_tools.components as components
+
+    monkeypatch.setattr(components, "install_gui_component", lambda: tmp_path)
+    assert main(["install-gui"]) == 0
+    assert f"installed successfully in {tmp_path}" in capsys.readouterr().out
+
+
+def test_cli_gui_missing_dependency_has_actionable_error(monkeypatch, capsys):
+    import figure_tools.gui as gui
+
+    monkeypatch.setattr(gui, "QApplication", None)
+    assert main(["gui"]) == 1
+    captured = capsys.readouterr()
+    assert "scientific-figure install-gui" in captured.err
+    assert "Traceback" not in captured.err

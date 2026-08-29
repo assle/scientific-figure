@@ -20,9 +20,11 @@ from install.configure_opencode import (
 )
 from install.install_delivery import (
     LAUNCHER_MARKER,
+    build_parser,
     delivery_paths,
     install_delivery,
     launcher_text,
+    sync_runtime,
     validate_launcher_target,
     verify_delivery,
 )
@@ -211,7 +213,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     paths.config_file.parent.mkdir(parents=True)
     paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
 
-    def _use_test_python(runtime_dir: Path) -> Path:
+    def _use_test_python(runtime_dir: Path, _with_gui: bool) -> Path:
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
         return Path(sys.executable)
 
@@ -238,6 +240,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert verified["mcp_tools"] == 2
     assert verified["checks"]["launcher"] is True
     assert verified["checks"]["gui_resources"] is True
+    assert verified["components"] == {"core": True, "gui": True}
 
 
 def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path):
@@ -250,7 +253,11 @@ def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path)
         codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
     )
     with pytest.raises(RuntimeError, match="unrelated launcher"):
-        install_delivery(source, paths, runtime_sync=lambda _runtime: Path(sys.executable))
+        install_delivery(
+            source,
+            paths,
+            runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        )
     assert launcher.read_text(encoding="utf-8").startswith("#!/bin/sh\necho unrelated")
 
 
@@ -282,7 +289,7 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         bin_dir=tmp_path / "bin",
     )
 
-    def _use_test_python(_runtime_dir: Path) -> Path:
+    def _use_test_python(_runtime_dir: Path, _with_gui: bool) -> Path:
         return Path(sys.executable)
 
     first = install_delivery(
@@ -305,3 +312,84 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
     assert (paths.skill_dir / "SKILL.md").is_file()
     merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
     assert list(merged["mcp"]).count("scientific-figure") == 1
+
+
+@pytest.mark.parametrize(
+    ("with_gui", "expected_extra"),
+    [(False, False), (True, True)],
+)
+def test_sync_runtime_installs_gui_only_when_requested(
+    tmp_path: Path, monkeypatch, with_gui: bool, expected_extra: bool,
+):
+    import install.install_delivery as delivery
+
+    runtime = tmp_path / "runtime"
+    python = runtime / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(delivery.shutil, "which", lambda name: "/usr/bin/uv")
+    monkeypatch.setattr(
+        delivery.subprocess,
+        "run",
+        lambda command, check: calls.append(command),
+    )
+
+    assert sync_runtime(runtime, with_gui) == python.absolute()
+    command = calls[0]
+    assert ("--extra" in command) is expected_extra
+    assert ("gui" in command) is expected_extra
+
+
+def test_install_delivery_forwards_gui_selection(tmp_path: Path):
+    source = Path(__file__).resolve().parents[2]
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    requested: list[bool] = []
+
+    def _record_gui(_runtime_dir: Path, with_gui: bool) -> Path:
+        requested.append(with_gui)
+        return Path(sys.executable)
+
+    install_delivery(
+        source,
+        paths,
+        runtime_sync=_record_gui,
+        run_smoke_test=False,
+        with_gui=True,
+    )
+    assert requested == [True]
+
+
+def test_installer_gui_option_is_explicit():
+    parser = build_parser()
+    assert parser.parse_args([]).with_gui is False
+    assert parser.parse_args(["--with-gui"]).with_gui is True
+
+
+def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypatch):
+    import install.install_delivery as delivery
+
+    source = Path(__file__).resolve().parents[2]
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    install_delivery(
+        source,
+        paths,
+        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        run_smoke_test=False,
+    )
+    monkeypatch.setattr(delivery, "_gui_component_installed", lambda *_args: False)
+
+    result = verify_delivery(paths)
+    assert result["components"] == {"core": True, "gui": False}
+    with pytest.raises(RuntimeError, match="gui_component"):
+        verify_delivery(paths, require_gui=True)

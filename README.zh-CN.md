@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
   <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
-  <img src="https://img.shields.io/badge/版本-0.1.0-orange" alt="开发版本 0.1.0">
+  <img src="https://img.shields.io/badge/版本-0.2.0--dev-orange" alt="开发版本 0.2.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -28,7 +28,7 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-当前 `0.1.0` 开发版本以面向 Codex 和 OpenCode 的 **Agent 集成包** 交付，尚不是
+当前 `0.2.0` 开发版本以面向 Codex 和 OpenCode 的 **Agent 集成包** 交付，尚不是
 原生 Codex 插件：标准插件清单以及由宿主管理的安装、升级和卸载生命周期仍在建设中。
 这个区分既准确描述当前安装契约，也明确了项目正在走向干净、规范化插件交付的方向。
 
@@ -93,17 +93,27 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh
+./install.sh --with-gui
 ```
 
-当前 Agent 集成包会为 Codex 和 OpenCode 注册工作流 Skill 与双入口生命周期 MCP
-服务、安装核心运行时，并创建 `~/.local/bin/scientific-figure` 启动器。
+这个桌面快速开始会安装核心运行时和可选配置应用。轻量默认命令 `./install.sh` 只安装
+核心运行时、工作流 Skill，以及 Codex/OpenCode 使用的双入口生命周期 MCP 服务。
+两种全局安装都会创建 `~/.local/bin/scientific-figure` 启动器。
 
 ### 2. 配置 Provider
 
 ```bash
 scientific-figure gui
 ```
+
+如果最初只安装了核心运行时，可随时补装或升级配置应用，不需要重新注册 Agent 集成：
+
+```bash
+scientific-figure install-gui
+```
+
+未安装组件时请求 `gui` 只会返回这条准确的修复命令，不会输出 Python traceback。
+核心 MCP、绘图、验证和导出不会导入 Qt，因此在无桌面环境中仍然可用。
 
 先创建 Provider，再分配 Model role。API Key 不会进入 YAML：全局配置只保存稳定
 的 `credential_id`；服务器、CI 和无桌面环境仍可使用 `key_env` 环境变量。
@@ -164,10 +174,13 @@ models:
 ## 安装选项
 
 ```bash
+./install.sh                     # 默认：只安装核心运行时
+./install.sh --with-gui          # 核心运行时 + 配置应用
 ./install.sh --codex-only
 ./install.sh --opencode-only
 ./install.sh --project /path/to/project
-./install.sh --verify
+./install.sh --verify            # 验证核心并报告 GUI 状态
+./install.sh --verify --with-gui # 要求核心与 GUI 都已安装
 ```
 
 <details>
@@ -180,7 +193,8 @@ models:
 ./uninstall.sh --dry-run
 ```
 
-卸载器只删除本工具标记的启动器和 MCP 条目；Keyring 清理失败时会保留用户配置。
+卸载器会删除完整私有运行时及其中的可选 GUI，同时只删除本工具标记的启动器和 MCP
+条目；Keyring 清理失败时会保留用户配置。
 </details>
 
 ## 版本管理
@@ -193,9 +207,10 @@ Scientific Figure Builder 遵循[语义化版本](https://semver.org/lang/zh-CN/
 scientific-figure --version
 ```
 
-项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。只有仓库同时存在不可变的
-`vX.Y.Z` Git tag 和对应 GitHub Release 时，才构成一次正式发布。Schema、Phase
-prompt 和绘图 recipe 各自拥有独立兼容性版本，不随 Product version 自动变化。
+项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`0.2.0` 是当前开发版本，
+`v0.1.0` 仍是最新固定发布。只有仓库同时存在不可变的 `vX.Y.Z` Git tag 和对应
+GitHub Release 时，才构成一次正式发布。Schema、Phase prompt 和绘图 recipe 各自
+拥有独立兼容性版本，不随 Product version 自动变化。
 
 ## 开发
 

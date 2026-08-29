@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible plots">
-  <img src="https://img.shields.io/badge/version-0.1.0-orange" alt="Development version 0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0--dev-orange" alt="Development version 0.2.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -30,7 +30,7 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The current `0.1.0` development line ships as an **Agent integration bundle** for
+The current `0.2.0` development line ships as an **Agent integration bundle** for
 Codex and OpenCode. It is not yet a Native Codex plugin: the standard plugin
 manifest and host-managed install, upgrade, and uninstall lifecycle are planned
 work. This distinction keeps today's installation contract accurate while the
@@ -100,18 +100,30 @@ opening or saving configuration.
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh
+./install.sh --with-gui
 ```
 
-The current Agent integration bundle registers the Workflow Skill and two-tool
-Lifecycle MCP server for Codex and OpenCode, installs the Core runtime, and
-creates `~/.local/bin/scientific-figure`.
+This desktop quick start installs the Core runtime and optional Configuration app.
+The lightweight default, `./install.sh`, installs only the Core runtime, Workflow
+Skill, and two-tool Lifecycle MCP server for Codex and OpenCode. Both modes create
+`~/.local/bin/scientific-figure` for a Global installation.
 
 ### 2. Configure Providers
 
 ```bash
 scientific-figure gui
 ```
+
+If the Core runtime was installed without `--with-gui`, add or upgrade the
+Configuration app at any time without reinstalling the Agent integrations:
+
+```bash
+scientific-figure install-gui
+```
+
+Requesting `gui` before installing the component returns this exact recovery
+command and no Python traceback. Core MCP, plotting, validation, and export do
+not import Qt and remain available on headless systems.
 
 Create a Provider first, then assign Model roles. API Keys never enter YAML:
 Global configuration stores only a stable `credential_id`, while headless and CI
@@ -176,10 +188,13 @@ precedence over its environment fallback.
 ## Installation options
 
 ```bash
+./install.sh                     # Core runtime only (default)
+./install.sh --with-gui          # Core plus Configuration app
 ./install.sh --codex-only
 ./install.sh --opencode-only
 ./install.sh --project /path/to/project
-./install.sh --verify
+./install.sh --verify            # verify Core; report GUI status
+./install.sh --verify --with-gui # require both Core and GUI
 ```
 
 <details>
@@ -192,8 +207,9 @@ precedence over its environment fallback.
 ./uninstall.sh --dry-run
 ```
 
-Only this tool's marked launcher and MCP entries are removed. If Keyring cleanup
-fails, user configuration is retained.
+The uninstaller removes the complete private runtime, including the optional GUI
+when present, plus only this tool's marked launcher and MCP entries. If Keyring
+cleanup fails, user configuration is retained.
 </details>
 
 ## Versioning
@@ -208,7 +224,8 @@ scientific-figure --version
 ```
 
 The project is currently pre-1.0, so `0.y.z` releases may still refine public
-interfaces. A release exists only when the repository has an immutable
+interfaces. `0.2.0` is the current development version; `v0.1.0` remains the
+latest fixed release. A release exists only when the repository has an immutable
 `vX.Y.Z` Git tag and a matching GitHub Release. Schema, prompt, and recipe
 versions are compatibility contracts of their own and do not follow the Product
 version automatically.

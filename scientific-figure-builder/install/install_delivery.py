@@ -1,10 +1,11 @@
-"""One-command installer for the Scientific Figure Builder delivery package.
+"""One-command installer for the Scientific Figure Builder Agent integration bundle.
 
 The installer keeps secrets out of files. It installs a private runtime,
 publishes the Skill and slash command to OpenCode's discovery directories,
 installs the Skill for Codex, merges MCP entries into both configuration files
-without replacing unrelated configuration, and verifies the installed MCP
-server before reporting success.
+without replacing unrelated configuration, and verifies the installed Core
+runtime before reporting success. The optional Configuration app is installed
+only when explicitly requested.
 """
 
 from __future__ import annotations
@@ -248,16 +249,16 @@ def _replace_file(source: Path, destination: Path) -> Path | None:
     return backup
 
 
-def sync_runtime(runtime_dir: Path) -> Path:
+def sync_runtime(runtime_dir: Path, with_gui: bool = False) -> Path:
     uv = shutil.which("uv")
     if uv is None:
         raise RuntimeError(
             "`uv` is required. Install it first from https://docs.astral.sh/uv/."
         )
-    command = [
-        uv, "sync", "--frozen", "--no-dev", "--extra", "gui",
-        "--directory", str(runtime_dir),
-    ]
+    command = [uv, "sync", "--frozen", "--no-dev"]
+    if with_gui:
+        command.extend(("--extra", "gui"))
+    command.extend(("--directory", str(runtime_dir)))
     subprocess.run(command, check=True)
     candidates = (
         runtime_dir / ".venv" / "bin" / "python",
@@ -267,6 +268,25 @@ def sync_runtime(runtime_dir: Path) -> Path:
         if candidate.is_file():
             return candidate.absolute()
     raise RuntimeError("Dependency installation completed, but runtime Python was not found")
+
+
+def _gui_component_installed(runtime_python: Path, runtime_dir: Path) -> bool:
+    result = subprocess.run(
+        [
+            str(runtime_python),
+            "-c",
+            (
+                "import importlib.util; "
+                "raise SystemExit(0 if importlib.util.find_spec('PySide6') else 1)"
+            ),
+        ],
+        cwd=runtime_dir,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def smoke_test_mcp(runtime_python: Path, runtime_dir: Path) -> None:
@@ -304,6 +324,7 @@ def install_delivery(
     run_smoke_test: bool = True,
     install_opencode: bool = True,
     install_codex: bool = True,
+    with_gui: bool = False,
 ) -> dict[str, object]:
     source_dir = source_dir.resolve()
     validate_source(source_dir)
@@ -345,7 +366,7 @@ def install_delivery(
 
         runtime_backup = _replace_directory(staged_runtime, paths.runtime_dir)
         try:
-            runtime_python = runtime_sync(paths.runtime_dir)
+            runtime_python = runtime_sync(paths.runtime_dir, with_gui)
             if run_smoke_test:
                 smoke_test_mcp(runtime_python, paths.runtime_dir)
         except Exception:
@@ -418,6 +439,7 @@ def install_delivery(
         "codex_config": str(paths.codex_config_file),
         "codex_config_backup": codex_config_result["backup"],
         "mcp_tools": 2,
+        "gui_installed": _gui_component_installed(runtime_python, paths.runtime_dir),
         "launcher": str(launcher) if launcher else None,
         "launcher_warning": launcher_warning,
     }
@@ -428,6 +450,7 @@ def verify_delivery(
     *,
     verify_opencode: bool = True,
     verify_codex: bool = True,
+    require_gui: bool = False,
 ) -> dict[str, object]:
     checks: dict[str, bool] = {
         "runtime": (paths.runtime_dir / "figure_tools" / "server.py").is_file(),
@@ -488,6 +511,14 @@ def verify_delivery(
         )
         checks["gui_resource_import"] = resource_result.returncode == 0
 
+    gui_installed = (
+        _gui_component_installed(runtime_command, paths.runtime_dir)
+        if runtime_command is not None and runtime_command.is_file()
+        else False
+    )
+    if require_gui:
+        checks["gui_component"] = gui_installed
+
     if not all(checks.values()):
         failed = ", ".join(name for name, passed in checks.items() if not passed)
         raise RuntimeError(f"Installation verification failed: {failed}")
@@ -497,7 +528,11 @@ def verify_delivery(
     else:
         raise RuntimeError("Installation verification failed: MCP runtime is missing")
 
-    return {"checks": checks, "mcp_tools": 2}
+    return {
+        "checks": checks,
+        "mcp_tools": 2,
+        "components": {"core": True, "gui": gui_installed},
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -550,6 +585,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Verify an existing installation without changing it.",
     )
+    parser.add_argument(
+        "--with-gui",
+        action="store_true",
+        help="Install the optional Qt Configuration app; the default is Core only.",
+    )
     return parser
 
 
@@ -568,14 +608,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 paths,
                 verify_opencode=install_opencode,
                 verify_codex=install_codex,
+                require_gui=args.with_gui,
             )
             print(f"Installation verified: {result['mcp_tools']} MCP tools available.")
+            print(
+                "  Core runtime:    installed\n"
+                f"  Configuration app: {'installed' if result['components']['gui'] else 'not installed'}"
+            )
             return 0
         result = install_delivery(
             args.source_dir,
             paths,
             install_opencode=install_opencode,
             install_codex=install_codex,
+            with_gui=args.with_gui,
         )
     except (
         OSError,
@@ -589,6 +635,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print("Scientific Figure Builder installed successfully.")
     print(f"  MCP:     {result['mcp_tools']} tools verified")
+    print("  Core runtime:      installed")
+    if result["gui_installed"]:
+        print("  Configuration app: installed")
+    else:
+        print("  Configuration app: not installed")
+        print("  GUI install:       scientific-figure install-gui")
     if install_opencode:
         print(f"  OpenCode skill:   {result['skill']}")
         print(f"  OpenCode command: /scientific-figure")
