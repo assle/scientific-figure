@@ -233,6 +233,24 @@ successful Global installation records it as the migration source and retains
 it for rollback. A full Global uninstall removes both the versioned runtime
 scope and that legacy runtime; a Project uninstall removes only its own scope.
 
+### Transaction and retention
+
+Install and upgrade run as one filesystem transaction per Runtime scope. The
+installer performs source, config, launcher, permission, and disk-space preflight;
+builds the Core runtime with non-editable package metadata in same-filesystem
+staging; validates the CLI and MCP server; then atomically commits runtime, Skill,
+launcher, command, host config, and active-runtime metadata. A failure or process
+interruption restores replaced paths in reverse order. A scope lock rejects
+concurrent installs, while the next safe run removes orphan staging from a dead
+installer.
+
+The retention policy keeps the active Product version and at most one previously
+verified runtime. Temporary transaction backups are deleted after commit or
+rollback. Sanitized transaction logs are stored below the scope's XDG state
+directory and capped at 20 entries; they record paths and outcomes, never config
+contents or credentials. Uninstall recognizes active locks and will not remove a
+runtime while its install transaction is running.
+
 <details>
 <summary><strong>Uninstall safely</strong></summary>
 

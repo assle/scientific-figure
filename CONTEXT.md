@@ -226,6 +226,14 @@ _Avoid_: latest version, current branch, running process
 An installation at the former data-directory location retained only as a recoverable migration source until Global uninstall.
 _Avoid_: active runtime, backup version, project runtime
 
+**Install transaction**:
+One scope-locked, auditable change that either commits every staged delivery path or restores all replaced paths.
+_Avoid_: install step, runtime sync, backup
+
+**Verified runtime**:
+A Product-version runtime whose dependencies, CLI resources, and Lifecycle MCP surface passed installation checks and is eligible to become Active runtime.
+_Avoid_: staged runtime, active process, cached environment
+
 ## Validation
 
 **Deterministic check**:

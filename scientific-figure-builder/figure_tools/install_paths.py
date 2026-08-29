@@ -136,6 +136,10 @@ class DeliveryPaths:
     runtime_scope_dir: Path
     runtime_dir: Path
     active_runtime_file: Path
+    staging_parent: Path
+    transaction_backup_parent: Path
+    install_lock_dir: Path
+    transaction_log_dir: Path
     legacy_runtime_dir: Path | None
     state_dir: Path
     cache_dir: Path
@@ -205,6 +209,12 @@ def resolve_delivery_paths(
         runtime_scope_dir=scope_dir,
         runtime_dir=runtime_dir,
         active_runtime_file=scope_dir / "active-runtime.json",
+        staging_parent=environment.install_root / ".staging" / scope_id,
+        transaction_backup_parent=(
+            environment.install_root / ".transaction-backups" / scope_id
+        ),
+        install_lock_dir=environment.install_root / ".locks" / f"{scope_id}.lock",
+        transaction_log_dir=scope_state / "install-transactions",
         legacy_runtime_dir=legacy_runtime_dir,
         state_dir=scope_state,
         cache_dir=scope_cache,
@@ -227,10 +237,7 @@ def read_active_runtime(path: Path) -> dict[str, str] | None:
     return {str(key): str(value) for key, value in data.items()}
 
 
-def activate_runtime(paths: DeliveryPaths) -> dict[str, str]:
-    """Atomically record the verified runtime selected for this install scope."""
-
-    paths.active_runtime_file.parent.mkdir(parents=True, exist_ok=True)
+def active_runtime_metadata(paths: DeliveryPaths) -> dict[str, str]:
     data = {
         "version": paths.product_version,
         "runtime_dir": str(paths.runtime_dir.absolute()),
@@ -238,6 +245,14 @@ def activate_runtime(paths: DeliveryPaths) -> dict[str, str]:
     }
     if paths.legacy_runtime_dir is not None and paths.legacy_runtime_dir.is_dir():
         data["migrated_from"] = str(paths.legacy_runtime_dir.absolute())
+    return data
+
+
+def activate_runtime(paths: DeliveryPaths) -> dict[str, str]:
+    """Atomically record the verified runtime selected for this install scope."""
+
+    paths.active_runtime_file.parent.mkdir(parents=True, exist_ok=True)
+    data = active_runtime_metadata(paths)
     temporary = paths.active_runtime_file.with_name(
         f".{paths.active_runtime_file.name}.tmp-{uuid.uuid4().hex[:8]}"
     )
@@ -300,6 +315,7 @@ __all__ = [
     "APP_NAME",
     "DeliveryPaths",
     "PathEnvironment",
+    "active_runtime_metadata",
     "activate_runtime",
     "active_runtime_matches",
     "discover_runtime_directory",

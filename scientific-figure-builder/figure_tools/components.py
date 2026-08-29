@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,7 @@ def runtime_directory() -> Path:
 
 
 def install_gui_component(runtime_dir: Path | None = None) -> Path:
-    """Install or upgrade the GUI extra in the current private runtime."""
+    """Transactionally install or upgrade the GUI extra for the Global runtime."""
 
     root = (runtime_dir or runtime_directory()).absolute()
     uv = shutil.which("uv")
@@ -40,18 +41,27 @@ def install_gui_component(runtime_dir: Path | None = None) -> Path:
             "`uv` is required to install the GUI component; install it from "
             "https://docs.astral.sh/uv/ and retry"
         )
+    installer = root / "install" / "install_delivery.py"
+    if not installer.is_file():
+        raise RuntimeError(f"installed Core runtime has no installer: {installer}")
+    install_environment = dict(os.environ)
+    install_environment.setdefault(
+        "SCIENTIFIC_FIGURE_INSTALL_HOME",
+        str(root.parents[2]),
+    )
     subprocess.run(
         [
             uv,
-            "sync",
-            "--frozen",
-            "--no-dev",
-            "--extra",
-            "gui",
-            "--directory",
+            "run",
+            "python",
+            str(installer),
+            "--source-dir",
             str(root),
+            "--codex",
+            "--with-gui",
         ],
         check=True,
+        env=install_environment,
     )
     importlib.invalidate_caches()
     if not gui_available():

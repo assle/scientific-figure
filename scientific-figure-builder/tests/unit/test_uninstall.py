@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from figure_tools.install_transaction import InstallTransaction
 from install.install_delivery import delivery_paths, launcher_text
 from install.uninstall_delivery import build_parser, uninstall
 
@@ -163,3 +164,40 @@ def test_uninstall_cli_targets_are_explicit():
     assert parser.parse_args(["--codex-legacy"]).target == "codex"
     assert parser.parse_args(["--integrations"]).target == "integrations"
     assert parser.parse_args(["--all"]).target == "all"
+
+
+def test_uninstall_recognizes_active_install_lock(tmp_path: Path):
+    layout = _layout(tmp_path)
+    paths = delivery_paths(**layout)
+    paths.runtime_dir.mkdir(parents=True)
+    with InstallTransaction(paths) as transaction:
+        result = uninstall(
+            **layout,
+            remove_runtime=True,
+            remove_opencode=False,
+            remove_codex=False,
+        )
+        assert paths.runtime_dir.is_dir()
+        assert any("install is active" in warning for warning in result["warnings"])
+        transaction.commit()
+
+
+def test_uninstall_cleans_orphaned_install_state(tmp_path: Path):
+    layout = _layout(tmp_path)
+    paths = delivery_paths(**layout)
+    paths.runtime_dir.mkdir(parents=True)
+    paths.install_lock_dir.mkdir(parents=True)
+    (paths.install_lock_dir / "owner.json").write_text(
+        json.dumps({"pid": 999999999}), encoding="utf-8"
+    )
+    (paths.staging_parent / "orphan").mkdir(parents=True)
+    (paths.transaction_backup_parent / "orphan").mkdir(parents=True)
+    result = uninstall(
+        **layout,
+        remove_runtime=True,
+        remove_opencode=False,
+        remove_codex=False,
+    )
+    assert not paths.runtime_scope_dir.exists()
+    assert not paths.install_lock_dir.exists()
+    assert str(paths.install_lock_dir) in result["removed"]

@@ -37,6 +37,17 @@ MCP_ENTRY = {
 }
 
 
+def _stage_test_python(runtime_dir: Path, _with_gui: bool = False) -> Path:
+    python = runtime_dir / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True, exist_ok=True)
+    python.write_text(
+        "#!/bin/sh\n" f"exec {str(Path(sys.executable))!r} \"$@\"\n",
+        encoding="utf-8",
+    )
+    python.chmod(0o755)
+    return python
+
+
 def _existing_config():
     return {
         "$schema": "https://opencode.ai/config.json",
@@ -140,6 +151,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         config_home=config_home,
         data_home=data_home,
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -158,6 +170,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         config_home=config_home,
         data_home=data_home,
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         project_dir=project,
         codex_home=project / ".codex",
         bin_dir=tmp_path / "bin",
@@ -180,6 +193,7 @@ def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
         config_home=config_home,
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -195,6 +209,7 @@ def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path)
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         project_dir=project,
         codex_home=project / ".codex",
         bin_dir=tmp_path / "bin",
@@ -217,6 +232,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -225,7 +241,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
 
     def _use_test_python(runtime_dir: Path, _with_gui: bool) -> Path:
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
-        return Path(sys.executable)
+        return _stage_test_python(runtime_dir)
 
     result = install_delivery(
         source,
@@ -244,7 +260,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert merged["provider"] == _existing_config()["provider"]
     assert merged["mcp"]["other-server"] == _existing_config()["mcp"]["other-server"]
     assert merged["mcp"]["scientific-figure"]["command"][0] == str(
-        Path(sys.executable).absolute()
+        paths.runtime_dir / ".venv" / "bin" / "python"
     )
 
     verified = verify_delivery(paths)
@@ -262,6 +278,7 @@ def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path)
     paths = delivery_paths(
         config_home=tmp_path / "config", data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
     )
     with pytest.raises(RuntimeError, match="unrelated launcher"):
@@ -298,12 +315,13 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
 
     def _use_test_python(_runtime_dir: Path, _with_gui: bool) -> Path:
-        return Path(sys.executable)
+        return _stage_test_python(_runtime_dir)
 
     first = install_delivery(
         source,
@@ -318,11 +336,14 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
         run_smoke_test=False,
     )
     assert first["runtime_backup"] is None
-    assert second["runtime_backup"] is not None
-    assert Path(second["runtime_backup"]).is_dir()
-    assert Path(second["skill_backup"]).parent.name == ".skill-backups"
+    assert second["runtime_backup"] is None
+    assert second["skill_backup"] is None
     assert len(list(paths.skill_dir.parent.glob("*/SKILL.md"))) == 1
     assert (paths.skill_dir / "SKILL.md").is_file()
+    assert not paths.install_lock_dir.exists()
+    assert not list(paths.staging_parent.glob("*"))
+    assert not list(paths.transaction_backup_parent.glob("*"))
+    assert len(list(paths.transaction_log_dir.glob("*.json"))) == 2
     merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
     assert list(merged["mcp"]).count("scientific-figure") == 1
 
@@ -360,6 +381,7 @@ def test_install_delivery_forwards_gui_selection(tmp_path: Path):
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -367,7 +389,7 @@ def test_install_delivery_forwards_gui_selection(tmp_path: Path):
 
     def _record_gui(_runtime_dir: Path, with_gui: bool) -> Path:
         requested.append(with_gui)
-        return Path(sys.executable)
+        return _stage_test_python(_runtime_dir)
 
     install_delivery(
         source,
@@ -397,13 +419,14 @@ def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
     result = install_delivery(
         Path(__file__).resolve().parents[2],
         paths,
-        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        runtime_sync=_stage_test_python,
         run_smoke_test=False,
         install_opencode=False,
         install_codex=False,
@@ -427,13 +450,14 @@ def test_host_install_targets_do_not_touch_unselected_agent(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
     install_delivery(
         Path(__file__).resolve().parents[2],
         paths,
-        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        runtime_sync=_stage_test_python,
         run_smoke_test=False,
         install_opencode=install_opencode,
         install_codex=install_codex,
@@ -453,13 +477,14 @@ def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypa
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
     install_delivery(
         source,
         paths,
-        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        runtime_sync=_stage_test_python,
         run_smoke_test=False,
     )
     monkeypatch.setattr(delivery, "_gui_component_installed", lambda *_args: False)
@@ -475,6 +500,7 @@ def test_failed_upgrade_preserves_previous_active_runtime(tmp_path: Path):
         "config_home": tmp_path / "config",
         "data_home": tmp_path / "data",
         "install_home": tmp_path / "install",
+        "state_home": tmp_path / "state",
         "codex_home": tmp_path / "codex",
         "bin_dir": tmp_path / "bin",
     }
@@ -505,6 +531,7 @@ def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: 
         config_home=tmp_path / "config",
         data_home=tmp_path / "legacy-data",
         install_home=tmp_path / "install",
+        state_home=tmp_path / "state",
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
@@ -514,7 +541,7 @@ def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: 
     result = install_delivery(
         Path(__file__).resolve().parents[2],
         paths,
-        runtime_sync=lambda _runtime, _with_gui: Path(sys.executable),
+        runtime_sync=_stage_test_python,
         run_smoke_test=False,
     )
     assert result["legacy_runtime_retained"] == str(paths.legacy_runtime_dir)
@@ -522,3 +549,136 @@ def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: 
     assert result["active_runtime"]["migrated_from"] == str(
         paths.legacy_runtime_dir.absolute()
     )
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    [
+        "runtime",
+        "opencode_skill",
+        "codex_skill",
+        "launcher",
+        "opencode_command",
+        "opencode_config",
+        "codex_config",
+        "active_runtime",
+    ],
+)
+def test_failure_at_every_commit_stage_leaves_no_partial_install(
+    tmp_path: Path, failure_stage: str,
+):
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        state_home=tmp_path / "state",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+
+    def _inject(stage: str) -> None:
+        if stage == failure_stage:
+            raise RuntimeError(f"injected failure at {stage}")
+
+    with pytest.raises(RuntimeError, match="injected failure"):
+        install_delivery(
+            Path(__file__).resolve().parents[2],
+            paths,
+            runtime_sync=_stage_test_python,
+            run_smoke_test=False,
+            failure_injector=_inject,
+        )
+
+    for target in (
+        paths.runtime_dir,
+        paths.skill_dir,
+        paths.command_file,
+        paths.config_file,
+        paths.codex_skill_dir,
+        paths.codex_config_file,
+        paths.launcher_file,
+        paths.active_runtime_file,
+    ):
+        assert target is None or not target.exists(), (failure_stage, target)
+    assert not paths.install_lock_dir.exists()
+    assert not list(paths.staging_parent.glob("*"))
+    assert not list(paths.transaction_backup_parent.glob("*"))
+    log = json.loads(next(paths.transaction_log_dir.glob("*.json")).read_text())
+    assert log["status"] == "rolled_back"
+
+
+def test_late_failure_restores_existing_installation_byte_for_byte(tmp_path: Path):
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        state_home=tmp_path / "state",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    source = Path(__file__).resolve().parents[2]
+    install_delivery(
+        source,
+        paths,
+        runtime_sync=_stage_test_python,
+        run_smoke_test=False,
+    )
+    marker = paths.skill_dir / "existing-marker.txt"
+    marker.write_text("preserve me", encoding="utf-8")
+    before = {
+        path: path.read_bytes()
+        for path in (
+            paths.command_file,
+            paths.config_file,
+            paths.codex_config_file,
+            paths.launcher_file,
+            paths.active_runtime_file,
+        )
+        if path is not None
+    }
+
+    def _late_failure(stage: str) -> None:
+        if stage == "codex_config":
+            raise RuntimeError("late failure")
+
+    with pytest.raises(RuntimeError, match="late failure"):
+        install_delivery(
+            source,
+            paths,
+            runtime_sync=_stage_test_python,
+            run_smoke_test=False,
+            failure_injector=_late_failure,
+        )
+
+    assert marker.read_text(encoding="utf-8") == "preserve me"
+    for path, content in before.items():
+        assert path.read_bytes() == content
+
+
+def test_preflight_rejects_insufficient_disk_before_writes(tmp_path: Path, monkeypatch):
+    import install.install_delivery as delivery
+
+    paths = delivery_paths(
+        config_home=tmp_path / "config",
+        data_home=tmp_path / "data",
+        state_home=tmp_path / "state",
+        install_home=tmp_path / "install",
+        codex_home=tmp_path / "codex",
+        bin_dir=tmp_path / "bin",
+    )
+    disk_usage = delivery.shutil.disk_usage(Path(__file__).anchor)
+    monkeypatch.setattr(
+        delivery.shutil,
+        "disk_usage",
+        lambda _path: type(disk_usage)(disk_usage.total, disk_usage.used, 1),
+    )
+    with pytest.raises(RuntimeError, match="insufficient disk space"):
+        install_delivery(
+            Path(__file__).resolve().parents[2],
+            paths,
+            runtime_sync=_stage_test_python,
+            install_opencode=False,
+            install_codex=False,
+        )
+    assert not paths.runtime_scope_dir.exists()
+    assert not paths.transaction_log_dir.exists()

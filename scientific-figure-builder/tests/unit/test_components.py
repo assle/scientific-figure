@@ -52,23 +52,29 @@ def test_runtime_directory_honors_explicit_installed_runtime(
 
 
 def test_install_gui_component_syncs_the_gui_extra(tmp_path: Path, monkeypatch) -> None:
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    installer = tmp_path / "install" / "install_delivery.py"
+    installer.parent.mkdir()
+    installer.write_text("", encoding="utf-8")
     monkeypatch.setattr(components.shutil, "which", lambda name: "/usr/bin/uv")
     monkeypatch.setattr(
         components.subprocess,
         "run",
-        lambda command, check: calls.append(command),
+        lambda command, check, env: calls.append((command, env)),
     )
     monkeypatch.setattr(components, "gui_available", lambda: True)
 
     assert components.install_gui_component(tmp_path) == tmp_path.absolute()
-    assert calls == [[
+    assert calls[0][0] == [
         "/usr/bin/uv",
-        "sync",
-        "--frozen",
-        "--no-dev",
-        "--extra",
-        "gui",
-        "--directory",
+        "run",
+        "python",
+        str(installer),
+        "--source-dir",
         str(tmp_path.absolute()),
-    ]]
+        "--codex",
+        "--with-gui",
+    ]
+    assert calls[0][1]["SCIENTIFIC_FIGURE_INSTALL_HOME"] == str(
+        tmp_path.absolute().parents[2]
+    )

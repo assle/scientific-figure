@@ -112,6 +112,30 @@ def _render_parent_table(entry: dict[str, Any], env_vars: list[str]) -> str:
     return "".join(lines)
 
 
+def render_codex_mcp_config(
+    text: str,
+    mcp_name: str,
+    entry: dict[str, Any],
+) -> str:
+    """Render a validated candidate config without writing the destination."""
+
+    if text and not text.endswith("\n"):
+        text += "\n"
+    has_existing_env_table = _has_existing_env_table(text, mcp_name)
+    cleaned = _remove_table_block(text, _header_line(mcp_name))
+    env_vars = [] if has_existing_env_table else _env_vars_from_environment()
+    replacement = _render_parent_table(entry, env_vars)
+    new_text = cleaned
+    if new_text and not new_text.endswith("\n\n"):
+        new_text = new_text.rstrip() + "\n\n"
+    new_text += replacement
+    parsed = tomllib.loads(new_text)
+    mcp = parsed.get("mcp_servers", {}).get(mcp_name)
+    if not isinstance(mcp, dict) or mcp.get("command") != entry["command"]:
+        raise RuntimeError("Codex MCP table candidate was not rendered correctly")
+    return new_text
+
+
 def update_codex_mcp_config(
     config_path: str | Path,
     mcp_name: str,
@@ -123,19 +147,7 @@ def update_codex_mcp_config(
     config_path = Path(config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
-    if text and not text.endswith("\n"):
-        text += "\n"
-
-    has_existing_env_table = _has_existing_env_table(text, mcp_name)
-    parent_header = _header_line(mcp_name)
-    cleaned = _remove_table_block(text, parent_header)
-
-    env_vars = [] if has_existing_env_table else _env_vars_from_environment()
-    replacement = _render_parent_table(entry, env_vars)
-    new_text = cleaned
-    if new_text and not new_text.endswith("\n\n"):
-        new_text = new_text.rstrip() + "\n\n"
-    new_text += replacement
+    new_text = render_codex_mcp_config(text, mcp_name, entry)
 
     backup_path = None
     if backup and config_path.exists() and config_path.read_text(encoding="utf-8") != new_text:

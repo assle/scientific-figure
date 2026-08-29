@@ -17,8 +17,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
-import time
 import tomllib
 import uuid
 from dataclasses import replace
@@ -34,33 +32,40 @@ for _parent in Path(__file__).resolve().parents:
 from figure_tools.install_paths import (  # noqa: E402
     DeliveryPaths,
     PathEnvironment,
-    activate_runtime,
+    active_runtime_metadata,
     active_runtime_matches,
+    read_active_runtime,
     resolve_delivery_paths,
+)
+from figure_tools.install_transaction import (  # noqa: E402
+    InstallTransaction,
+    prune_runtime_versions,
 )
 
 try:
     from .configure_opencode import (
         DEFAULT_MCP_NAME,
-        apply_merge,
+        dump_config,
         load_config,
         mcp_entry_for_python,
+        propose_merge,
     )
     from .configure_codex import (
         codex_mcp_entry,
-        update_codex_mcp_config,
+        render_codex_mcp_config,
         verify_codex_config,
     )
 except ImportError:  # Direct execution from install.sh.
     from configure_opencode import (
         DEFAULT_MCP_NAME,
-        apply_merge,
+        dump_config,
         load_config,
         mcp_entry_for_python,
+        propose_merge,
     )
     from configure_codex import (
         codex_mcp_entry,
-        update_codex_mcp_config,
+        render_codex_mcp_config,
         verify_codex_config,
     )
 
@@ -216,39 +221,6 @@ def _copy_selected(source_dir: Path, destination: Path, items: Sequence[str]) ->
             shutil.copy2(source, target)
 
 
-def _replace_directory(
-    staged: Path,
-    destination: Path,
-    *,
-    backup_root: Path | None = None,
-) -> Path | None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    backup = None
-    if destination.exists():
-        backup_parent = backup_root or destination.parent
-        backup_parent.mkdir(parents=True, exist_ok=True)
-        backup = backup_parent / (
-            f"{destination.name}.backup-{time.strftime('%Y%m%d-%H%M%S')}-"
-            f"{uuid.uuid4().hex[:8]}"
-        )
-        destination.replace(backup)
-    staged.replace(destination)
-    return backup
-
-
-def _replace_file(source: Path, destination: Path) -> Path | None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    backup = None
-    if destination.exists() and destination.read_bytes() != source.read_bytes():
-        backup = destination.with_suffix(
-            destination.suffix
-            + f".backup-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
-        )
-        shutil.copy2(destination, backup)
-    shutil.copy2(source, destination)
-    return backup
-
-
 def runtime_python(runtime_dir: Path) -> Path:
     candidates = (
         runtime_dir / ".venv" / "bin" / "python",
@@ -266,12 +238,75 @@ def sync_runtime(runtime_dir: Path, with_gui: bool = False) -> Path:
         raise RuntimeError(
             "`uv` is required. Install it first from https://docs.astral.sh/uv/."
         )
-    command = [uv, "sync", "--frozen", "--no-dev"]
+    command = [uv, "sync", "--frozen", "--no-dev", "--no-editable"]
     if with_gui:
         command.extend(("--extra", "gui"))
     command.extend(("--directory", str(runtime_dir)))
     subprocess.run(command, check=True)
     return runtime_python(runtime_dir)
+
+
+def _nearest_existing_parent(path: Path) -> Path:
+    candidate = path.absolute()
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate
+
+
+def preflight_install(
+    source_dir: Path,
+    paths: DeliveryPaths,
+    *,
+    install_opencode: bool,
+    install_codex: bool,
+    with_gui: bool,
+) -> None:
+    """Validate every known failure mode before creating transaction state."""
+
+    validate_source(source_dir)
+    if install_opencode:
+        load_config(paths.config_file)
+    if install_codex and paths.codex_config_file.exists():
+        text = paths.codex_config_file.read_text(encoding="utf-8")
+        if text.strip():
+            tomllib.loads(text)
+    validate_launcher_target(paths.launcher_file)
+
+    targets = [
+        paths.runtime_dir,
+        paths.state_dir,
+        paths.staging_parent,
+        paths.transaction_backup_parent,
+        paths.install_lock_dir,
+    ]
+    if paths.launcher_file is not None:
+        targets.append(paths.launcher_file)
+    if install_opencode:
+        targets.extend((paths.skill_dir, paths.command_file, paths.config_file))
+    if install_codex:
+        targets.extend((paths.codex_skill_dir, paths.codex_config_file))
+    for target in targets:
+        parent = _nearest_existing_parent(target.parent)
+        if not os.access(parent, os.W_OK):
+            raise RuntimeError(f"installation target is not writable: {target.parent}")
+
+    required_bytes = 2 * 1024**3 if with_gui else 256 * 1024**2
+    free_bytes = shutil.disk_usage(_nearest_existing_parent(paths.runtime_dir.parent)).free
+    if free_bytes < required_bytes:
+        required_gib = required_bytes / 1024**3
+        available_gib = free_bytes / 1024**3
+        raise RuntimeError(
+            f"insufficient disk space: {required_gib:.1f} GiB required, "
+            f"{available_gib:.1f} GiB available"
+        )
+
+
+def _write_staged_text(path: Path, text: str, *, executable: bool = False) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    if executable and os.name != "nt":
+        os.chmod(path, 0o755)
+    return path
 
 
 def _gui_component_installed(runtime_python: Path, runtime_dir: Path) -> bool:
@@ -329,77 +364,122 @@ def install_delivery(
     install_opencode: bool = True,
     install_codex: bool = True,
     with_gui: bool = False,
+    failure_injector: Callable[[str], None] | None = None,
 ) -> dict[str, object]:
     source_dir = source_dir.resolve()
-    validate_source(source_dir)
+    preflight_install(
+        source_dir,
+        paths,
+        install_opencode=install_opencode,
+        install_codex=install_codex,
+        with_gui=with_gui,
+    )
+    previous_active = read_active_runtime(paths.active_runtime_file)
+    previous_runtime = (
+        Path(previous_active["runtime_dir"])
+        if previous_active is not None
+        and Path(previous_active["runtime_dir"]).is_dir()
+        else None
+    )
 
-    # Parse before making any changes so an invalid existing config fails safely.
-    if install_opencode:
-        load_config(paths.config_file)
-    if install_codex:
-        codex_config_text = (
-            paths.codex_config_file.read_text(encoding="utf-8")
-            if paths.codex_config_file.exists()
-            else ""
-        )
-        # Fail before changes if Codex config is not valid TOML.
-        if codex_config_text.strip():
-            import tomllib
+    def inject(stage: str) -> None:
+        if failure_injector is not None:
+            failure_injector(stage)
 
-            tomllib.loads(codex_config_text)
-    validate_launcher_target(paths.launcher_file)
-
-    paths.runtime_dir.parent.mkdir(parents=True, exist_ok=True)
-    if install_opencode:
-        paths.skill_dir.parent.mkdir(parents=True, exist_ok=True)
-    if install_codex:
-        paths.codex_skill_dir.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=f".{SKILL_NAME}-install-",
-        dir=paths.runtime_dir.parent,
-    ) as temp_root:
-        temp_root_path = Path(temp_root)
-        staged_runtime = temp_root_path / "runtime"
-        staged_opencode_skill = temp_root_path / "skill-opencode"
-        staged_codex_skill = temp_root_path / "skill-codex"
+    with InstallTransaction(paths) as transaction:
+        staged_runtime = transaction.stage_path("runtime")
+        staged_opencode_skill = transaction.stage_path("opencode-skill")
+        staged_codex_skill = transaction.stage_path("codex-skill")
         _copy_selected(source_dir, staged_runtime, RUNTIME_ITEMS)
         if install_opencode:
             _copy_selected(source_dir, staged_opencode_skill, SKILL_ITEMS)
         if install_codex:
             _copy_selected(source_dir, staged_codex_skill, SKILL_ITEMS)
 
-        runtime_backup = _replace_directory(staged_runtime, paths.runtime_dir)
-        try:
-            runtime_python = runtime_sync(paths.runtime_dir, with_gui)
-            if run_smoke_test:
-                smoke_test_mcp(runtime_python, paths.runtime_dir)
-        except Exception:
-            if paths.runtime_dir.exists():
-                shutil.rmtree(paths.runtime_dir)
-            if runtime_backup is not None:
-                runtime_backup.replace(paths.runtime_dir)
-            raise
+        staged_runtime_python = runtime_sync(staged_runtime, with_gui)
+        if run_smoke_test:
+            smoke_test_mcp(staged_runtime_python, staged_runtime)
+        runtime_python_relative = staged_runtime_python.relative_to(staged_runtime)
+        final_runtime_python = paths.runtime_dir / runtime_python_relative
 
-        skill_backup = None
+        staged_launcher = None
+        if paths.launcher_file is not None:
+            staged_launcher = _write_staged_text(
+                transaction.stage_path("launcher"),
+                launcher_text(final_runtime_python),
+                executable=True,
+            )
+
+        staged_command = None
+        staged_opencode_config = None
         if install_opencode:
-            skill_backup = _replace_directory(
-                staged_opencode_skill,
-                paths.skill_dir,
-                backup_root=paths.skill_dir.parent.parent / ".skill-backups",
+            staged_command = transaction.stage_path("opencode-command.md")
+            shutil.copy2(source_dir / COMMAND_SOURCE, staged_command)
+            existing = load_config(paths.config_file)
+            candidate = propose_merge(
+                existing,
+                DEFAULT_MCP_NAME,
+                mcp_entry_for_python(final_runtime_python),
+            )
+            opencode_text = dump_config(candidate)
+            json.loads(opencode_text)
+            staged_opencode_config = _write_staged_text(
+                transaction.stage_path("opencode-config.json"), opencode_text
             )
 
-        codex_skill_backup = None
+        staged_codex_config = None
         if install_codex:
-            codex_skill_backup = _replace_directory(
-                staged_codex_skill,
-                paths.codex_skill_dir,
-                backup_root=paths.codex_skill_dir.parent.parent / ".skill-backups",
+            existing_text = (
+                paths.codex_config_file.read_text(encoding="utf-8")
+                if paths.codex_config_file.exists()
+                else ""
+            )
+            codex_text = render_codex_mcp_config(
+                existing_text,
+                DEFAULT_MCP_NAME,
+                codex_mcp_entry(final_runtime_python, paths.runtime_dir),
+            )
+            staged_codex_config = _write_staged_text(
+                transaction.stage_path("codex-config.toml"), codex_text
             )
 
-    command_backup = None
-    launcher = install_launcher(runtime_python, paths.launcher_file)
+        active_runtime = active_runtime_metadata(paths)
+        staged_active_runtime = _write_staged_text(
+            transaction.stage_path("active-runtime.json"),
+            json.dumps(active_runtime, indent=2) + "\n",
+        )
+
+        transaction.replace(staged_runtime, paths.runtime_dir)
+        inject("runtime")
+        if install_opencode:
+            transaction.replace(staged_opencode_skill, paths.skill_dir)
+            inject("opencode_skill")
+        if install_codex:
+            transaction.replace(staged_codex_skill, paths.codex_skill_dir)
+            inject("codex_skill")
+        if staged_launcher is not None and paths.launcher_file is not None:
+            transaction.replace(staged_launcher, paths.launcher_file)
+            inject("launcher")
+        if staged_command is not None:
+            transaction.replace(staged_command, paths.command_file)
+            inject("opencode_command")
+        if staged_opencode_config is not None:
+            transaction.replace(staged_opencode_config, paths.config_file)
+            inject("opencode_config")
+        if staged_codex_config is not None:
+            transaction.replace(staged_codex_config, paths.codex_config_file)
+            inject("codex_config")
+        transaction.replace(staged_active_runtime, paths.active_runtime_file)
+        inject("active_runtime")
+        transaction.commit()
+        committed_paths = transaction.committed_paths
+        transaction_id = transaction.transaction_id
+
+    pruned_runtimes = prune_runtime_versions(paths, previous_runtime)
+    runtime_python_path = runtime_python(paths.runtime_dir)
+    launcher = paths.launcher_file if paths.launcher_file is not None else None
     launcher_warning = None
-    if launcher is not None:
+    if launcher is not None and launcher.is_file():
         path_entries = {
             Path(item).expanduser().resolve()
             for item in os.environ.get("PATH", "").split(os.pathsep)
@@ -407,46 +487,34 @@ def install_delivery(
         }
         if launcher.parent.resolve() not in path_entries:
             launcher_warning = f"Add {launcher.parent} to PATH to use `scientific-figure`."
-    config_result = {"backup": None}
-    if install_opencode:
-        command_backup = _replace_file(source_dir / COMMAND_SOURCE, paths.command_file)
-        mcp_entry = mcp_entry_for_python(runtime_python)
-        config_result = apply_merge(
-            paths.config_file,
-            DEFAULT_MCP_NAME,
-            mcp_entry,
-            approver=lambda _diff: True,
-            backup=True,
-        )
-
-    codex_config_result = {"backup": None}
-    if install_codex:
-        codex_config_result = update_codex_mcp_config(
-            paths.codex_config_file,
-            DEFAULT_MCP_NAME,
-            codex_mcp_entry(runtime_python, paths.runtime_dir),
-            backup=True,
-        )
-
-    active_runtime = activate_runtime(paths)
 
     return {
         "skill": str(paths.skill_dir),
         "command": str(paths.command_file),
         "runtime": str(paths.runtime_dir),
-        "runtime_python": str(runtime_python),
+        "runtime_python": str(runtime_python_path),
         "config": str(paths.config_file),
-        "config_backup": config_result["backup"],
-        "runtime_backup": str(runtime_backup) if runtime_backup else None,
-        "skill_backup": str(skill_backup) if skill_backup else None,
-        "command_backup": str(command_backup) if command_backup else None,
+        "config_backup": None,
+        "runtime_backup": (
+            str(previous_runtime)
+            if previous_runtime is not None and previous_runtime != paths.runtime_dir
+            else None
+        ),
+        "skill_backup": None,
+        "command_backup": None,
         "codex_skill": str(paths.codex_skill_dir),
-        "codex_skill_backup": str(codex_skill_backup) if codex_skill_backup else None,
+        "codex_skill_backup": None,
         "codex_config": str(paths.codex_config_file),
-        "codex_config_backup": codex_config_result["backup"],
+        "codex_config_backup": None,
         "mcp_tools": 2,
-        "gui_installed": _gui_component_installed(runtime_python, paths.runtime_dir),
+        "gui_installed": _gui_component_installed(runtime_python_path, paths.runtime_dir),
         "active_runtime": active_runtime,
+        "transaction_id": transaction_id,
+        "transaction_log": str(
+            paths.transaction_log_dir / f"{transaction_id}.json"
+        ),
+        "committed_paths": committed_paths,
+        "pruned_runtimes": pruned_runtimes,
         "legacy_runtime_retained": (
             str(paths.legacy_runtime_dir)
             if paths.legacy_runtime_dir is not None
@@ -734,9 +802,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) as exc:
         print(f"Installation failed: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("Installation interrupted; transaction rolled back.", file=sys.stderr)
+        return 130
 
     print("Scientific Figure Builder installed successfully.")
     print(f"  Product version:   {paths.product_version}")
+    print(f"  Transaction log:   {result['transaction_log']}")
     print(f"  MCP:     {result['mcp_tools']} tools verified")
     print("  Core runtime:      installed")
     if result["gui_installed"]:

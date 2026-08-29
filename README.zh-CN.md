@@ -213,6 +213,18 @@ Codex 路径是 `--codex` 后通过 marketplace 安装原生插件。
 保留旧目录用于回滚。完整全局卸载会同时删除版本化运行时 scope 和旧运行时；项目卸载
 只删除自己的隔离 scope。
 
+### 事务与保留策略
+
+安装和升级在每个 Runtime scope 内作为一个文件系统事务执行。安装器先完成来源、配置、
+启动器、权限和磁盘空间预检，再在同一文件系统的 staging 中用 non-editable 包构建核心
+运行时并验证 CLI/MCP，最后原子提交 runtime、Skill、launcher、command、宿主配置和
+活动运行时记录。任一步失败或进程中断都会按相反顺序恢复已替换路径。同一 scope 的锁
+拒绝并发安装；后续安全运行会清理死亡安装器留下的孤儿 staging。
+
+保留策略只留下活动 Product version 和至多一个已验证旧运行时。临时事务备份在提交或
+回滚后删除。脱敏事务日志位于对应 XDG state 目录并最多保留 20 条，只记录路径和结果，
+不记录配置正文或凭据。卸载器能够识别活动锁，不会删除正在安装的 runtime。
+
 <details>
 <summary><strong>安全卸载</strong></summary>
 

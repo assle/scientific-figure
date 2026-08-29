@@ -17,6 +17,7 @@ for _parent in Path(__file__).resolve().parents:
         break
 
 from figure_tools.install_paths import PathEnvironment, read_active_runtime  # noqa: E402
+from figure_tools.install_transaction import install_lock_status  # noqa: E402
 
 try:
     from .auth_cleanup import cleanup_keyring_credentials
@@ -110,8 +111,20 @@ def uninstall(
     config_candidates: list[Path] = []
 
     if remove_runtime:
+        lock_status = install_lock_status(paths.install_lock_dir)
+        if lock_status == "active":
+            warnings.append(
+                f"runtime uninstall skipped because an install is active: "
+                f"{paths.install_lock_dir}"
+            )
+            remove_runtime = False
+        elif lock_status == "orphaned":
+            targets.append(paths.install_lock_dir)
+
+    if remove_runtime:
         targets.extend([
             paths.runtime_scope_dir, paths.state_dir, paths.cache_dir, paths.session_dir,
+            paths.staging_parent, paths.transaction_backup_parent,
         ])
         if project_dir is None and paths.legacy_runtime_dir is not None:
             targets.append(paths.legacy_runtime_dir)
