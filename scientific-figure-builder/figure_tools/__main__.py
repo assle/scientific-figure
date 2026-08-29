@@ -1,7 +1,8 @@
-"""Command-line entry: project initialization (plan section 14).
+"""Scientific Figure Builder command-line entry.
 
 Usage: python -m figure_tools init [project_dir]
        python -m figure_tools gui
+       python -m figure_tools --version
 """
 
 from __future__ import annotations
@@ -10,16 +11,25 @@ import json
 import sys
 from typing import Any
 
+from figure_tools import __version__
 from figure_tools.config import initialize_project
+
+
+USAGE = "usage: python -m figure_tools init [project_dir] | gui | --version"
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] not in {"init", "gui", "-h", "--help"}:
-        print("usage: python -m figure_tools init [project_dir] | gui")
+    if not argv or argv[0] not in {
+        "init", "gui", "-h", "--help", "-V", "--version",
+    }:
+        print(USAGE)
         return 2
     if argv[0] in {"-h", "--help"}:
-        print("usage: python -m figure_tools init [project_dir] | gui")
+        print(USAGE)
+        return 0
+    if argv[0] in {"-V", "--version"}:
+        print(f"scientific-figure {__version__}")
         return 0
     if argv[0] == "gui":
         # Keep PySide6 out of init/help and all MCP imports.

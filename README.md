@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible plots">
+  <img src="https://img.shields.io/badge/version-0.1.0-orange" alt="Development version 0.1.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -22,6 +23,26 @@
 <p align="center">
   <img src="assets/example_compound.png" alt="Publication-ready compound scientific figure" width="820">
 </p>
+
+## Product and delivery
+
+Scientific Figure Builder is the open-source product, not a synonym for any one
+of its components. It combines a Workflow Skill, a local lifecycle MCP server,
+the deterministic Core runtime, a CLI, and a native Configuration app.
+
+The current `0.1.0` development line ships as an **Agent integration bundle** for
+Codex and OpenCode. It is not yet a Native Codex plugin: the standard plugin
+manifest and host-managed install, upgrade, and uninstall lifecycle are planned
+work. This distinction keeps today's installation contract accurate while the
+project moves toward a clean, standardized plugin distribution.
+
+| Component | Responsibility |
+|---|---|
+| Workflow Skill | Teaches the Calling Agent when and how to run the workflow |
+| Lifecycle MCP server | Exposes project initialization and lifecycle advancement |
+| Core runtime | Performs plotting, assembly, validation, and export locally |
+| Configuration app | Manages Providers, Model routes, and system credentials |
+| Agent integrations | Make the Skill and MCP server discoverable in Codex or OpenCode |
 
 ## What it delivers
 
@@ -82,8 +103,9 @@ cd scientific-figure
 ./install.sh
 ```
 
-The global installer registers the Skill and two-tool lifecycle MCP server for Codex and
-OpenCode, installs a private runtime, and creates `~/.local/bin/scientific-figure`.
+The current Agent integration bundle registers the Workflow Skill and two-tool
+Lifecycle MCP server for Codex and OpenCode, installs the Core runtime, and
+creates `~/.local/bin/scientific-figure`.
 
 ### 2. Configure Providers
 
@@ -173,6 +195,23 @@ precedence over its environment fallback.
 Only this tool's marked launcher and MCP entries are removed. If Keyring cleanup
 fails, user configuration is retained.
 </details>
+
+## Versioning
+
+Scientific Figure Builder follows [Semantic Versioning](https://semver.org/).
+`scientific-figure-builder/pyproject.toml` is the canonical Product version;
+the CLI and Lifecycle MCP server read that installed package version. Check it
+with:
+
+```bash
+scientific-figure --version
+```
+
+The project is currently pre-1.0, so `0.y.z` releases may still refine public
+interfaces. A release exists only when the repository has an immutable
+`vX.Y.Z` Git tag and a matching GitHub Release. Schema, prompt, and recipe
+versions are compatibility contracts of their own and do not follow the Product
+version automatically.
 
 ## Development
 

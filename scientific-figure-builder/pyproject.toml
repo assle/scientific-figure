@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "scientific-figure-builder"
 version = "0.1.0"
-description = "OpenCode-first scientific-figure orchestration skill (v1)."
+description = "Open-source scientific-figure workflow toolkit with a Skill, local MCP server, CLI, and configuration app."
 readme = "SKILL.md"
 requires-python = ">=3.11"
 license = "MIT"

@@ -1,20 +1,21 @@
-# Mission: 在 OpenCode 中使用 Scientific Figure Builder
+# Mission: Scientific Figure Builder
 
 ## Why
-能够在真实论文项目中，从 OpenCode 发起科研图规划、审批、生成、验证和导出，并正确使用火山方舟模型而不泄露密钥或误触发付费调用。
+为科研工作者和 AI Coding Agent 提供一个开源、可复现、可审计的科研绘图产品，能够干净安装、可靠运行、明确控制付费模型调用，并在卸载时不损坏用户配置和凭据。
 
 ## Success looks like
-- 能把 Skill、命令和 MCP 正确接入 OpenCode
-- 能区分 `init`、`plan`、`run`、`resume`、`validate` 和 `export`
-- 能完成一次“先审计划、再付费生成、最后导出”的完整任务
-- 能定位 MCP 未连接、环境变量未加载和命令未发现等常见问题
+- 产品组件具有明确边界：工作流 Skill、生命周期 MCP 服务、核心运行时、CLI、配置应用和 Agent 集成各自只有一个职责。
+- Codex 和 OpenCode 用户能够完成“先澄清、再审计划、再付费生成、最后验证与导出”的完整任务。
+- 安装、验证、升级和卸载共享同一套路径与版本规则，不遗留无主运行时或宿主配置。
+- API Key 不进入项目文件、日志、产物或 Agent 配置，付费调用始终受审批和预算约束。
+- Product version、Schema version、Phase prompt version 和 recipe version 各自具有清晰兼容性语义。
+
+## Current delivery
+- 当前开发版本为 `0.1.0`，处于 1.0 前的接口稳定化阶段。
+- 当前交付物是 Codex/OpenCode Agent 集成包，不是原生 Codex 插件。
+- 原生插件是目标交付形态；它将标准化 Skill、MCP、资源和宿主管理的生命周期。
 
 ## Constraints
-- 当前实现位于仓库中的 `scientific-figure-builder/`
-- 使用 OpenCode 1.18.8、`uv` 和现有 `.ark.env`
-- API Key 不写入 OpenCode 配置、项目配置或教学材料
-
-## Out of scope
-- 修改 Scientific Figure Builder 的实现
-- 更换火山方舟模型供应商
-- 扩展 Blender、动画或交互式绘图能力
+- Provider 保持可配置，不把任何模型供应商设为内置默认。
+- 精确数据、文字、公式和布局继续使用确定性本地路径；图像模型只生成或修复合格的非量化栅格素材。
+- 用户项目保留在用户选择的位置，凭据保留在系统凭据存储中。

@@ -1,10 +1,10 @@
 """MCP server exposing the stable capability tools and lifecycle orchestrator.
 
 Tool handlers wrap the deterministic engines and the provider client. The stdio
-JSON-RPC loop lets OpenCode discover and invoke the tools. When configured
-provider credentials resolve from the system store or environment, real paid
-calls are made under a run budget; otherwise a mock transport is used (safe
-default).
+JSON-RPC loop lets supported Calling Agents discover and invoke the tools. When
+configured provider credentials resolve from the system store or environment,
+real paid calls are made under a run budget; otherwise a mock transport is used
+(safe default).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
+from figure_tools import __version__
 from figure_tools.providers.client import ProviderClient
 from figure_tools.orchestrator import FigureOrchestrator
 from figure_tools.providers.auth import (
@@ -675,7 +676,7 @@ def serve_stdio() -> int:
         if method == "initialize":
             result = {"protocolVersion": "2024-11-05",
                       "capabilities": {"tools": {}},
-                      "serverInfo": {"name": "scientific-figure", "version": "0.1.0"}}
+                      "serverInfo": {"name": "scientific-figure", "version": __version__}}
         elif method == "tools/list":
             result = {"tools": _tool_list()}
         elif method == "tools/call":

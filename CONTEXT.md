@@ -1,6 +1,44 @@
 # Scientific Figure Builder
 
-Scientific Figure Builder turns a clarified scientific-figure request into reproducible assets, an assembled figure, validation evidence, and exportable outputs. This glossary defines the stable language shared by planning, model routing, configuration, delivery, validation, and export.
+Scientific Figure Builder is an open-source scientific-figure workflow product that turns a clarified request into reproducible assets, an assembled figure, validation evidence, and exportable outputs. This glossary defines the stable language shared by product delivery, planning, model routing, configuration, validation, and export.
+
+## Product and components
+
+**Scientific Figure Builder**:
+The complete open-source product, comprising workflow guidance, callable capabilities, deterministic production engines, configuration, and supported Agent integrations.
+_Avoid_: Skill, MCP, plugin, server
+
+**Workflow Skill**:
+The instructions and supporting resources that teach a Calling Agent when and how to use Scientific Figure Builder.
+_Avoid_: product, MCP server, plugin, prompt
+
+**Lifecycle MCP server**:
+The tool service that exposes Scientific Figure Builder's public lifecycle capabilities to a Calling Agent.
+_Avoid_: product, Skill, runtime, plugin
+
+**Core runtime**:
+The local execution environment that owns deterministic plotting, assembly, validation, export, and the Lifecycle MCP server.
+_Avoid_: Skill, plugin, Configuration app
+
+**Agent integration**:
+The host-specific discovery and configuration that makes the Workflow Skill and Lifecycle MCP server available to one Calling Agent.
+_Avoid_: plugin, product installation, project configuration
+
+**Agent integration bundle**:
+A coordinated but host-managed delivery of the Workflow Skill, Lifecycle MCP server, Core runtime, and one or more Agent integrations.
+_Avoid_: Native plugin, Skill, MCP
+
+**Native plugin**:
+A host-installable package with a standard plugin identity that owns its bundled Skills, MCP servers, resources, and enable, upgrade, and uninstall lifecycle.
+_Avoid_: Agent integration bundle, Skill, MCP server
+
+**Product version**:
+The Semantic Version identifying one coordinated Scientific Figure Builder product distribution across its components.
+_Avoid_: schema version, prompt version, recipe version
+
+**Schema version**:
+The compatibility version of a persisted artifact contract, independent of the Product version.
+_Avoid_: product version, release version
 
 ## Planning
 
@@ -169,11 +207,11 @@ _Avoid_: configured Agent, main model role, Scientific Figure Builder Agent
 ## Delivery
 
 **Global installation**:
-A user-scoped delivery of the Configuration app and Calling Agent integrations that can be used across projects.
+A user-scoped delivery of the Configuration app and Agent integrations that can be used across projects.
 _Avoid_: Global configuration, system installation, project setup
 
 **Project installation**:
-A delivery of Calling Agent integrations for one project that does not own the Global configuration or global Configuration app launcher.
+A delivery of Agent integrations for one project that does not own the Global configuration or global Configuration app launcher.
 _Avoid_: Project configuration, local environment, per-run setup
 
 ## Validation

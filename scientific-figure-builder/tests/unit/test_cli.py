@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from figure_tools import __version__
 from figure_tools.__main__ import main
 
 
@@ -29,3 +30,9 @@ def test_cli_init_defaults_to_cwd(tmp_path: Path, monkeypatch):
 def test_cli_no_args_prints_usage(capsys):
     rc = main([])
     assert rc == 2
+
+
+def test_cli_reports_installed_product_version(capsys):
+    rc = main(["--version"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == f"scientific-figure {__version__}"

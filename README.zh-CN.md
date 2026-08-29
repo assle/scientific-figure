@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
   <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
+  <img src="https://img.shields.io/badge/版本-0.1.0-orange" alt="开发版本 0.1.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -21,6 +22,23 @@
 <p align="center">
   <img src="assets/example_compound.png" alt="发表级复合科研图" width="820">
 </p>
+
+## 产品与交付形态
+
+Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
+Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
+
+当前 `0.1.0` 开发版本以面向 Codex 和 OpenCode 的 **Agent 集成包** 交付，尚不是
+原生 Codex 插件：标准插件清单以及由宿主管理的安装、升级和卸载生命周期仍在建设中。
+这个区分既准确描述当前安装契约，也明确了项目正在走向干净、规范化插件交付的方向。
+
+| 组件 | 职责 |
+|---|---|
+| 工作流 Skill | 告诉 Calling Agent 何时以及如何执行工作流 |
+| 生命周期 MCP 服务 | 提供项目初始化和生命周期推进能力 |
+| 核心运行时 | 在本地执行绘图、组装、验证和导出 |
+| 配置应用 | 管理 Provider、Model route 和系统凭据 |
+| Agent 集成 | 让 Codex 或 OpenCode 发现 Skill 与 MCP 服务 |
 
 ## 能得到什么
 
@@ -78,8 +96,8 @@ cd scientific-figure
 ./install.sh
 ```
 
-全局安装器会为 Codex 和 OpenCode 注册 Skill 与双入口生命周期 MCP 服务、安装私有
-运行时，并创建 `~/.local/bin/scientific-figure` 启动器。
+当前 Agent 集成包会为 Codex 和 OpenCode 注册工作流 Skill 与双入口生命周期 MCP
+服务、安装核心运行时，并创建 `~/.local/bin/scientific-figure` 启动器。
 
 ### 2. 配置 Provider
 
@@ -164,6 +182,20 @@ models:
 
 卸载器只删除本工具标记的启动器和 MCP 条目；Keyring 清理失败时会保留用户配置。
 </details>
+
+## 版本管理
+
+Scientific Figure Builder 遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+`scientific-figure-builder/pyproject.toml` 是 Product version 的唯一权威来源；CLI
+和生命周期 MCP 服务读取已安装 Python 包的版本。可通过下面的命令检查：
+
+```bash
+scientific-figure --version
+```
+
+项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。只有仓库同时存在不可变的
+`vX.Y.Z` Git tag 和对应 GitHub Release 时，才构成一次正式发布。Schema、Phase
+prompt 和绘图 recipe 各自拥有独立兼容性版本，不随 Product version 自动变化。
 
 ## 开发
 

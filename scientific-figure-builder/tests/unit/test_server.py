@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+import sys
 
 import pytest
 
-from figure_tools.server import PUBLIC_TOOLS, REQUIRED_TOOLS, TOOL_REGISTRY, _tool_list, dispatch
+from figure_tools import __version__
+from figure_tools.server import (
+    PUBLIC_TOOLS,
+    REQUIRED_TOOLS,
+    TOOL_REGISTRY,
+    _tool_list,
+    dispatch,
+    serve_stdio,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -76,6 +86,20 @@ def test_registry_exposes_high_level_workflow_seam():
 def test_mcp_public_surface_exposes_only_lifecycle_entrypoints():
     assert PUBLIC_TOOLS == ["initialize_figure_project", "advance_figure_workflow"]
     assert [tool["name"] for tool in _tool_list()] == PUBLIC_TOOLS
+
+
+def test_mcp_initialize_reports_installed_product_version(monkeypatch):
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(request + "\n"))
+    monkeypatch.setattr(sys, "stdout", output)
+
+    assert serve_stdio() == 0
+    response = json.loads(output.getvalue())
+    assert response["result"]["serverInfo"] == {
+        "name": "scientific-figure",
+        "version": __version__,
+    }
 
 
 def test_workflow_action_schema_requires_force_reason_and_rejects_unknown_fields():

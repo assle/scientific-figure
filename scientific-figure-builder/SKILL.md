@@ -1,11 +1,11 @@
 ---
 name: scientific-figure-builder
-description: Orchestrate publication scientific figures. Understand a figure request, decompose it into rendering tasks, route each to the right engine (Python plots, SVG, configurable image/vision providers), validate results, and assemble final PNG/SVG/PDF. Not a single-prompt image generator. Works with OpenCode and Codex; core modules are platform-independent.
+description: Workflow Skill for the Scientific Figure Builder product. Use it to turn a scientific-figure request into a governed lifecycle, route work to deterministic plots, SVG, and configured image or multimodal providers, validate results, and export publication-ready PNG/SVG/PDF. Not a single-prompt image generator. Works with OpenCode and Codex.
 license: MIT
 metadata:
   version: "0.1.0"
   provider: configurable
-  scope: v1
+  scope: product-component
 disable-model-invocation: true
 ---
 

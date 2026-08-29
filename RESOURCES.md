@@ -1,7 +1,11 @@
-# Scientific Figure Builder × OpenCode Resources
+# Scientific Figure Builder Resources
 
 ## Knowledge
 
+- [OpenAI Plugin architecture](https://developers.openai.com/plugins/concepts/plugins)
+  Plugin、Skill、MCP server 与可选 UI 的标准产品边界。
+- [OpenAI Plugin packaging](https://developers.openai.com/plugins/build/plugins)
+  原生插件清单、Skill 目录和 bundled MCP server 的交付结构。
 - [OpenCode Agent Skills](https://opencode.ai/docs/skills/)
   Skill 的全局与项目级安装路径、发现方式和 frontmatter 规则。
 - [OpenCode Commands](https://opencode.ai/docs/commands/)
@@ -10,8 +14,10 @@
   本地 MCP 的配置结构、环境变量传递和连接方式。
 - [Scientific Figure Builder README](./README.md)
   当前实现的安装、配置、职责边界、工作流和测试说明。
-- [Scientific Figure Builder Skill](./scientific-figure-builder/SKILL.md)
-  OpenCode 实际加载的编排规则。
+- [Scientific Figure Builder Workflow Skill](./scientific-figure-builder/SKILL.md)
+  Codex 和 OpenCode 加载的工作流组件，不代表完整产品。
+- [Scientific Figure Builder domain vocabulary](./CONTEXT.md)
+  产品、组件、交付、配置、验证和导出的统一术语。
 
 ## Wisdom (Communities)
 
