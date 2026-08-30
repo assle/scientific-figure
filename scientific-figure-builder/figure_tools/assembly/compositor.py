@@ -189,7 +189,11 @@ def compose_assets(
     for t, artist in text_artists:
         element_id = t.get("element_id") or f"text_{len(elements)}"
         kind = t.get("kind", "text")
-        element_type = "panel_label" if kind == "label" else "text"
+        element_type = (
+            "panel_label" if kind == "label"
+            else "equation" if kind == "equation"
+            else "text"
+        )
         el = text_artist_element(artist, int(canvas_h), element_id,
                                  t.get("panel_id"), element_type, renderer)
         if el is not None:

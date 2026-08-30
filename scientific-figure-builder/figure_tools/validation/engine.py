@@ -18,6 +18,7 @@ from figure_tools.validation.extractors.assembly import map_bbox
 from figure_tools.validation.extractors.raster_ocr import detect_text_elements
 from figure_tools.validation.models import AssembledFigure, read_layout_manifest
 from figure_tools.validation.graph_structure import validate_graph_structure
+from figure_tools.validation.formal_text import formal_text_checks
 from figure_tools.validation.publication import publication_profile_checks
 from figure_tools.provenance import hash_json
 from figure_tools.validation.vlm_verify import VLMVerifier
@@ -322,6 +323,8 @@ class FigureQAEngine:
             checks.append(make_check(
                 "geometry_checks_skipped", "final", "warning", "skipped",
                 "no layout manifest; geometry rules skipped"))
+
+        checks.extend(formal_text_checks(figure.figure_plan, manifest))
 
         checks.extend(publication_profile_checks(
             str(figure.figure_plan.get("publication_profile") or "general"),

@@ -24,6 +24,12 @@ assets. After a Style anchor is approved, Execution derives a separate
 anchor-conditioned Execution artifact without rewriting the approved Planning
 conditions.
 
+Final validation compares the authoritative Figure-plan label and equation map
+with the source-aware assembly manifest using exact text checks. The offline
+regression set includes twenty single-axis mechanism-figure defects spanning
+structure, text, geometry, phase organization, publication constraints, and
+raster editing.
+
 Each model-assisted lifecycle phase receives a fresh Phase worker context with
 only its Phase prompt, allowed tools, and upstream Phase artifacts. Prompt
 version, prompt hash, and allowed tools are recorded under the run's
