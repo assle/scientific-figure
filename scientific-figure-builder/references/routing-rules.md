@@ -1,6 +1,6 @@
 # Routing rules
 
-Element-to-engine routing for scientific-figure-builder (plan section 2).
+Element-to-engine routing for Scientific Figure Builder.
 
 ## Responsibility boundaries
 

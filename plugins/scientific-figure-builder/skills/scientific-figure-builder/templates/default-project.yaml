@@ -2,7 +2,7 @@
 # This file contains NO secrets. Provider keys are read from the environment
 # variables named by each provider's `key_env` (see references/provider-interfaces.md).
 #
-# Configuration is merged in this order (plan section 5):
+# Configuration is merged in this order:
 #   Skill defaults < user-local private config < project config < per-run overrides
 
 schema_version: "1.0"
@@ -26,13 +26,13 @@ export:
   dpi: 300
   export_target: general
 
-# Concurrency and reliability limits (plan section 12).
+# Concurrency and reliability limits.
 limits:
   independent_asset_concurrency: 2
   max_quality_retries_per_asset: 2
   default_candidate_count: 1
 
-# Model roles (plan section 5). Two roles may share a model, but each role is
+# Model roles. Two roles may share a model, but each role is
 # configured independently. For a global default, set the same keys in
 # ~/.config/scientific-figure-builder/config.yaml; this project file overrides it.
 # Each model references a provider defined in `providers` below. A role is only
@@ -89,9 +89,6 @@ providers:
     key_env: ANTHROPIC_API_KEY
     auth_scheme: x-api-key
     messages_path: /messages
-
-# Optional domain template selection.
-domain_template: null
 
 # Image QA / layout validation (source-aware). All fields optional; omitted
 # fields fall back to code defaults so older project configs keep working.

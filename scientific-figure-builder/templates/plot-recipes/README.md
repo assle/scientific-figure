@@ -1,8 +1,8 @@
 # Plot recipes
 
-Plot recipes are implemented in Phase 2 (deterministic local engines).
+Plot recipes are deterministic local renderers.
 
-Expected v1 recipes (plan section 15, Phase 2):
+Available recipes:
 - `line`
 - `scatter`
 - `bar`

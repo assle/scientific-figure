@@ -1,6 +1,6 @@
 # Workflow details
 
-Configuration, approval, budget, and resume behavior (plan sections 5 and 12).
+Configuration, approval, budget, and resume behavior.
 
 ## Lifecycle orchestration
 

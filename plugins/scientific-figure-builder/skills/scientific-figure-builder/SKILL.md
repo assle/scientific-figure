@@ -39,6 +39,5 @@ between phases.
 - Keep raw CSV/Excel/JSON data local by default and disclose every upload before
   a network operation.
 
-For route-specific details and the run artifact contract, see
-`references/routing-rules.md`, `references/workflow-details.md`, and
-`references/output-contract.md`.
+For route-specific details and lifecycle behavior, see
+`references/routing-rules.md` and `references/workflow-details.md`.

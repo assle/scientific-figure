@@ -1,6 +1,6 @@
 # Provider interfaces
 
-Provider-neutral integration notes (plan sections 5, 8, 12, 17). The tool is not
+Provider-neutral integration notes. The tool is not
 wedded to a single vendor: any OpenAI- or Anthropic-compatible endpoint can be
 configured per model role.
 
