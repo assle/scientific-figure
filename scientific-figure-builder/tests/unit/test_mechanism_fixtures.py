@@ -121,7 +121,10 @@ def _failed_checks(case, tmp_path):
                 "a": [0.1, 0.4, 0.2, 0.2], "b": [0.7, 0.4, 0.2, 0.2],
                 "obstacle": [0.4, 0.3, 0.2, 0.4],
             }
+            observed["nodes"].append({"node_id": "obstacle"})
             if defect == "exclusion_overlap":
+                graph["typed_edges"] = []
+                observed["connectors"] = []
                 graph["constraints"] = [{
                     "kind": "exclude", "bbox": [0.4, 0.3, 0.2, 0.4],
                     "node_ids": ["obstacle"],
@@ -189,7 +192,28 @@ def test_twenty_offline_mechanism_cases_execute_real_single_axis_validators(tmp_
     assert {case["axis"] for case in cases} == {
         "structure", "text", "geometry", "phase", "publication", "raster",
     }
+    check_axes = {
+        "graph_node_recovery": "structure",
+        "graph_edge_recovery": "structure",
+        "formal_text_exact_match": "text",
+        "formula_exact_match": "text",
+        "rendered_text_ocr_exact_match": "text",
+        "rendered_formula_ocr_exact_match": "text",
+        "unexpected_ai_text": "text",
+        "asset_bounds": "geometry",
+        "figure_layout_conflicts": "geometry",
+        "graph_group_recovery": "phase",
+        "publication_accessibility": "publication",
+        "publication_editable_vectors": "publication",
+        "publication_dimensions": "publication",
+        "publication_typography": "publication",
+        "blank_output": "raster",
+        "edge_margins": "raster",
+        "edit_outcome": "raster",
+    }
     for case in cases:
-        assert case["expected_check_id"] in _failed_checks(
-            case, tmp_path / case["case_id"]
-        )
+        failures = _failed_checks(case, tmp_path / case["case_id"])
+        assert case["expected_check_id"] in failures
+        assert {check_axes[check_id] for check_id in failures} == {
+            case["axis"]
+        }, case
