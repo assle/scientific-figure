@@ -69,5 +69,12 @@ def vision_prompt(role: str, payload: dict[str, Any]) -> str:
         if role == "reference_analysis"
         else DEFAULT_VALIDATION_INSTRUCTION
     )
+    requested_checks = [str(item) for item in payload.get("checks", []) if item]
+    if requested_checks and role != "reference_analysis":
+        instruction += (
+            " Also evaluate these requested checks and return one result for every "
+            "requested check, using a stable snake_case check_id derived from its "
+            "text: " + json.dumps(requested_checks, ensure_ascii=False) + "."
+        )
     prompt = payload.get("prompt")
     return f"{prompt}\n\n{instruction}" if prompt else instruction

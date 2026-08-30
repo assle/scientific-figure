@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from figure_tools.providers.contracts import DEFAULT_VALIDATION_INSTRUCTION, extract_json
+from figure_tools.providers.contracts import (
+    DEFAULT_VALIDATION_INSTRUCTION,
+    extract_json,
+    vision_prompt,
+)
 from figure_tools.providers.auth import SecretRedactor
 
 
@@ -38,3 +42,16 @@ def test_validation_instruction_includes_layout_checks():
 
 def test_validation_instruction_remains_concise():
     assert len(DEFAULT_VALIDATION_INSTRUCTION) < 800
+
+
+def test_validation_prompt_includes_requested_candidate_axes():
+    prompt = vision_prompt("validations", {
+        "checks": [
+            "Publication profile asset quality",
+            "aesthetic quality",
+        ],
+    })
+
+    assert "Publication profile asset quality" in prompt
+    assert "aesthetic quality" in prompt
+    assert "one result for every requested check" in prompt

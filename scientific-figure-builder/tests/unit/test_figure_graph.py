@@ -131,3 +131,31 @@ def test_layout_solver_applies_alignment_spacing_groups_and_exclusion_zones():
     assert solved["connectors"][0]["points"][1][0] == (
         solved["connectors"][0]["points"][2][0]
     )
+
+
+def test_layout_solver_reports_when_every_connector_route_hits_an_obstacle():
+    request = _request()
+    request["panels"].append({
+        "panel_id": "middle",
+        "bbox": [0.4, 0.3, 0.2, 0.4],
+        "physical_size": [36, 36],
+        "elements": [{
+            "element_id": "obstacle",
+            "type": "vector_element",
+            "bbox": [0, 0, 1, 1],
+        }],
+    })
+    graph = build_figure_graph(request, create_figure_plan(request))
+
+    solved = solve_figure_layout(graph, request["canvas"], {
+        "receptor": [0.1, 0.4, 0.2, 0.2],
+        "pathway": [0.7, 0.4, 0.2, 0.2],
+        "obstacle": [0.4, 0.3, 0.2, 0.4],
+    })
+
+    conflicts = [
+        item for item in solved["conflicts"]
+        if item["kind"] == "connector_route_conflict"
+    ]
+    assert conflicts
+    assert conflicts[0]["element_ids"] == ["activation"]

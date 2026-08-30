@@ -287,10 +287,21 @@ def solve_figure_layout(
             [float(value) for value in exclusion.get("bbox", [])]
             for exclusion in exclusions if len(exclusion.get("bbox", [])) == 4
         )
-        points = min(
-            route_candidates,
-            key=lambda route: _route_score(route, obstacle_boxes, existing_routes),
-        )
+        scored_routes = [
+            (_route_score(route, obstacle_boxes, existing_routes), route)
+            for route in route_candidates
+        ]
+        best_score, points = min(scored_routes, key=lambda item: item[0])
+        if best_score != (0, 0):
+            conflicts.append({
+                "kind": "connector_route_conflict",
+                "element_ids": [str(edge["edge_id"])],
+                "detail": (
+                    "no connector route avoids all node/exclusion obstacles and "
+                    f"existing connectors (obstacle hits={best_score[0]}, "
+                    f"crossings={best_score[1]})"
+                ),
+            })
         existing_routes.append(points)
         connectors.append({
             "edge_id": str(edge["edge_id"]),
