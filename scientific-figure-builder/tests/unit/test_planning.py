@@ -107,6 +107,21 @@ def test_plan_estimates_disclosed_candidate_calls():
     assert estimated["validations"] == 3
 
 
+def test_plan_discloses_every_per_asset_reference_upload():
+    request = _request()
+    request["panels"][1]["elements"][0]["references"] = [{
+        "role": "style",
+        "path": "/references/style.png",
+        "content_hash": "sha256:style",
+        "strength": 0.75,
+    }]
+
+    uploads = create_figure_plan(request)["planned_uploads"]
+
+    assert {item["path"] for item in uploads} == {"/references/style.png"}
+    assert uploads[0]["reason"] == "style reference for fiber"
+
+
 def test_plan_approval_pending_by_default():
     plan = create_figure_plan(_request())
     assert plan["approval"]["status"] == "pending"

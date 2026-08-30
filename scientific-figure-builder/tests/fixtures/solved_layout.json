@@ -8,6 +8,7 @@
       "node_type": "image_asset",
       "asset_id": "receptor",
       "panel_id": "a",
+      "z_order": 1,
       "bbox": [0.1, 0.2, 0.3, 0.5]
     }
   ],

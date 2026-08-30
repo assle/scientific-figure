@@ -7,38 +7,22 @@ from collections.abc import Mapping
 from typing import Any
 
 
-def _absolute_bbox(asset: Mapping[str, Any], panels: Mapping[str, Mapping[str, Any]]):
-    bbox = [float(value) for value in asset.get("bbox", [0, 0, 1, 1])]
-    if asset.get("bbox_space") != "panel":
-        return bbox
-    panel = panels[str(asset["panel_id"])]
-    px, py, pw, ph = (float(value) for value in panel["bbox"])
-    x, y, width, height = bbox
-    return [
-        round(px + x * pw, 12),
-        round(py + y * ph, 12),
-        round(width * pw, 12),
-        round(height * ph, 12),
-    ]
-
-
 def build_figure_graph(
     request: Mapping[str, Any],
     plan: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Return a versioned graph with addressable nodes, ports, and relations."""
 
-    panels = {str(item["panel_id"]): item for item in plan.get("panels", [])}
     nodes = [
         {
             "node_id": str(asset["asset_id"]),
             "node_type": str(asset["type"]),
             "asset_id": str(asset["asset_id"]),
             "panel_id": str(asset.get("panel_id") or ""),
-            "bbox": _absolute_bbox(asset, panels),
+            "z_order": int(asset.get("z_order", 0)),
         }
         for asset in plan.get("assets", [])
-        if asset.get("panel_id") and asset.get("bbox")
+        if asset.get("panel_id")
     ]
     node_ids = {item["node_id"] for item in nodes}
     supplied = request.get("figure_graph")

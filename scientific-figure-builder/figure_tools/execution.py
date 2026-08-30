@@ -10,24 +10,18 @@ from typing import Any
 
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.export.publish import export_figure
-from figure_tools.figure_graph import build_figure_graph
-from figure_tools.figure_layout import solve_figure_layout
-from figure_tools.generation_conditions import compile_generation_condition
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
-from figure_tools.planning.layout_analysis import analyze_layout
-from figure_tools.provenance import hash_file, hash_json
+from figure_tools.planning.geometry import resolve_asset_bbox
+from figure_tools.provenance import hash_file
 from figure_tools.publication_profiles import get_publication_profile
 from figure_tools.report import write_generation_report
 from figure_tools.run_store import RunStore
 from figure_tools.validation.engine import FigureQAEngine
-from figure_tools.validation.graph_structure import build_structure_questions
 from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
-from figure_tools.vector.blueprint import render_figure_blueprint
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
-from figure_tools.vector.wireframe import generate_wireframe
 
 
 class FigureExecution:
@@ -54,55 +48,6 @@ class FigureExecution:
         c = self.request["canvas"]
         return float(c["width"]), float(c["height"])
 
-    def prepare_plan_artifacts(self, plan: dict[str, Any]) -> dict[str, Any]:
-        """Persist the deterministic artifacts derived from one Figure plan."""
-        graph = build_figure_graph(self.request, plan)
-        graph_reference = self.store.commit_json(
-            "plans/figure_graph.json", graph, schema="figure-graph.schema.json"
-        )
-        self.store.commit_json(
-            "plans/structure_questions.json",
-            {
-                "schema_version": "1.0",
-                "figure_id": graph["figure_id"],
-                "questions": build_structure_questions(graph),
-            },
-            schema="structure-questions.schema.json",
-        )
-        solved_layout = solve_figure_layout(graph, plan["canvas"])
-        layout_reference = self.store.commit_json(
-            "plans/solved_layout.json",
-            solved_layout,
-            schema="solved-layout.schema.json",
-        )
-        blueprint_reference = self.store.commit_text(
-            "plans/figure_blueprint.svg", render_figure_blueprint(solved_layout)
-        )
-        plan["figure_graph_ref"] = {
-            "artifact": "plans/figure_graph.json",
-            "content_hash": graph_reference["content_hash"],
-        }
-        plan["solved_layout_ref"] = {
-            "artifact": "plans/solved_layout.json",
-            "content_hash": layout_reference["content_hash"],
-        }
-        plan["blueprint_ref"] = {
-            "artifact": "plans/figure_blueprint.svg",
-            "content_hash": blueprint_reference["content_hash"],
-        }
-        self.store.commit_json(
-            "plans/figure_plan.json", plan, schema="figure-plan.schema.json"
-        )
-        self.store.commit_text("plans/layout_wireframe.svg", generate_wireframe(plan))
-
-        data_chars = self._collect_data_characteristics()
-        layout_report = analyze_layout(plan, data_chars)
-        self.store.commit_json("plans/layout_analysis.json", layout_report)
-        self._write_style_bible()
-        self._compile_generation_conditions(plan)
-        self._copy_inputs()
-        return layout_report
-
     def execute_plan(
         self,
         plan: dict[str, Any],
@@ -123,40 +68,51 @@ class FigureExecution:
             if el["type"] == "image_asset"
         ]
         conditions = self._generation_conditions()
-        if len(ai_elements) >= 3:
-            anchor_id = ai_elements[0][1]["element_id"]
+        grouped_assets: dict[str, list[tuple[dict, dict]]] = {}
+        for panel, element in ai_elements:
+            grouped_assets.setdefault(
+                str(element.get("style_group") or "figure"), []
+            ).append((panel, element))
+        style_anchors: dict[str, dict[str, Any]] = {}
+        reusable = dict(pre_rendered_assets or {})
+        for style_group, members in grouped_assets.items():
+            if len(members) < 2:
+                continue
+            anchor_id = members[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
-            anchor_meta = None
-            if not anchor_path.exists():
+            anchor_meta = reusable.get(anchor_id)
+            if (
+                anchor_meta is None
+                or not anchor_path.is_file()
+                or anchor_meta.get("content_hash") != hash_file(anchor_path)
+            ):
                 anchor_meta = self._generate_condition(
                     conditions[anchor_id], anchor_path,
                 )
-            if not style_anchor_approved:
-                if anchor_meta is not None:
-                    self.store.commit_json(
-                        "plans/pre_rendered_assets.json", {anchor_id: anchor_meta}
-                    )
-                return {"paused": True, "pause_reason": "style_anchor_approval"}
-            anchor_record = (pre_rendered_assets or {}).get(anchor_id) or anchor_meta
-            anchor_hash = (
-                anchor_record.get("content_hash")
-                if anchor_record is not None
-                else hash_file(anchor_path)
-            )
+                reusable[anchor_id] = anchor_meta
+            style_anchors[style_group] = {
+                "asset_id": anchor_id,
+                "path": str(anchor_path),
+                "content_hash": anchor_meta["content_hash"],
+            }
+        if len(ai_elements) >= 3 and not style_anchor_approved:
+            self.store.commit_json("plans/pre_rendered_assets.json", reusable)
+            return {"paused": True, "pause_reason": "style_anchor_approval"}
+        if style_anchors:
+            from figure_tools.planning.artifacts import FigurePlanningArtifacts
+
+            condition_artifact = FigurePlanningArtifacts(
+                self.request,
+                self.config,
+                self.run_dir,
+                self.provider,
+                base_dir=self.base_dir,
+            ).refresh_generation_conditions(plan, style_anchors=style_anchors)
             conditions = {
                 item["asset_id"]: item
-                for item in self._compile_generation_conditions(
-                    plan,
-                    style_anchor={
-                        "asset_id": anchor_id,
-                        "path": str(anchor_path),
-                        "content_hash": anchor_hash,
-                        "style_group": str(
-                            ai_elements[0][1].get("style_group") or "figure"
-                        ),
-                    },
-                )["conditions"]
+                for item in condition_artifact["conditions"]
             }
+            pre_rendered_assets = reusable
 
         manifest_assets, validation_reports, placements, text_placements = \
             self._render_assets(plan, ai_elements, export_target, conditions,
@@ -323,96 +279,19 @@ class FigureExecution:
             value = (self.config.get("export") or {}).get("export_target")
         return resolve_export_target(value)
 
-    def _write_style_bible(self) -> None:
-        from figure_tools._resources import template_path
-
-        style = self.request.get("style", "default")
-        destination = self.run_dir / "style_bible.json"
-        if isinstance(style, dict):
-            self.store.commit_json("style_bible.json", style)
-            return
-        if isinstance(style, str) and style not in {"", "default"}:
-            candidate = Path(style)
-            if candidate.is_file():
-                shutil.copyfile(candidate, destination)
-                return
-        src = template_path("default-style-bible.json")
-        self.store.commit_json(
-            "style_bible.json", json.loads(src.read_text(encoding="utf-8"))
-        )
-
-    def _compile_generation_conditions(
-        self,
-        plan: dict[str, Any],
-        style_anchor: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        style_path = self.run_dir / "style_bible.json"
-        style_bible = json.loads(style_path.read_text(encoding="utf-8"))
-        profile_id = str(
-            self.request.get("publication_profile")
-            or self.config.get("publication_profile")
-            or "general"
-        )
-        publication_profile = get_publication_profile(profile_id)
-        capabilities = self._image_provider_capabilities()
-        conditions = []
-        for asset in plan.get("assets", []):
-            if asset.get("type") != "image_asset":
-                continue
-            source = dict(asset.get("source") or {})
-            references = list(source.get("references", []))
-            style_group = str(source.get("style_group") or "figure")
-            if (
-                style_anchor is not None
-                and asset["asset_id"] != style_anchor["asset_id"]
-                and style_group == style_anchor["style_group"]
-            ):
-                references.append({
-                    "role": "style",
-                    "path": style_anchor["path"],
-                    "content_hash": style_anchor["content_hash"],
-                    "strength": 1.0,
-                })
-            conditions.append(compile_generation_condition({
-                "asset_id": asset["asset_id"],
-                "model_role": "image_generate",
-                "scientific_intent": self.request.get("intent", ""),
-                "prompt": source.get("prompt", ""),
-                "style_bible": style_bible,
-                "style_bible_hash": hash_file(style_path),
-                "publication_profile": publication_profile,
-                "publication_profile_hash": hash_json(publication_profile),
-                "parameters": source.get("parameters", {}),
-                "references": references,
-                "provider_capabilities": capabilities,
-            }))
-        artifact = {"schema_version": "1.0", "conditions": conditions}
-        self.store.commit_json(
-            "plans/generation_conditions.json",
-            artifact,
-            schema="generation-conditions.schema.json",
-        )
-        return artifact
-
-    def _image_provider_capabilities(self) -> dict[str, Any]:
-        models = self.config.get("models") or {}
-        route = models.get("image_generate") or {}
-        provider_id = route.get("provider")
-        providers = self.config.get("providers") or {}
-        provider = providers.get(provider_id) if provider_id else None
-        adapter_capabilities = (
-            self.provider.generation_capabilities()
-            if hasattr(self.provider, "generation_capabilities")
-            else {}
-        )
-        return {**adapter_capabilities, **dict(provider or {})}
-
     def _generation_conditions(self) -> dict[str, dict[str, Any]]:
         artifact = self.store.load_optional_json("plans/generation_conditions.json")
         if artifact is None:
-            artifact = self._compile_generation_conditions(
-                self.store.load_json("plans/figure_plan.json")
-            )
+            from figure_tools.planning.artifacts import FigurePlanningArtifacts
+
+            plan = self.store.load_json("plans/figure_plan.json")
+            artifact = FigurePlanningArtifacts(
+                self.request,
+                self.config,
+                self.run_dir,
+                self.provider,
+                base_dir=self.base_dir,
+            ).refresh_generation_conditions(plan)
         return {
             str(item["asset_id"]): dict(item)
             for item in artifact.get("conditions", [])
@@ -438,24 +317,6 @@ class FigureExecution:
         meta["condition_hash"] = condition["condition_hash"]
         return meta
 
-    def _copy_inputs(self) -> None:
-        inputs = self.run_dir / "inputs"
-        inputs.mkdir(parents=True, exist_ok=True)
-        for ref in self.request.get("reference_figures", []):
-            src = Path(ref)
-            if src.exists():
-                shutil.copyfile(src, inputs / src.name)
-        for panel in self.request["panels"]:
-            for el in panel.get("elements", []):
-                if el["type"] == "data_plot":
-                    try:
-                        spec = load_plot_spec(el["plot_spec"])
-                        src = self.base_dir / spec.source_data["path"]
-                        if src.exists():
-                            shutil.copyfile(src, inputs / src.name)
-                    except Exception:  # noqa: BLE001
-                        pass
-
     def _error_report(self, asset_id: str, detail: str) -> dict:
         from figure_tools.validation.summary import summarize_checks
 
@@ -463,63 +324,6 @@ class FigureExecution:
                    "level": "error", "status": "fail", "detail": detail}]
         return {"schema_version": "1.0", "run_id": asset_id,
                 "checks": checks, "summary": summarize_checks(checks)}
-
-    def _collect_data_characteristics(self) -> dict[str, Any]:
-        panels: dict[str, Any] = {}
-        labels = self.request.get("labels", [])
-        for i, panel in enumerate(self.request["panels"]):
-            pid = panel["panel_id"]
-            element_count = 0
-            label_len = 0
-            densities = {
-                "upper_left": 0.3, "upper_right": 0.3,
-                "lower_left": 0.3, "lower_right": 0.3,
-            }
-            for el in panel.get("elements", []):
-                element_count += 1
-                if el["type"] == "data_plot":
-                    try:
-                        spec = load_plot_spec(el["plot_spec"])
-                        element_count += max(len(spec.series) - 1, 0)
-                        for v in spec.labels.values():
-                            label_len = max(label_len, len(str(v)))
-                        computed = self._compute_density(spec)
-                        if computed:
-                            densities = computed
-                    except Exception:  # noqa: BLE001
-                        pass
-            if i < len(labels):
-                label_len = max(label_len, len(labels[i].get("content", "")))
-            panels[pid] = {
-                "data_element_count": element_count,
-                "label_text_length": label_len,
-                "data_density_by_region": densities,
-            }
-        return {"panels": panels}
-
-    def _compute_density(self, spec) -> dict[str, float] | None:
-        import pandas as pd
-
-        data_path = self.base_dir / spec.source_data["path"]
-        if not data_path.exists():
-            return None
-        df = pd.read_csv(data_path)
-        x_col = spec.column_mapping.get("x", "")
-        y_col = spec.column_mapping.get("y", "")
-        if x_col not in df.columns or y_col not in df.columns:
-            return None
-        x_mid = (df[x_col].min() + df[x_col].max()) / 2
-        y_mid = (df[y_col].min() + df[y_col].max()) / 2
-        total = len(df)
-        if total == 0:
-            return None
-        quadrants = {
-            "upper_left": ((df[x_col] < x_mid) & (df[y_col] >= y_mid)).sum(),
-            "upper_right": ((df[x_col] >= x_mid) & (df[y_col] >= y_mid)).sum(),
-            "lower_left": ((df[x_col] < x_mid) & (df[y_col] < y_mid)).sum(),
-            "lower_right": ((df[x_col] >= x_mid) & (df[y_col] < y_mid)).sum(),
-        }
-        return {k: round(v / total, 2) for k, v in quadrants.items()}
 
     def _render_assets(self, plan, ai_elements, export_target: str, conditions,
                        pre_rendered_assets: dict[str, dict[str, Any]] | None = None):
@@ -627,7 +431,7 @@ class FigureExecution:
         output_path: Path,
         candidate_count: int,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        candidates: list[tuple[tuple[int, int, int, int], dict, dict, Path]] = []
+        candidates: list[tuple[tuple[int | float, ...], dict, dict, Path]] = []
         records = []
         for index in range(1, candidate_count + 1):
             candidate_path = (
@@ -645,9 +449,39 @@ class FigureExecution:
                 physical_size_mm=tuple(panel["physical_size"]),
             )
             summary = report.get("summary") or {}
+            report_checks = list(report.get("checks") or [])
+            semantic_checks = [
+                item for item in report_checks
+                if any(token in str(item.get("check_id", "")) for token in (
+                    "semantic", "component", "object", "count", "structure",
+                ))
+            ]
+            style_checks = [
+                item for item in report_checks
+                if any(token in str(item.get("check_id", "")) for token in (
+                    "style", "aesthetic", "visual_quality",
+                ))
+            ]
+            semantic_failures = sum(
+                item.get("status") == "fail" for item in semantic_checks
+            )
+            semantic_passes = sum(
+                item.get("status") == "pass" for item in semantic_checks
+            )
+            style_failures = sum(
+                item.get("status") == "fail" for item in style_checks
+            )
+            style_score = max(
+                (float(item.get("confidence", 0.0)) for item in style_checks),
+                default=0.0,
+            )
             rank = (
                 1 if summary.get("blocking") else 0,
                 int(summary.get("errors", 0)),
+                semantic_failures,
+                -semantic_passes,
+                style_failures,
+                -style_score,
                 int(summary.get("warnings", 0)),
                 -int(summary.get("passed", 0)),
             )
@@ -660,6 +494,10 @@ class FigureExecution:
                 "errors": int(summary.get("errors", 0)),
                 "warnings": int(summary.get("warnings", 0)),
                 "passed": int(summary.get("passed", 0)),
+                "semantic_failures": semantic_failures,
+                "semantic_passes": semantic_passes,
+                "style_failures": style_failures,
+                "style_score": style_score,
             })
         selected_index, selected = min(
             enumerate(candidates, start=1), key=lambda item: item[1][0]
@@ -676,7 +514,7 @@ class FigureExecution:
                 "schema_version": "1.0",
                 "asset_id": asset_id,
                 "selected_candidate": selected_index,
-                "selection_policy": "hard-gates-then-quality",
+                "selection_policy": "authoritative-gates-then-quality",
                 "candidates": records,
             },
         )
@@ -692,17 +530,7 @@ class FigureExecution:
         )
         if not asset or not asset.get("bbox"):
             return list(panel["bbox"])
-        bbox = [float(value) for value in asset["bbox"]]
-        if asset.get("bbox_space") != "panel":
-            return bbox
-        px, py, pw, ph = (float(value) for value in panel["bbox"])
-        x, y, width, height = bbox
-        return [
-            round(px + x * pw, 12),
-            round(py + y * ph, 12),
-            round(width * pw, 12),
-            round(height * ph, 12),
-        ]
+        return resolve_asset_bbox(asset, panel)
 
     def _render_labels(self, plan, manifest_assets, export_target: str) -> list[dict]:
         text_placements: list[dict] = []

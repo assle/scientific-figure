@@ -26,11 +26,13 @@ def _f1(expected: set[str], observed: set[str]) -> dict[str, float]:
 
 def validate_graph_structure(
     graph: Mapping[str, Any],
-    solved_layout: Mapping[str, Any],
+    observed_structure: Mapping[str, Any],
+    *,
+    conflicts: list[Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     expected_nodes = {str(item["node_id"]) for item in graph.get("nodes", [])}
     observed_nodes = {
-        str(item["node_id"]) for item in solved_layout.get("nodes", [])
+        str(item["node_id"]) for item in observed_structure.get("nodes", [])
     }
     missing_nodes = sorted(expected_nodes - observed_nodes)
     extra_nodes = sorted(observed_nodes - expected_nodes)
@@ -62,7 +64,7 @@ def validate_graph_structure(
             str(item["target_port"]),
             str(item.get("direction") or "forward"),
         )
-        for item in solved_layout.get("connectors", [])
+        for item in observed_structure.get("connectors", [])
     }
     incorrect_edges = sorted(
         edge_id
@@ -87,7 +89,7 @@ def validate_graph_structure(
         element_ids=[*incorrect_edges, *extra_edges],
         metrics=_f1(set(expected_edges), recovered_edges | set(extra_edges)),
     )
-    conflicts = list(solved_layout.get("conflicts") or [])
+    conflicts = list(conflicts or [])
     conflict_check = make_check(
         "figure_layout_conflicts",
         "final",

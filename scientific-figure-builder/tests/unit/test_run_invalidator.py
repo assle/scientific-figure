@@ -136,6 +136,7 @@ def test_repair_invalidation_is_route_specific(
     assert (tmp_path / retained).exists()
     assert not (tmp_path / "validation/final.json").exists()
     assert not (tmp_path / "exports/figure.png").exists()
+
     assert state.step_status("execution") == "pending"
 
 
@@ -157,3 +158,24 @@ def test_assembly_change_and_export_rerun_have_narrow_downstream_plans(tmp_path)
 
     assert (tmp_path / "validation/final.json").exists()
     assert not (tmp_path / "exports/figure.png").exists()
+
+
+def test_layout_and_connector_patches_preserve_unrelated_planning_artifacts(tmp_path):
+    layout_dir = tmp_path / "layout"
+    layout_invalidator, _ = _prepared_run(layout_dir)
+
+    layout_invalidator.after_repairs({"raster-a": "layout_patch"})
+
+    assert (layout_dir / "plans/figure_graph.json").exists()
+    assert (layout_dir / "plans/structure_questions.json").exists()
+    assert (layout_dir / "plans/generation_conditions.json").exists()
+    assert not (layout_dir / "plans/solved_layout.json").exists()
+
+    connector_dir = tmp_path / "connector"
+    connector_invalidator, _ = _prepared_run(connector_dir)
+
+    connector_invalidator.after_repairs({"raster-a": "connector_patch"})
+
+    assert not (connector_dir / "plans/figure_graph.json").exists()
+    assert not (connector_dir / "plans/structure_questions.json").exists()
+    assert (connector_dir / "plans/generation_conditions.json").exists()

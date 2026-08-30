@@ -89,13 +89,17 @@ def _multimodal_final_checks(
     provider_client: Any,
     composed_image_path: str | Path,
     physical_size_mm: tuple[float, float],
+    structure_questions: list[str] | None = None,
 ) -> list[dict]:
     if provider_client is None:
         return [make_check("multimodal_final", "final", "warning", "skipped",
                        "no provider client; multimodal final check skipped")]
     try:
         raw = provider_client.validate_final_figure(
-            composed_image_path, physical_size_mm=physical_size_mm)
+            composed_image_path,
+            physical_size_mm=physical_size_mm,
+            checks=structure_questions,
+        )
     except Exception as e:  # noqa: BLE001
         return [make_check("multimodal_final", "final", "warning", "skipped",
                        f"multimodal final check unavailable: {e}")]
@@ -113,7 +117,9 @@ def _multimodal_final_checks(
 def _figure_graph_checks(
     figure_plan: dict[str, Any],
     composed_image_path: str | Path,
-) -> list[dict[str, Any]]:
+    asset_manifest: dict[str, Any],
+    manifest: Any,
+) -> tuple[list[dict[str, Any]], list[str]]:
     graph_ref = figure_plan.get("figure_graph_ref") or {}
     layout_ref = figure_plan.get("solved_layout_ref") or {}
     if not graph_ref or not layout_ref:
@@ -123,7 +129,7 @@ def _figure_graph_checks(
             "warning",
             "skipped",
             "Figure plan has no Figure Graph references",
-        )]
+        )], []
     run_dir = Path(composed_image_path).parent.parent
 
     def load(reference: dict[str, Any]) -> dict[str, Any]:
@@ -145,8 +151,59 @@ def _figure_graph_checks(
             "error",
             "fail",
             str(exc),
-        )]
-    return validate_graph_structure(graph, solved_layout)
+        )], []
+    expected_node_ids = {str(item["node_id"]) for item in graph.get("nodes", [])}
+    observed_nodes = [
+        {"node_id": str(item["asset_id"])}
+        for item in asset_manifest.get("assets", [])
+        if str(item.get("asset_id")) in expected_node_ids
+    ]
+    observed_connectors = []
+    if manifest is not None:
+        for element in manifest.elements:
+            if element.element_type != "connector":
+                continue
+            observed_connectors.append({
+                "edge_id": element.element_id.removeprefix("edge:"),
+                "source_port": element.metadata.get("source_port", ""),
+                "target_port": element.metadata.get("target_port", ""),
+                "direction": element.metadata.get("direction", "forward"),
+            })
+    graph_checks = validate_graph_structure(
+        graph,
+        {"nodes": observed_nodes, "connectors": observed_connectors},
+        conflicts=list(solved_layout.get("conflicts") or []),
+    )
+    question_ref = figure_plan.get("structure_questions_ref") or {}
+    questions: list[dict[str, Any]] = []
+    if question_ref:
+        try:
+            questions = list(load(question_ref).get("questions") or [])
+        except Exception:  # noqa: BLE001
+            questions = []
+    status_by_level = {
+        "component": graph_checks[0]["status"],
+        "local_topology": graph_checks[1]["status"],
+        "phase": graph_checks[2]["status"],
+        "global_semantics": (
+            "pass" if all(item["status"] == "pass" for item in graph_checks)
+            else "fail"
+        ),
+    }
+    for question in questions:
+        level = str(question.get("level") or "global_semantics")
+        graph_checks.append(make_check(
+            f"structure_question_{level}",
+            "final",
+            "error" if question.get("critical") else "warning",
+            status_by_level.get(level, "fail"),
+            str(question.get("question") or "structure question"),
+            method="rendered_structure_recovery",
+        ))
+    return graph_checks, [
+        str(question.get("question")) for question in questions
+        if question.get("question")
+    ]
 
 
 class FigureQAEngine:
@@ -231,7 +288,6 @@ class FigureQAEngine:
         checks.extend(_deterministic_final_checks(
             figure.figure_plan, figure.asset_manifest, figure.image_path,
             figure.physical_size_mm, min_dpi))
-        checks.extend(_figure_graph_checks(figure.figure_plan, figure.image_path))
 
         manifest = None
         if figure.layout_manifest_path and Path(figure.layout_manifest_path).exists():
@@ -239,6 +295,14 @@ class FigureQAEngine:
                 manifest = read_layout_manifest(figure.layout_manifest_path)
             except Exception:  # noqa: BLE001
                 manifest = None
+
+        graph_checks, structure_questions = _figure_graph_checks(
+            figure.figure_plan,
+            figure.image_path,
+            figure.asset_manifest,
+            manifest,
+        )
+        checks.extend(graph_checks)
 
         if manifest is not None:
             checks.extend(self._layout_checks(manifest))
@@ -272,7 +336,11 @@ class FigureQAEngine:
         VLMVerifier(self.provider_client, self.config).review(checks)
 
         checks.extend(_multimodal_final_checks(
-            self.provider_client, figure.image_path, figure.physical_size_mm))
+            self.provider_client,
+            figure.image_path,
+            figure.physical_size_mm,
+            structure_questions,
+        ))
 
         return {
             "schema_version": "1.0",

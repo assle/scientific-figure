@@ -19,6 +19,7 @@ def evaluate_local_edit(
     mask_path: str | Path | None = None,
     physical_size_mm: tuple[float, float] | None = None,
     maximum_unmasked_difference: float = 2.0,
+    target_improved: bool | None = None,
 ) -> dict[str, Any]:
     original_summary = summarize_checks(
         deterministic_image_checks(parent_path, physical_size_mm)
@@ -45,12 +46,15 @@ def evaluate_local_edit(
                 np.mean(np.abs(original[unmasked] - edited[unmasked]))
             )
     accepted = not bool(edited_summary["blocking"])
-    reason = "edited asset passed hard checks"
+    reason = "edited asset passed Deterministic checks"
     if not accepted:
-        reason = "edited asset failed hard checks"
+        reason = "edited asset failed Deterministic checks"
     elif unmasked_difference > maximum_unmasked_difference:
         accepted = False
         reason = "edit changed pixels outside the mask"
+    elif target_improved is False:
+        accepted = False
+        reason = "edited asset did not improve the target check"
     return {
         "accepted": accepted,
         "reason": reason,

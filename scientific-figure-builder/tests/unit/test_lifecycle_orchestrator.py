@@ -86,6 +86,34 @@ class BlankEditTransport(MockProviderTransport):
         return super()._response(role, model, payload)
 
 
+class SemanticRegressionEditTransport(MockProviderTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.regression_pending = False
+
+    def _response(self, role, model, payload):
+        if role == "edits":
+            self.regression_pending = True
+            image = Image.new("RGBA", (2048, 2048), (0, 0, 0, 0))
+            from PIL import ImageDraw
+            ImageDraw.Draw(image).ellipse(
+                (768, 768, 1280, 1280), fill=(40, 80, 220, 255)
+            )
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return {"image_bytes": buffer.getvalue(), "model": model, "seed": 0}
+        if role == "final_validation" and self.regression_pending:
+            self.regression_pending = False
+            return {"checks": [{
+                "check_id": "multimodal_semantic",
+                "scope": "final",
+                "level": "error",
+                "status": "fail",
+                "detail": "global scientific semantics regressed",
+            }], "blocking": True}
+        return super()._response(role, model, payload)
+
+
 def _request(**over):
     base = {
         "figure_id": "figure-01",
@@ -589,7 +617,59 @@ def test_raster_edit_rolls_back_when_the_edited_asset_fails_hard_checks(tmp_path
         (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text()
     )
     assert outcome["status"] == "rolled_back"
-    assert outcome["reason"] == "edited asset failed hard checks"
+    assert outcome["reason"] == "edited asset failed Deterministic checks"
+
+
+def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path):
+    transport = SemanticRegressionEditTransport()
+    orchestrator, run_dir, client = _orchestrator(
+        tmp_path, _request(), transport=transport,
+    )
+    assert orchestrator.advance()["status"] == "completed"
+    parent_path = run_dir / "assets" / "fiber.png"
+    original_bytes = parent_path.read_bytes()
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    repair_plan = {
+        "schema_version": "1.0",
+        "artifact_type": "repair_plan",
+        "run_id": client.state.run_id,
+        "plan_ref": {"artifact": "plans/figure_plan.json",
+                     "content_hash": hash_json(plan)},
+        "execution_ref": {"artifact": "plans/execution_result.json",
+                         "content_hash": hash_json(execution)},
+        "validation_ref": {"artifact": "validation/final.json",
+                          "content_hash": hash_json(validation)},
+        "repairs": [{
+            "asset_id": "fiber", "route": "image_edit",
+            "operation": "raster_edit", "action": "make it blue",
+            "source_check": "style", "status": "pending",
+        }],
+        "status": "pending",
+    }
+    (run_dir / "plans" / "repair_plan.json").write_text(
+        json.dumps(repair_plan), encoding="utf-8"
+    )
+    generation_before = client.state.calls_used("generation")
+
+    result = orchestrator.advance({
+        "action": "apply_repair",
+        "repairs": [{
+            "asset_id": "fiber",
+            "operation": "raster_edit",
+            "prompt": "make it blue",
+        }],
+    })
+
+    assert result["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_before
+    assert parent_path.read_bytes() == original_bytes
+    outcome = json.loads(
+        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text()
+    )
+    assert outcome["status"] == "rolled_back"
+    assert outcome["reason"] == "global validation regressed after raster edit"
 
 
 def test_layout_patch_reuses_raster_asset_and_rebuilds_graph_layout(tmp_path: Path):
@@ -637,10 +717,13 @@ def test_layout_patch_reuses_raster_asset_and_rebuilds_graph_layout(tmp_path: Pa
     assert client.state.calls_used("generation") == generation_before
     revised = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
     fiber = next(item for item in revised["assets"] if item["asset_id"] == "fiber")
+    assert revised["revision"] == 2
     assert fiber["bbox"] == [0.1, 0.1, 0.8, 0.8]
     assert fiber["bbox_space"] == "panel"
-    graph = json.loads((run_dir / "plans" / "figure_graph.json").read_text())
-    node = next(item for item in graph["nodes"] if item["node_id"] == "fiber")
+    solved_layout = json.loads((run_dir / "plans" / "solved_layout.json").read_text())
+    node = next(
+        item for item in solved_layout["nodes"] if item["node_id"] == "fiber"
+    )
     assert node["bbox"] == [0.55, 0.1, 0.4, 0.8]
 
 

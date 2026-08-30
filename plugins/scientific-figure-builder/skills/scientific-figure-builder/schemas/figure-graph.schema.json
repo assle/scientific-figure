@@ -14,13 +14,13 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["node_id", "node_type", "asset_id", "panel_id", "bbox"],
+        "required": ["node_id", "node_type", "asset_id", "panel_id", "z_order"],
         "properties": {
           "node_id": {"type": "string", "minLength": 1},
           "node_type": {"type": "string", "minLength": 1},
           "asset_id": {"type": "string", "minLength": 1},
           "panel_id": {"type": "string", "minLength": 1},
-          "bbox": {"$ref": "#/$defs/bbox"}
+          "z_order": {"type": "integer"}
         }
       }
     },
@@ -55,13 +55,5 @@
     "groups": {"type": "array", "items": {"type": "object"}},
     "labels": {"type": "array", "items": {"type": "object"}},
     "constraints": {"type": "array", "items": {"type": "object"}}
-  },
-  "$defs": {
-    "bbox": {
-      "type": "array",
-      "minItems": 4,
-      "maxItems": 4,
-      "items": {"type": "number", "minimum": 0, "maximum": 1}
-    }
   }
 }

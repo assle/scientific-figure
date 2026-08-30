@@ -115,10 +115,22 @@ def _estimated_paid_calls(request: dict[str, Any], assets: list[dict]) -> dict[s
 
 
 def _planned_uploads(request: dict[str, Any]) -> list[dict[str, str]]:
-    return [
+    uploads = [
         {"path": p, "reason": "reference analysis"}
         for p in request.get("reference_figures", [])
     ]
+    uploads.extend(
+        {
+            "path": str(reference["path"]),
+            "reason": (
+                f"{reference['role']} reference for {element['element_id']}"
+            ),
+        }
+        for panel in request.get("panels", [])
+        for element in panel.get("elements", [])
+        for reference in element.get("references", [])
+    )
+    return list({(item["path"], item["reason"]): item for item in uploads}.values())
 
 
 def _approval_status(request: dict[str, Any]) -> str:

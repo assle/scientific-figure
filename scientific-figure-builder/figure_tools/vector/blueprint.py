@@ -34,13 +34,25 @@ def render_figure_blueprint(layout: Mapping[str, Any]) -> str:
             data_node_id=node["node_id"],
         )
     for connector in layout.get("connectors", []):
-        source_x, source_y = connector["source"]
-        target_x, target_y = connector["target"]
+        points = connector.get("points") or [
+            connector["source"], connector["target"]
+        ]
+        scaled = [(point[0] * width, point[1] * height) for point in points]
+        if len(scaled) > 2:
+            svg.polyline(
+                scaled[:-1],
+                fill="none",
+                stroke="#333333",
+                stroke_width=0.75,
+                data_edge_id=connector["edge_id"],
+            )
+        source_x, source_y = scaled[-2]
+        target_x, target_y = scaled[-1]
         svg.arrow(
-            source_x * width,
-            source_y * height,
-            target_x * width,
-            target_y * height,
+            source_x,
+            source_y,
+            target_x,
+            target_y,
             stroke="#333333",
             stroke_width=0.75,
             data_edge_id=connector["edge_id"],

@@ -92,6 +92,8 @@
     "figure_graph_ref": {"$ref": "#/$defs/artifactRef"},
     "solved_layout_ref": {"$ref": "#/$defs/artifactRef"},
     "blueprint_ref": {"$ref": "#/$defs/artifactRef"},
+    "structure_questions_ref": {"$ref": "#/$defs/artifactRef"},
+    "generation_conditions_ref": {"$ref": "#/$defs/artifactRef"},
     "delivery": {
       "type": "object",
       "additionalProperties": false,

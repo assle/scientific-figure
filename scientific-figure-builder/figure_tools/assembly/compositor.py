@@ -70,8 +70,19 @@ def compose_assets(
         text_artists.append((t, artist))
 
     for connector in connectors or []:
-        source_x, source_y = connector["source"]
-        target_x, target_y = connector["target"]
+        points = connector.get("points") or [
+            connector["source"], connector["target"]
+        ]
+        if len(points) > 2:
+            ax.plot(
+                [point[0] for point in points[:-1]],
+                [1 - point[1] for point in points[:-1]],
+                color="#333333",
+                linewidth=0.75,
+                zorder=90,
+            )
+        source_x, source_y = points[-2]
+        target_x, target_y = points[-1]
         ax.annotate(
             "",
             xy=(target_x, 1 - target_y),

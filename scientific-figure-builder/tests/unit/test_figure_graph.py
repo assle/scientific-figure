@@ -82,7 +82,10 @@ def test_figure_graph_preserves_cycles_and_cross_panel_edges():
         "activation", "feedback",
     ]
 
-    solved = solve_figure_layout(graph, request["canvas"])
+    solved = solve_figure_layout(graph, request["canvas"], {
+        "receptor": [0.05, 0.2, 0.4, 0.6],
+        "pathway": [0.55, 0.2, 0.4, 0.6],
+    })
 
     assert len(solved["connectors"]) == 2
     assert solved["conflicts"] == []
@@ -99,3 +102,32 @@ def test_figure_graph_rejects_edge_with_unknown_port():
 
     with pytest.raises(ValueError, match="unknown target port"):
         build_figure_graph(request, create_figure_plan(request))
+
+
+def test_layout_solver_applies_alignment_spacing_groups_and_exclusion_zones():
+    request = _request()
+    request["figure_graph"]["groups"] = [{
+        "group_id": "mechanism", "node_ids": ["receptor", "pathway"],
+        "padding": 0.01,
+    }]
+    request["figure_graph"]["constraints"] = [
+        {"kind": "align", "axis": "y", "node_ids": ["receptor", "pathway"]},
+        {"kind": "minimum_spacing", "axis": "x",
+         "node_ids": ["receptor", "pathway"], "gap": 0.1},
+        {"kind": "exclude", "bbox": [0.0, 0.0, 0.1, 0.1],
+         "node_ids": ["receptor"]},
+    ]
+    graph = build_figure_graph(request, create_figure_plan(request))
+
+    solved = solve_figure_layout(graph, request["canvas"], {
+        "receptor": [0.05, 0.2, 0.2, 0.3],
+        "pathway": [0.55, 0.4, 0.2, 0.3],
+    })
+
+    by_id = {item["node_id"]: item for item in solved["nodes"]}
+    assert by_id["pathway"]["bbox"][0] == 0.35
+    assert by_id["pathway"]["bbox"][1] == 0.2
+    assert solved["groups"][0]["bbox"] == [0.04, 0.19, 0.52, 0.32]
+    assert solved["connectors"][0]["points"][1][0] == (
+        solved["connectors"][0]["points"][2][0]
+    )

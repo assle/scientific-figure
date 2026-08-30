@@ -15,6 +15,7 @@ from figure_tools.provider_configuration import (
     normalize_provider,
     normalize_providers,
     route_compatibility,
+    provider_capabilities_for_role,
 )
 
 
@@ -131,3 +132,20 @@ def test_openai_provider_normalizes_generation_capabilities():
     assert provider["supports_native_alpha"] is True
     assert provider["supports_seed"] is True
     assert provider["supports_candidate_batch"] is True
+
+
+def test_provider_capability_query_returns_only_normalized_capabilities():
+    capabilities = provider_capabilities_for_role(
+        "image_generate",
+        {"image_generate": {"provider": "images", "model": "gen"}},
+        {"images": {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "supports_reference_image": True,
+        }},
+        adapter_capabilities={"supports_mask_edit": True, "base_url": "ignored"},
+    )
+
+    assert capabilities["supports_reference_image"] is True
+    assert capabilities["supports_mask_edit"] is False
+    assert "base_url" not in capabilities

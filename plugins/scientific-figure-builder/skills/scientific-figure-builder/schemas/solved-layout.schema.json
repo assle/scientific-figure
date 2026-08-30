@@ -30,6 +30,7 @@
           "node_type": {"type": "string", "minLength": 1},
           "asset_id": {"type": "string", "minLength": 1},
           "panel_id": {"type": "string", "minLength": 1},
+          "z_order": {"type": "integer"},
           "bbox": {"$ref": "#/$defs/bbox"}
         }
       }
@@ -47,7 +48,12 @@
           "direction": {"type": "string", "enum": ["forward", "reverse", "bidirectional"]},
           "semantic_type": {"type": "string", "minLength": 1},
           "source": {"$ref": "#/$defs/point"},
-          "target": {"$ref": "#/$defs/point"}
+          "target": {"$ref": "#/$defs/point"},
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "items": {"$ref": "#/$defs/point"}
+          }
         }
       }
     },

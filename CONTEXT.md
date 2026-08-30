@@ -74,10 +74,14 @@ implementations directly.
 
 **Figure Execution Module**:
 The deterministic production module that accepts an approved Figure plan and
-prepares plan-derived artifacts, executes Generation routes, assembles and
-validates the figure, and publishes approved exports. It does not clarify
-requirements, approve plans, or advance Lifecycle phases.
+executes Generation routes, assembles and validates the figure, and publishes
+approved exports. It does not derive Planning artifacts, clarify requirements,
+approve plans, or advance Lifecycle phases.
 _Avoid_: workflow, Orchestrator, Lifecycle authority
+
+**Figure Planning Module**:
+The deterministic Planning module that derives the Figure Graph, Solved layout, blueprint, structure questions, Style Bible, and Generation Conditions before plan approval.
+_Avoid_: Figure Execution Module, Phase worker, layout helper
 
 **Run Store**:
 The concrete run-directory module that owns directory structure, atomic JSON

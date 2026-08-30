@@ -4,9 +4,11 @@ import json
 import io
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from figure_tools.execution import FigureExecution
+from figure_tools.planning.artifacts import FigurePlanningArtifacts
 from figure_tools.planning.planner import create_figure_plan
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.transport import MockProviderTransport
@@ -91,7 +93,10 @@ def test_execution_accepts_an_approved_plan_without_owning_lifecycle_decisions(t
     )
 
     assert not hasattr(execution_module, "run")
-    layout = execution_module.prepare_plan_artifacts(plan)
+    assert not hasattr(execution_module, "prepare_plan_artifacts")
+    layout = FigurePlanningArtifacts(
+        request, {}, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
     result = execution_module.execute_plan(plan, layout_report=layout)
     published = execution_module.publish(
         {"plan": plan, "export_target": "general"}, result
@@ -114,6 +119,13 @@ def test_execution_accepts_an_approved_plan_without_owning_lifecycle_decisions(t
     final_checks = {item["check_id"]: item for item in final_report["checks"]}
     assert final_checks["graph_node_recovery"]["status"] == "pass"
     assert final_checks["graph_edge_recovery"]["status"] == "pass"
+    final_request = next(
+        item for item in client.transport.requests
+        if item["role"] == "final_validation"
+    )
+    assert "Are all required components present?" in final_request["payload"][
+        "checks"
+    ]
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
     assert (run_dir / "assembly" / "figure.png").is_file()
     assert (run_dir / "validation" / "final.json").is_file()
@@ -173,14 +185,18 @@ def test_execution_compiles_generation_conditions_and_uses_asset_placements(tmp_
         "models": {
             "image_generate": {"model": "mock", "provider": "images"},
         },
-        "providers": {"images": {"type": "openai"}},
+        "providers": {
+            "images": {"type": "openai", "supports_reference_image": True},
+        },
     }
     plan = create_figure_plan(request)
     module = FigureExecution(
         request, config, run_dir, client, state, base_dir=ROOT,
     )
 
-    layout = module.prepare_plan_artifacts(plan)
+    layout = FigurePlanningArtifacts(
+        request, config, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
     conditions = json.loads(
         (run_dir / "plans" / "generation_conditions.json").read_text()
     )
@@ -225,15 +241,16 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
         "panels": [
             {
                 "panel_id": f"panel-{index}",
-                "bbox": [index / 3, 0, 1 / 3, 1],
-                "physical_size": [60, 90],
+                "bbox": [index / 4, 0, 1 / 4, 1],
+                "physical_size": [45, 90],
                 "elements": [{
                     "element_id": f"asset-{index}",
                     "type": "image_asset",
                     "prompt": f"isolated asset {index}",
+                    "style_group": f"group-{index // 2}",
                 }],
             }
-            for index in range(3)
+            for index in range(4)
         ],
         "labels": [],
         "assumptions": [],
@@ -255,7 +272,9 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
     }
     plan = create_figure_plan(request)
     module = FigureExecution(request, config, run_dir, client, state, base_dir=ROOT)
-    layout = module.prepare_plan_artifacts(plan)
+    layout = FigurePlanningArtifacts(
+        request, config, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
 
     paused = module.execute_plan(plan, layout_report=layout)
     pre_rendered = json.loads(
@@ -273,16 +292,17 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
     ]
     assert paused["pause_reason"] == "style_anchor_approval"
     assert completed["paused"] is False
-    assert len(generation_requests) == 3
+    assert len(generation_requests) == 4
     assert generation_requests[0]["image_paths"] == []
-    assert all(
-        item["payload"]["references"] == [{"role": "style", "strength": 1.0}]
-        for item in generation_requests[1:]
-    )
-    assert all(
-        item["image_paths"] == [pre_rendered["asset-0"]["path"]]
-        for item in generation_requests[1:]
-    )
+    assert generation_requests[1]["image_paths"] == []
+    later_requests = generation_requests[2:]
+    assert all(item["payload"]["references"] == [
+        {"role": "style", "strength": 1.0}
+    ] for item in later_requests)
+    assert {item["image_paths"][0] for item in later_requests} == {
+        pre_rendered["asset-0"]["path"],
+        pre_rendered["asset-2"]["path"],
+    }
 
 
 def test_candidate_selection_rejects_a_blocking_candidate(tmp_path):
@@ -327,7 +347,9 @@ def test_candidate_selection_rejects_a_blocking_candidate(tmp_path):
     }
     plan = create_figure_plan(request)
     module = FigureExecution(request, {}, run_dir, client, state, base_dir=ROOT)
-    layout = module.prepare_plan_artifacts(plan)
+    layout = FigurePlanningArtifacts(
+        request, {}, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
 
     result = module.execute_plan(plan, layout_report=layout)
     selection = json.loads(
@@ -339,3 +361,62 @@ def test_candidate_selection_rejects_a_blocking_candidate(tmp_path):
     assert selection["selected_candidate"] == 2
     assert selection["candidates"][0]["blocking"] is True
     assert selection["candidates"][1]["blocking"] is False
+
+
+def test_planning_rejects_stale_reference_hash_before_provider_work(tmp_path):
+    reference = tmp_path / "style.png"
+    Image.new("RGB", (8, 8), "white").save(reference)
+    run_dir = RunDirectory(tmp_path).create("stale-reference")
+    state = RunState("stale-reference", budget={})
+    transport = MockProviderTransport()
+    client = ProviderClient(
+        {"image_generate": {"model": "mock"}},
+        transport,
+        state=state,
+        cache=Cache(tmp_path / "cache"),
+        output_dir=run_dir,
+    )
+    request = {
+        "figure_id": "stale-reference",
+        "canvas": {"aspect_ratio": 2.0, "width": 180, "height": 90},
+        "units": "mm",
+        "panels": [{
+            "panel_id": "a",
+            "bbox": [0, 0, 1, 1],
+            "physical_size": [89, 80],
+            "elements": [{
+                "element_id": "cell",
+                "type": "image_asset",
+                "prompt": "cell",
+                "references": [{
+                    "role": "style",
+                    "path": str(reference),
+                    "content_hash": "sha256:stale",
+                    "strength": 0.75,
+                }],
+            }],
+        }],
+        "labels": [],
+        "assumptions": [],
+        "uncertainties": [],
+        "user_input_requirements": [],
+        "style": "default",
+    }
+    plan = create_figure_plan(request)
+    planning = FigurePlanningArtifacts(
+        request,
+        {
+            "models": {"image_generate": {"model": "mock", "provider": "images"}},
+            "providers": {
+                "images": {"type": "openai", "supports_reference_image": True},
+            },
+        },
+        run_dir,
+        client,
+        base_dir=ROOT,
+    )
+
+    with pytest.raises(ValueError, match="reference hash mismatch"):
+        planning.prepare(plan)
+
+    assert transport.requests == []
