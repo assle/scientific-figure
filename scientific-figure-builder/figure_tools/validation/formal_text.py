@@ -11,6 +11,8 @@ from figure_tools.validation.summary import make_check
 def formal_text_checks(
     figure_plan: dict[str, Any],
     manifest: LayoutManifest | None,
+    *,
+    rendered_texts: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     expected = {
         str(item["element_id"]): str(item["content"])
@@ -45,7 +47,7 @@ def formal_text_checks(
         element_id for element_id, content in formulas.items()
         if observed.get(element_id) != content
     )
-    return [
+    checks = [
         make_check(
             "formal_text_exact_match",
             "final",
@@ -71,6 +73,52 @@ def formal_text_checks(
             method="layout_manifest_text",
         ),
     ]
+    if rendered_texts is None:
+        checks.extend((
+            make_check(
+                "rendered_text_ocr_exact_match", "final", "warning", "skipped",
+                "no OCR backend; final-pixel exact text comparison skipped",
+            ),
+            make_check(
+                "rendered_formula_ocr_exact_match", "final", "warning", "skipped",
+                "no OCR backend; final-pixel formula comparison skipped",
+            ),
+        ))
+        return checks
+    detected = {str(text).strip() for text in rendered_texts if str(text).strip()}
+    rendered_mismatches = sorted(
+        element_id for element_id, content in expected.items()
+        if content.strip() not in detected
+    )
+    rendered_formula_mismatches = sorted(
+        element_id for element_id, content in formulas.items()
+        if content.strip() not in detected
+    )
+    checks.extend((
+        make_check(
+            "rendered_text_ocr_exact_match", "final", "error",
+            "fail" if rendered_mismatches else "pass",
+            (
+                "final-pixel OCR mismatch: " + ", ".join(rendered_mismatches)
+                if rendered_mismatches else "final-pixel OCR matches authoritative text"
+            ),
+            element_ids=rendered_mismatches,
+            method="final_image_ocr",
+        ),
+        make_check(
+            "rendered_formula_ocr_exact_match", "final", "error",
+            "fail" if rendered_formula_mismatches else "pass",
+            (
+                "final-pixel formula OCR mismatch: "
+                + ", ".join(rendered_formula_mismatches)
+                if rendered_formula_mismatches
+                else "final-pixel formulas match authoritative expressions"
+            ),
+            element_ids=rendered_formula_mismatches,
+            method="final_image_ocr",
+        ),
+    ))
+    return checks
 
 
 __all__ = ["formal_text_checks"]

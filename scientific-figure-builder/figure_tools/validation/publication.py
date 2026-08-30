@@ -7,6 +7,42 @@ from figure_tools.validation.models import LayoutManifest
 from figure_tools.validation.summary import make_check
 
 
+def publication_accessibility_check(
+    profile_id: str,
+    palette: dict[str, str] | None,
+) -> dict:
+    if profile_id == "general" or not palette:
+        return make_check(
+            "publication_accessibility", "final", "warning", "skipped",
+            "no journal-specific palette accessibility check required",
+        )
+    colours = []
+    for value in palette.values():
+        text = str(value).lstrip("#")
+        if len(text) != 6:
+            continue
+        try:
+            colours.append(tuple(int(text[index:index + 2], 16) for index in (0, 2, 4)))
+        except ValueError:
+            continue
+    has_red = any(red > 160 and red > green * 1.35 and blue < 150
+                  for red, green, blue in colours)
+    has_green = any(green > 120 and green > red * 1.15 and blue < 170
+                    for red, green, blue in colours)
+    accessible = not (has_red and has_green)
+    return make_check(
+        "publication_accessibility",
+        "final",
+        "error",
+        "pass" if accessible else "fail",
+        (
+            "palette avoids an unsupported red-green-only distinction"
+            if accessible
+            else "palette contains a red-green distinction that requires another cue"
+        ),
+    )
+
+
 def publication_profile_checks(
     profile_id: str,
     manifest: LayoutManifest | None,
@@ -84,4 +120,4 @@ def publication_profile_checks(
     return checks
 
 
-__all__ = ["publication_profile_checks"]
+__all__ = ["publication_accessibility_check", "publication_profile_checks"]

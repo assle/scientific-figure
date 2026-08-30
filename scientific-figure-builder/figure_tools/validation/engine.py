@@ -19,7 +19,10 @@ from figure_tools.validation.extractors.raster_ocr import detect_text_elements
 from figure_tools.validation.models import AssembledFigure, read_layout_manifest
 from figure_tools.validation.graph_structure import validate_graph_structure
 from figure_tools.validation.formal_text import formal_text_checks
-from figure_tools.validation.publication import publication_profile_checks
+from figure_tools.validation.publication import (
+    publication_accessibility_check,
+    publication_profile_checks,
+)
 from figure_tools.provenance import hash_json
 from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
@@ -324,13 +327,39 @@ class FigureQAEngine:
                 "geometry_checks_skipped", "final", "warning", "skipped",
                 "no layout manifest; geometry rules skipped"))
 
-        checks.extend(formal_text_checks(figure.figure_plan, manifest))
+        rendered_texts = None
+        if self.ocr_backend is not None:
+            rendered_texts = [
+                element.text
+                for element in detect_text_elements(
+                    figure.image_path, self.ocr_backend
+                )
+                if element.text is not None
+            ]
+        checks.extend(formal_text_checks(
+            figure.figure_plan,
+            manifest,
+            rendered_texts=rendered_texts,
+        ))
 
         checks.extend(publication_profile_checks(
             str(figure.figure_plan.get("publication_profile") or "general"),
             manifest,
             figure.physical_size_mm,
             editable_svg_exists=Path(figure.image_path).with_suffix(".svg").is_file(),
+        ))
+        style_bible_path = Path(figure.image_path).parent.parent / "style_bible.json"
+        palette = None
+        if style_bible_path.is_file():
+            try:
+                palette = json.loads(
+                    style_bible_path.read_text(encoding="utf-8")
+                ).get("palette")
+            except Exception:  # noqa: BLE001
+                palette = None
+        checks.append(publication_accessibility_check(
+            str(figure.figure_plan.get("publication_profile") or "general"),
+            palette if isinstance(palette, dict) else None,
         ))
 
         # OCR fallback for raster/AI assets without layout metadata (plan 15).

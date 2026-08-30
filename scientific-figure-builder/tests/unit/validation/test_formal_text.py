@@ -29,9 +29,13 @@ def test_formal_text_checks_compare_labels_and_formulas_to_authoritative_map():
         ],
     )
 
-    checks = formal_text_checks(plan, manifest)
+    checks = formal_text_checks(
+        plan, manifest, rendered_texts=["(a) Input", "E = mc^3"]
+    )
     by_id = {item["check_id"]: item for item in checks}
 
     assert by_id["formal_text_exact_match"]["status"] == "fail"
     assert by_id["formula_exact_match"]["status"] == "fail"
     assert by_id["formula_exact_match"]["element_ids"] == ["eq-1"]
+    assert by_id["rendered_text_ocr_exact_match"]["status"] == "fail"
+    assert by_id["rendered_formula_ocr_exact_match"]["status"] == "fail"
