@@ -423,8 +423,6 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 Useful references:
 
 - [Domain vocabulary](./CONTEXT.md)
-- [Provider interfaces](./scientific-figure-builder/references/provider-interfaces.md)
-- [Workflow details](./scientific-figure-builder/references/workflow-details.md)
 - [Security policy](./SECURITY.md)
 - [GUI platform verification](./docs/verification/gui-platforms.md)
 - [OpenAI plugin architecture](https://developers.openai.com/plugins/concepts/plugins)

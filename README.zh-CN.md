@@ -378,8 +378,6 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 延伸阅读：
 
 - [领域术语](./CONTEXT.md)
-- [Provider 接口](./scientific-figure-builder/references/provider-interfaces.md)
-- [工作流细节](./scientific-figure-builder/references/workflow-details.md)
 - [安全策略](./SECURITY.md)
 - [GUI 跨平台验证](./docs/verification/gui-platforms.md)
 - [OpenAI 插件架构](https://developers.openai.com/plugins/concepts/plugins)

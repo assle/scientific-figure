@@ -53,7 +53,6 @@ RUNTIME_ITEMS = (
     "figure_tools",
     "schemas",
     "templates",
-    "references",
     "commands",
     "install/install_delivery.py",
     "install/uninstall_delivery.py",
@@ -67,7 +66,7 @@ RUNTIME_ITEMS = (
     "uv.lock",
     "LICENSE",
 )
-SKILL_ITEMS = ("SKILL.md", "references", "schemas", "templates")
+SKILL_ITEMS = ("SKILL.md", "schemas", "templates")
 COMMAND_SOURCE = Path("commands") / "scientific-figure.md"
 
 

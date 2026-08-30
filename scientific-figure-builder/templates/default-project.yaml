@@ -1,6 +1,6 @@
 # Default project configuration for scientific-figure-builder.
 # This file contains NO secrets. Provider keys are read from the environment
-# variables named by each provider's `key_env` (see references/provider-interfaces.md).
+# variables named by each provider's `key_env`.
 #
 # Configuration is merged in this order:
 #   Skill defaults < user-local private config < project config < per-run overrides
