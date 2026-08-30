@@ -306,6 +306,32 @@ GitHub Release 时，才构成一次正式发布。Schema、Phase prompt 和绘�
 
 ## 开发
 
+### 仓库布局
+
+这是一个 single-context 仓库：产品统一术语位于 `CONTEXT.md`，仓库级架构决策位于
+`docs/adr/`。
+
+```text
+.
+├── CONTEXT.md                         # 产品术语的唯一权威来源
+├── docs/
+│   ├── agents/                        # 工程 Skill 配置
+│   ├── adr/                           # 仓库级架构决策
+│   └── verification/                  # 当前平台验证证据
+├── scientific-figure-builder/         # 核心、Skill 资源与测试的权威来源
+├── plugins/scientific-figure-builder/ # 自动生成的原生插件快照
+├── scripts/                            # 仓库维护脚本
+├── assets/                             # README 图片
+├── install.sh                           # 源码安装的公开入口
+└── uninstall.sh                         # 源码卸载的公开入口
+```
+
+修改 `scientific-figure-builder/` 下的权威 Skill 资源后，在仓库根目录运行
+`python3 scripts/sync_plugin_bundle.py`。不要直接编辑 `plugins/` 下生成的 Skill 副本；
+测试会校验插件快照与权威来源完全一致。
+
+### 本地开发
+
 ```bash
 cd scientific-figure-builder
 uv sync --extra gui
@@ -321,6 +347,8 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 - [工作流细节](./scientific-figure-builder/references/workflow-details.md)
 - [安全策略](./SECURITY.md)
 - [GUI 跨平台验证](./docs/verification/gui-platforms.md)
+- [OpenAI 插件架构](https://developers.openai.com/plugins/concepts/plugins)
+- [OpenAI 插件打包](https://developers.openai.com/plugins/build/plugins)
 
 ## 开源许可
 

@@ -347,6 +347,33 @@ version automatically.
 
 ## Development
 
+### Repository layout
+
+This is a single-context repository: product vocabulary lives in `CONTEXT.md`
+and repository-wide architecture decisions live in `docs/adr/`.
+
+```text
+.
+├── CONTEXT.md                         # Canonical product vocabulary
+├── docs/
+│   ├── agents/                        # Engineering-skill configuration
+│   ├── adr/                           # Repository-wide architecture decisions
+│   └── verification/                  # Current platform evidence
+├── scientific-figure-builder/         # Canonical Core, Skill resources, and tests
+├── plugins/scientific-figure-builder/ # Generated Native plugin snapshot
+├── scripts/                            # Repository maintenance
+├── assets/                             # README images
+├── install.sh                           # Public source-install entry point
+└── uninstall.sh                         # Public source-uninstall entry point
+```
+
+Edit canonical Skill resources under `scientific-figure-builder/`, then run
+`python3 scripts/sync_plugin_bundle.py` from the repository root. Do not edit the
+generated Skill copy under `plugins/` directly; the test suite verifies that the
+snapshot matches its canonical source.
+
+### Local development
+
 ```bash
 cd scientific-figure-builder
 uv sync --extra gui
@@ -362,6 +389,8 @@ Useful references:
 - [Workflow details](./scientific-figure-builder/references/workflow-details.md)
 - [Security policy](./SECURITY.md)
 - [GUI platform verification](./docs/verification/gui-platforms.md)
+- [OpenAI plugin architecture](https://developers.openai.com/plugins/concepts/plugins)
+- [OpenAI plugin packaging](https://developers.openai.com/plugins/build/plugins)
 
 ## License
 

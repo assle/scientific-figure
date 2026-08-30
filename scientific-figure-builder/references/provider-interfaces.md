@@ -152,8 +152,11 @@ Steps, from the repo root (no global install needed):
 ```bash
 cd scientific-figure-builder
 
-# 1. Point the config at your local file (or ~/.config/.../config.yaml).
-export SCIENTIFIC_FIGURE_CONFIG="$PWD/dev-config.yaml"
+# 1. Create or select a non-secret XDG config file.
+config_file="${XDG_CONFIG_HOME:-$HOME/.config}/scientific-figure-builder/config.yaml"
+mkdir -p "${config_file%/*}"
+test -f "$config_file" || cp templates/default-project.yaml "$config_file"
+export SCIENTIFIC_FIGURE_CONFIG="$config_file"
 # 2. Export the credentials referenced by each provider's `key_env`.
 export DEEPSEEK_API_KEY="..."      # or whatever your providers use
 export ARK_API_KEY="..."
