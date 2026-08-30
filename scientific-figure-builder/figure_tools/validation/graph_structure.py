@@ -89,6 +89,29 @@ def validate_graph_structure(
         element_ids=[*incorrect_edges, *extra_edges],
         metrics=_f1(set(expected_edges), recovered_edges | set(extra_edges)),
     )
+    expected_groups = {
+        str(item.get("group_id")) for item in graph.get("groups", [])
+        if item.get("group_id")
+    }
+    observed_groups = {
+        str(item.get("group_id")) for item in observed_structure.get("groups", [])
+        if item.get("group_id")
+    }
+    missing_groups = sorted(expected_groups - observed_groups)
+    extra_groups = sorted(observed_groups - expected_groups)
+    group_check = make_check(
+        "graph_group_recovery",
+        "final",
+        "error",
+        "fail" if missing_groups or extra_groups else "pass",
+        (
+            f"missing groups: {missing_groups}; extra groups: {extra_groups}"
+            if missing_groups or extra_groups
+            else "all Figure Graph phases and groups recovered"
+        ),
+        element_ids=[*missing_groups, *extra_groups],
+        metrics=_f1(expected_groups, observed_groups),
+    )
     conflicts = list(conflicts or [])
     conflict_check = make_check(
         "figure_layout_conflicts",
@@ -106,7 +129,7 @@ def validate_graph_structure(
             for element_id in item.get("element_ids", [])
         }),
     )
-    return [node_check, edge_check, conflict_check]
+    return [node_check, edge_check, group_check, conflict_check]
 
 
 def build_structure_questions(graph: Mapping[str, Any]) -> list[dict[str, Any]]:

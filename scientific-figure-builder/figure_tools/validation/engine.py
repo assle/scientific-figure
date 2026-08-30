@@ -159,19 +159,27 @@ def _figure_graph_checks(
         if str(item.get("asset_id")) in expected_node_ids
     ]
     observed_connectors = []
+    observed_groups = []
     if manifest is not None:
         for element in manifest.elements:
-            if element.element_type != "connector":
-                continue
-            observed_connectors.append({
-                "edge_id": element.element_id.removeprefix("edge:"),
-                "source_port": element.metadata.get("source_port", ""),
-                "target_port": element.metadata.get("target_port", ""),
-                "direction": element.metadata.get("direction", "forward"),
-            })
+            if element.element_type == "connector":
+                observed_connectors.append({
+                    "edge_id": element.element_id.removeprefix("edge:"),
+                    "source_port": element.metadata.get("source_port", ""),
+                    "target_port": element.metadata.get("target_port", ""),
+                    "direction": element.metadata.get("direction", "forward"),
+                })
+            elif element.element_type == "group":
+                observed_groups.append({
+                    "group_id": element.element_id.removeprefix("group:"),
+                })
     graph_checks = validate_graph_structure(
         graph,
-        {"nodes": observed_nodes, "connectors": observed_connectors},
+        {
+            "nodes": observed_nodes,
+            "connectors": observed_connectors,
+            "groups": observed_groups,
+        },
         conflicts=list(solved_layout.get("conflicts") or []),
     )
     question_ref = figure_plan.get("structure_questions_ref") or {}

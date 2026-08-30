@@ -51,6 +51,12 @@ def test_assembly_manifest_maps_source_elements_and_labels(tmp_path: Path) -> No
                              "target": [0.55, 0.5],
                              "direction": "forward",
                              "semantic_type": "transfer",
+                         }],
+                         groups=[{
+                             "group_id": "pipeline",
+                             "node_ids": ["curve", "curve2"],
+                             "bbox": [0.0, 0.0, 1.0, 1.0],
+                             "z_order": 0,
                          }])
 
     assert "layout_manifest" in out
@@ -82,6 +88,11 @@ def test_assembly_manifest_maps_source_elements_and_labels(tmp_path: Path) -> No
     assert connector.element_id == "edge:flow"
     assert connector.metadata["source_port"] == "curve-out"
     assert connector.metadata["target_port"] == "curve2-in"
+    group = next(
+        element for element in manifest.elements
+        if element.element_type == "group"
+    )
+    assert group.element_id == "group:pipeline"
 
     # A source axis label from plot (a) maps into the left half of the canvas.
     a_axis = next(e for e in manifest.elements

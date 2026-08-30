@@ -2,6 +2,7 @@
   "schema_version": "1.0",
   "figure_id": "mechanism",
   "canvas": {"aspect_ratio": 2.0, "width": 180, "height": 90},
+  "panels": [{"panel_id": "a", "bbox": [0, 0, 1, 1]}],
   "nodes": [
     {
       "node_id": "receptor",

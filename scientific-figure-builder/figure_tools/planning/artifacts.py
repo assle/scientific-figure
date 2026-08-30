@@ -104,7 +104,15 @@ class FigurePlanningArtifacts:
             for asset in plan.get("assets", [])
             if asset.get("panel_id") and asset.get("bbox")
         }
-        solved_layout = solve_figure_layout(graph, plan["canvas"], hints)
+        solved_layout = solve_figure_layout(
+            graph,
+            plan["canvas"],
+            hints,
+            {
+                str(panel["panel_id"]): list(panel["bbox"])
+                for panel in plan.get("panels", [])
+            },
+        )
         layout_reference = self.store.commit_json(
             "plans/solved_layout.json",
             solved_layout,

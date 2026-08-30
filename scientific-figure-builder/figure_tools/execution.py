@@ -95,7 +95,7 @@ class FigureExecution:
                 "path": str(anchor_path),
                 "content_hash": anchor_meta["content_hash"],
             }
-        if len(ai_elements) >= 3 and not style_anchor_approved:
+        if style_anchors and not style_anchor_approved:
             self.store.commit_json("plans/pre_rendered_assets.json", reusable)
             return {"paused": True, "pause_reason": "style_anchor_approval"}
         if style_anchors:
@@ -133,6 +133,7 @@ class FigureExecution:
             canvas_mm=self._canvas_mm(), dpi=self.compose_dpi,
             text_placements=text_placements, source_layouts=source_layouts,
             connectors=list(solved_layout.get("connectors") or []),
+            groups=list(solved_layout.get("groups") or []),
             export_target=export_target,
         )
         composed_png = Path(assembly_result["files"]["png"])
@@ -282,16 +283,9 @@ class FigureExecution:
     def _generation_conditions(self) -> dict[str, dict[str, Any]]:
         artifact = self.store.load_optional_json("plans/generation_conditions.json")
         if artifact is None:
-            from figure_tools.planning.artifacts import FigurePlanningArtifacts
-
-            plan = self.store.load_json("plans/figure_plan.json")
-            artifact = FigurePlanningArtifacts(
-                self.request,
-                self.config,
-                self.run_dir,
-                self.provider,
-                base_dir=self.base_dir,
-            ).refresh_generation_conditions(plan)
+            raise ValueError(
+                "approved Figure plan is missing its Generation Conditions"
+            )
         return {
             str(item["asset_id"]): dict(item)
             for item in artifact.get("conditions", [])
@@ -447,6 +441,14 @@ class FigureExecution:
             report = self.provider.validate_image_asset(
                 candidate_path,
                 physical_size_mm=tuple(panel["physical_size"]),
+                checks=[
+                    f"component fidelity for {asset_id}",
+                    "structural fidelity to the Generation Condition",
+                    "no unexpected text or symbols",
+                    "Publication profile asset quality",
+                    "Style group consistency",
+                    "aesthetic quality",
+                ],
             )
             summary = report.get("summary") or {}
             report_checks = list(report.get("checks") or [])

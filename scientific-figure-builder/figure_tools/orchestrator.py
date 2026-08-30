@@ -95,7 +95,7 @@ class FigureOrchestrator:
         if action_name == "apply_repair":
             accepted_edits = self._apply_repair(action_data)
             result = self.advance("resume")
-            if accepted_edits and result.get("next_action") == "repair_required":
+            if accepted_edits and self._global_validation_regressed(accepted_edits):
                 self._rollback_accepted_edits(accepted_edits)
                 return self.advance("resume")
             for edit in accepted_edits:
@@ -883,8 +883,6 @@ class FigureOrchestrator:
                 target_improved = (
                     edited_status == "pass"
                     if original_status == "fail"
-                    else edited_status != "fail"
-                    if original_status is not None and edited_status is not None
                     else None
                 )
                 outcome = evaluate_local_edit(
@@ -917,6 +915,7 @@ class FigureOrchestrator:
                         "parent_path": str(parent_path),
                         "backup_path": str(backup_path),
                         "original_meta": original_meta,
+                        "baseline_validation": validation_report,
                     })
                     status = "accepted"
                 else:
@@ -977,6 +976,24 @@ class FigureOrchestrator:
                 f"validation/edit_outcomes/{asset_id}.json", outcome,
             )
         return accepted_edits
+
+    def _global_validation_regressed(self, edits: list[dict[str, Any]]) -> bool:
+        current = self.store.load_optional_json("validation/final.json") or {}
+        current_failures = {
+            (str(check.get("check_id")), str(check.get("scope"))): check
+            for check in current.get("checks", [])
+            if check.get("level") == "error" and check.get("status") == "fail"
+        }
+        for edit in edits:
+            baseline = edit.get("baseline_validation") or {}
+            baseline_failures = {
+                (str(check.get("check_id")), str(check.get("scope")))
+                for check in baseline.get("checks", [])
+                if check.get("level") == "error" and check.get("status") == "fail"
+            }
+            if any(key not in baseline_failures for key in current_failures):
+                return True
+        return False
 
     def _rollback_accepted_edits(self, edits: list[dict[str, Any]]) -> None:
         reusable: dict[str, dict[str, Any]] = {}

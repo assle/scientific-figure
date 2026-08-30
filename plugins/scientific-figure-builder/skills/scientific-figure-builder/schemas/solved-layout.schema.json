@@ -5,7 +5,7 @@
   "description": "Deterministic node placements, port-bound connectors, and conflicts.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "figure_id", "canvas", "nodes", "connectors", "groups", "labels", "conflicts"],
+  "required": ["schema_version", "figure_id", "canvas", "panels", "nodes", "connectors", "groups", "labels", "conflicts"],
   "properties": {
     "schema_version": {"const": "1.0"},
     "figure_id": {"type": "string", "minLength": 1},
@@ -31,6 +31,18 @@
           "asset_id": {"type": "string", "minLength": 1},
           "panel_id": {"type": "string", "minLength": 1},
           "z_order": {"type": "integer"},
+          "bbox": {"$ref": "#/$defs/bbox"}
+        }
+      }
+    },
+    "panels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["panel_id", "bbox"],
+        "properties": {
+          "panel_id": {"type": "string", "minLength": 1},
           "bbox": {"$ref": "#/$defs/bbox"}
         }
       }

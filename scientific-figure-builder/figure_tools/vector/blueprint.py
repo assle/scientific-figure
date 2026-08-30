@@ -13,6 +13,21 @@ def render_figure_blueprint(layout: Mapping[str, Any]) -> str:
     width = float(canvas["width"])
     height = float(canvas["height"])
     svg = SvgCanvas(width, height)
+    for group in layout.get("groups", []):
+        if not group.get("bbox"):
+            continue
+        x, y, group_width, group_height = group["bbox"]
+        svg.rect(
+            x * width,
+            y * height,
+            group_width * width,
+            group_height * height,
+            fill="none",
+            stroke="#777777",
+            stroke_width=0.75,
+            stroke_dasharray="3 2",
+            data_group_id=group.get("group_id", "group"),
+        )
     for node in layout.get("nodes", []):
         x, y, node_width, node_height = node["bbox"]
         svg.rect(

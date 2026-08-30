@@ -98,6 +98,7 @@ def solve_figure_layout(
     graph: Mapping[str, Any],
     canvas: Mapping[str, Any],
     placement_hints: Mapping[str, list[float]] | None = None,
+    panel_hints: Mapping[str, list[float]] | None = None,
 ) -> dict[str, Any]:
     nodes = [copy.deepcopy(dict(item)) for item in graph.get("nodes", [])]
     hints = placement_hints or {}
@@ -109,6 +110,17 @@ def solve_figure_layout(
     node_by_id = {str(item["node_id"]): item for item in nodes}
     ports = {str(item["port_id"]): item for item in graph.get("ports", [])}
     conflicts: list[dict[str, Any]] = []
+    panel_boxes = {
+        str(panel_id): [float(value) for value in bbox]
+        for panel_id, bbox in (panel_hints or {}).items()
+    }
+    for constraint in graph.get("constraints", []):
+        if constraint.get("kind") != "panel_size":
+            continue
+        panel_id = str(constraint.get("panel_id") or "")
+        bbox = [float(value) for value in constraint.get("bbox", [])]
+        if panel_id and len(bbox) == 4:
+            panel_boxes[panel_id] = bbox
     exclusions = _apply_constraints(
         nodes, [dict(item) for item in graph.get("constraints", [])]
     )
@@ -128,6 +140,20 @@ def solve_figure_layout(
                 "element_ids": [node["node_id"]],
                 "detail": "move or resize the node inside the normalized canvas",
             })
+        panel_bbox = panel_boxes.get(str(node.get("panel_id") or ""))
+        if panel_bbox is not None:
+            px, py, pw, ph = panel_bbox
+            x, y, width, height = node["bbox"]
+            if (
+                x < px or y < py
+                or x + width > px + pw
+                or y + height > py + ph
+            ):
+                conflicts.append({
+                    "kind": "node_outside_panel",
+                    "element_ids": [node["node_id"]],
+                    "detail": "move or resize the node inside its panel",
+                })
     for index, node in enumerate(nodes):
         for other in nodes[index + 1:]:
             if (
@@ -177,6 +203,10 @@ def solve_figure_layout(
         "schema_version": "1.0",
         "figure_id": str(graph["figure_id"]),
         "canvas": copy.deepcopy(dict(canvas)),
+        "panels": [
+            {"panel_id": panel_id, "bbox": bbox}
+            for panel_id, bbox in sorted(panel_boxes.items())
+        ],
         "nodes": nodes,
         "connectors": connectors,
         "groups": _solved_groups(

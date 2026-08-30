@@ -17,6 +17,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.image import imread  # noqa: E402
+from matplotlib.patches import Rectangle  # noqa: E402
 
 from figure_tools.export.exporters import save_figure  # noqa: E402
 from figure_tools.validation.extractors.assembly import (  # noqa: E402
@@ -40,6 +41,7 @@ def compose_assets(
     dpi: int = 300,
     text_placements: list[dict[str, Any]] | None = None,
     connectors: list[dict[str, Any]] | None = None,
+    groups: list[dict[str, Any]] | None = None,
     source_layouts: dict[str, str | Path] | None = None,
     export_target: str | None = None,
 ) -> dict[str, Any]:
@@ -58,6 +60,22 @@ def compose_assets(
         extent = (x, x + bw, 1 - (y + bh), 1 - y)
         ax.imshow(img, extent=extent, aspect="auto",
                   zorder=p.get("z_order", 0), interpolation="nearest")
+
+    for group in groups or []:
+        if not group.get("bbox"):
+            continue
+        x, y, width, height = group["bbox"]
+        rectangle = Rectangle(
+            (x, 1 - y - height),
+            width,
+            height,
+            fill=False,
+            edgecolor="#777777",
+            linewidth=0.75,
+            linestyle="--",
+            zorder=group.get("z_order", 0),
+        )
+        ax.add_patch(rectangle)
 
     # Track composed text artists so their real bboxes can be extracted after
     # the figure is drawn (plan section 9.3).
@@ -113,6 +131,26 @@ def compose_assets(
             panel_id=p.get("panel_id"),
             source="assembly",
             z_order=int(p.get("z_order", 0)),
+        ))
+
+    for group in groups or []:
+        if not group.get("bbox"):
+            continue
+        x, y, width, height = group["bbox"]
+        elements.append(LayoutElement(
+            element_id=f"group:{group.get('group_id', len(elements))}",
+            element_type="group",
+            bbox=PixelBBox(
+                x * canvas_w,
+                y * canvas_h,
+                (x + width) * canvas_w,
+                (y + height) * canvas_h,
+            ),
+            source="assembly",
+            z_order=int(group.get("z_order", 0)),
+            metadata={
+                "node_ids": list(group.get("node_ids", [])),
+            },
         ))
 
     for connector in connectors or []:

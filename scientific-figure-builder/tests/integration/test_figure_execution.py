@@ -200,9 +200,19 @@ def test_execution_compiles_generation_conditions_and_uses_asset_placements(tmp_
     conditions = json.loads(
         (run_dir / "plans" / "generation_conditions.json").read_text()
     )
-    result = module.execute_plan(plan, layout_report=layout)
+    paused = module.execute_plan(plan, layout_report=layout)
+    pre_rendered = json.loads(
+        (run_dir / "plans" / "pre_rendered_assets.json").read_text()
+    )
+    result = module.execute_plan(
+        plan,
+        layout_report=layout,
+        style_anchor_approved=True,
+        pre_rendered_assets=pre_rendered,
+    )
 
     by_id = {item["asset_id"]: item for item in conditions["conditions"]}
+    assert paused["pause_reason"] == "style_anchor_approval"
     assert by_id["receptor"]["publication_profile"]["profile_id"] == (
         "nature_research"
     )
