@@ -27,7 +27,9 @@ SCHEMA_DOCUMENTS = {
     "export-result.schema.json": ["export_result.json"],
     "execution-result.schema.json": ["execution_result.json"],
     "figure-brief.schema.json": ["figure_brief.json"],
+    "figure-graph.schema.json": ["figure_graph.json"],
     "figure-plan.schema.json": ["figure_plan.json"],
+    "generation-conditions.schema.json": ["generation_conditions.json"],
     "plot-spec.schema.json": ["plot_spec.json"],
     "repair-plan.schema.json": ["repair_plan.json"],
     "asset-manifest.schema.json": ["asset_manifest.json"],
@@ -36,6 +38,8 @@ SCHEMA_DOCUMENTS = {
     "validation-report.schema.json": ["validation_report.json"],
     "layout-analysis.schema.json": ["layout_analysis.json"],
     "root-cause-report.schema.json": ["root_cause_report.json"],
+    "solved-layout.schema.json": ["solved_layout.json"],
+    "structure-questions.schema.json": ["structure_questions.json"],
     "layout-manifest.schema.json": ["layout_manifest.json"],
 }
 

@@ -25,6 +25,7 @@ Element-to-engine routing for scientific-figure-builder (plan section 2).
 - Labels, angles, equations -> SVG or PPTX.
 - Reference-figure decomposition -> configured multimodal analysis model.
 - Final assembly -> Python and SVG.
+- Figure Graph connectors -> port-bound SVG arrows in the blueprint and final assembly.
 
 ## Regular structures (Python or SVG only)
 

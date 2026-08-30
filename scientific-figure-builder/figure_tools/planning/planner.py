@@ -71,17 +71,20 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
     z = 1
     for panel in request.get("panels", []):
         for el in panel.get("elements", []):
-            assets.append({
+            asset = {
                 "asset_id": el["element_id"],
                 "type": _ELEMENT_TYPE_TO_ASSET_TYPE[el["type"]],
                 "z_order": z,
                 "dependencies": [],
                 "routing": route_element(el),
                 "panel_id": panel["panel_id"],
-                "bbox": list(panel["bbox"]),
+                "bbox": list(el.get("bbox", panel["bbox"])),
                 "physical_size": list(panel["physical_size"]),
                 "source": dict(el),
-            })
+            }
+            if el.get("bbox") is not None:
+                asset["bbox_space"] = "panel"
+            assets.append(asset)
             z += 1
     for label in request.get("labels", []):
         assets.append({
@@ -97,12 +100,16 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _estimated_paid_calls(request: dict[str, Any], assets: list[dict]) -> dict[str, int]:
-    n_ai = sum(1 for a in assets if a["type"] == "image_asset")
+    candidate_calls = sum(
+        int((a.get("source") or {}).get("candidate_count", 1))
+        for a in assets
+        if a["type"] == "image_asset"
+    )
     return {
         "reference_analysis": 1 if request.get("reference_figures") else 0,
-        "generation": n_ai,
+        "generation": candidate_calls,
         "edits": 0,
-        "validations": n_ai,
+        "validations": candidate_calls,
         "final_validation": 1,
     }
 
@@ -228,6 +235,8 @@ def create_figure_plan(
         plan["language"] = request["language"]
     if request.get("style") is not None:
         plan["style"] = request["style"]
+    if request.get("publication_profile") is not None:
+        plan["publication_profile"] = request["publication_profile"]
     if request.get("brief_ref") is not None:
         plan["brief_ref"] = request["brief_ref"]
     return plan

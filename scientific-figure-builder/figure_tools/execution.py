@@ -10,16 +10,22 @@ from typing import Any
 
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.export.publish import export_figure
+from figure_tools.figure_graph import build_figure_graph
+from figure_tools.figure_layout import solve_figure_layout
+from figure_tools.generation_conditions import compile_generation_condition
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.layout_analysis import analyze_layout
-from figure_tools.provenance import hash_file
+from figure_tools.provenance import hash_file, hash_json
+from figure_tools.publication_profiles import get_publication_profile
 from figure_tools.report import write_generation_report
 from figure_tools.run_store import RunStore
 from figure_tools.validation.engine import FigureQAEngine
+from figure_tools.validation.graph_structure import build_structure_questions
 from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
+from figure_tools.vector.blueprint import render_figure_blueprint
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
 from figure_tools.vector.wireframe import generate_wireframe
 
@@ -50,13 +56,50 @@ class FigureExecution:
 
     def prepare_plan_artifacts(self, plan: dict[str, Any]) -> dict[str, Any]:
         """Persist the deterministic artifacts derived from one Figure plan."""
-        self.store.commit_json("plans/figure_plan.json", plan)
+        graph = build_figure_graph(self.request, plan)
+        graph_reference = self.store.commit_json(
+            "plans/figure_graph.json", graph, schema="figure-graph.schema.json"
+        )
+        self.store.commit_json(
+            "plans/structure_questions.json",
+            {
+                "schema_version": "1.0",
+                "figure_id": graph["figure_id"],
+                "questions": build_structure_questions(graph),
+            },
+            schema="structure-questions.schema.json",
+        )
+        solved_layout = solve_figure_layout(graph, plan["canvas"])
+        layout_reference = self.store.commit_json(
+            "plans/solved_layout.json",
+            solved_layout,
+            schema="solved-layout.schema.json",
+        )
+        blueprint_reference = self.store.commit_text(
+            "plans/figure_blueprint.svg", render_figure_blueprint(solved_layout)
+        )
+        plan["figure_graph_ref"] = {
+            "artifact": "plans/figure_graph.json",
+            "content_hash": graph_reference["content_hash"],
+        }
+        plan["solved_layout_ref"] = {
+            "artifact": "plans/solved_layout.json",
+            "content_hash": layout_reference["content_hash"],
+        }
+        plan["blueprint_ref"] = {
+            "artifact": "plans/figure_blueprint.svg",
+            "content_hash": blueprint_reference["content_hash"],
+        }
+        self.store.commit_json(
+            "plans/figure_plan.json", plan, schema="figure-plan.schema.json"
+        )
         self.store.commit_text("plans/layout_wireframe.svg", generate_wireframe(plan))
 
         data_chars = self._collect_data_characteristics()
         layout_report = analyze_layout(plan, data_chars)
         self.store.commit_json("plans/layout_analysis.json", layout_report)
         self._write_style_bible()
+        self._compile_generation_conditions(plan)
         self._copy_inputs()
         return layout_report
 
@@ -79,27 +122,50 @@ class FigureExecution:
             for el in panel.get("elements", [])
             if el["type"] == "image_asset"
         ]
+        conditions = self._generation_conditions()
         if len(ai_elements) >= 3:
             anchor_id = ai_elements[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
             anchor_meta = None
             if not anchor_path.exists():
-                anchor_meta = self.provider.generate_image_asset(
-                    ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
+                anchor_meta = self._generate_condition(
+                    conditions[anchor_id], anchor_path,
+                )
             if not style_anchor_approved:
                 if anchor_meta is not None:
                     self.store.commit_json(
                         "plans/pre_rendered_assets.json", {anchor_id: anchor_meta}
                     )
                 return {"paused": True, "pause_reason": "style_anchor_approval"}
+            anchor_record = (pre_rendered_assets or {}).get(anchor_id) or anchor_meta
+            anchor_hash = (
+                anchor_record.get("content_hash")
+                if anchor_record is not None
+                else hash_file(anchor_path)
+            )
+            conditions = {
+                item["asset_id"]: item
+                for item in self._compile_generation_conditions(
+                    plan,
+                    style_anchor={
+                        "asset_id": anchor_id,
+                        "path": str(anchor_path),
+                        "content_hash": anchor_hash,
+                        "style_group": str(
+                            ai_elements[0][1].get("style_group") or "figure"
+                        ),
+                    },
+                )["conditions"]
+            }
 
         manifest_assets, validation_reports, placements, text_placements = \
-            self._render_assets(plan, ai_elements, export_target,
+            self._render_assets(plan, ai_elements, export_target, conditions,
                                 pre_rendered_assets=pre_rendered_assets)
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self.store.commit_json("asset_manifest.json", manifest)
 
         assembly_dir = self.run_dir / "assembly"
+        solved_layout = self.store.load_optional_json("plans/solved_layout.json") or {}
         source_layouts = {
             p["asset_id"]: p["layout_manifest"]
             for p in placements
@@ -110,6 +176,7 @@ class FigureExecution:
             placements, output_dir=assembly_dir,
             canvas_mm=self._canvas_mm(), dpi=self.compose_dpi,
             text_placements=text_placements, source_layouts=source_layouts,
+            connectors=list(solved_layout.get("connectors") or []),
             export_target=export_target,
         )
         composed_png = Path(assembly_result["files"]["png"])
@@ -203,6 +270,7 @@ class FigureExecution:
             "include_pptx": delivery.get("include_pptx", False),
             "language": plan.get("language", "zh"),
             "style": plan.get("style", plan.get("style_bible_ref", "default")),
+            "publication_profile": plan.get("publication_profile", "general"),
             "brief_ref": plan.get("brief_ref"),
             "auto_execute": True,
         }
@@ -272,6 +340,103 @@ class FigureExecution:
         self.store.commit_json(
             "style_bible.json", json.loads(src.read_text(encoding="utf-8"))
         )
+
+    def _compile_generation_conditions(
+        self,
+        plan: dict[str, Any],
+        style_anchor: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        style_path = self.run_dir / "style_bible.json"
+        style_bible = json.loads(style_path.read_text(encoding="utf-8"))
+        profile_id = str(
+            self.request.get("publication_profile")
+            or self.config.get("publication_profile")
+            or "general"
+        )
+        publication_profile = get_publication_profile(profile_id)
+        capabilities = self._image_provider_capabilities()
+        conditions = []
+        for asset in plan.get("assets", []):
+            if asset.get("type") != "image_asset":
+                continue
+            source = dict(asset.get("source") or {})
+            references = list(source.get("references", []))
+            style_group = str(source.get("style_group") or "figure")
+            if (
+                style_anchor is not None
+                and asset["asset_id"] != style_anchor["asset_id"]
+                and style_group == style_anchor["style_group"]
+            ):
+                references.append({
+                    "role": "style",
+                    "path": style_anchor["path"],
+                    "content_hash": style_anchor["content_hash"],
+                    "strength": 1.0,
+                })
+            conditions.append(compile_generation_condition({
+                "asset_id": asset["asset_id"],
+                "model_role": "image_generate",
+                "scientific_intent": self.request.get("intent", ""),
+                "prompt": source.get("prompt", ""),
+                "style_bible": style_bible,
+                "style_bible_hash": hash_file(style_path),
+                "publication_profile": publication_profile,
+                "publication_profile_hash": hash_json(publication_profile),
+                "parameters": source.get("parameters", {}),
+                "references": references,
+                "provider_capabilities": capabilities,
+            }))
+        artifact = {"schema_version": "1.0", "conditions": conditions}
+        self.store.commit_json(
+            "plans/generation_conditions.json",
+            artifact,
+            schema="generation-conditions.schema.json",
+        )
+        return artifact
+
+    def _image_provider_capabilities(self) -> dict[str, Any]:
+        models = self.config.get("models") or {}
+        route = models.get("image_generate") or {}
+        provider_id = route.get("provider")
+        providers = self.config.get("providers") or {}
+        provider = providers.get(provider_id) if provider_id else None
+        adapter_capabilities = (
+            self.provider.generation_capabilities()
+            if hasattr(self.provider, "generation_capabilities")
+            else {}
+        )
+        return {**adapter_capabilities, **dict(provider or {})}
+
+    def _generation_conditions(self) -> dict[str, dict[str, Any]]:
+        artifact = self.store.load_optional_json("plans/generation_conditions.json")
+        if artifact is None:
+            artifact = self._compile_generation_conditions(
+                self.store.load_json("plans/figure_plan.json")
+            )
+        return {
+            str(item["asset_id"]): dict(item)
+            for item in artifact.get("conditions", [])
+        }
+
+    def _generate_condition(
+        self,
+        condition: dict[str, Any],
+        output_path: str | Path,
+    ) -> dict[str, Any]:
+        references = list(condition.get("references") or [])
+        meta = self.provider.generate_image_asset(
+            condition["prompt"],
+            dict(condition.get("parameters") or {}),
+            output_path=output_path,
+            reference_hashes=[item["content_hash"] for item in references],
+            reference_paths=[item["path"] for item in references],
+            reference_descriptors=[
+                {"role": item["role"], "strength": item["strength"]}
+                for item in references
+            ],
+        )
+        meta["condition_hash"] = condition["condition_hash"]
+        return meta
 
     def _copy_inputs(self) -> None:
         inputs = self.run_dir / "inputs"
@@ -356,7 +521,7 @@ class FigureExecution:
         }
         return {k: round(v / total, 2) for k, v in quadrants.items()}
 
-    def _render_assets(self, plan, ai_elements, export_target: str,
+    def _render_assets(self, plan, ai_elements, export_target: str, conditions,
                        pre_rendered_assets: dict[str, dict[str, Any]] | None = None):
         manifest_assets: list[dict] = []
         validation_reports: list[dict] = []
@@ -382,7 +547,8 @@ class FigureExecution:
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
-                                       "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                                       "bbox": self._placement_bbox(asset_id, plan, panel),
+                                       "panel_id": panel["panel_id"],
                                        "z_order": self._zorder(asset_id, plan),
                                        "layout_manifest": str(out / "layout_manifest.json")})
                 except Exception as e:  # noqa: BLE001
@@ -395,7 +561,7 @@ class FigureExecution:
 
             with ThreadPoolExecutor(max_workers=2) as ex:
                 futs = {ex.submit(
-                    self._safe_gen_ai, panel, el,
+                    self._safe_gen_ai, panel, el, conditions[el["element_id"]],
                     (pre_rendered_assets or {}).get(el["element_id"]),
                 ): el["element_id"]
                         for panel, el in ai_elements}
@@ -412,13 +578,14 @@ class FigureExecution:
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
             placements.append({"asset_id": asset_id, "path": meta["path"],
-                               "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                               "bbox": self._placement_bbox(asset_id, plan, panel),
+                               "panel_id": panel["panel_id"],
                                "z_order": self._zorder(asset_id, plan)})
 
         text_placements = self._render_labels(plan, manifest_assets, export_target)
         return manifest_assets, validation_reports, placements, text_placements
 
-    def _safe_gen_ai(self, panel, el, pre_rendered_meta=None):
+    def _safe_gen_ai(self, panel, el, condition, pre_rendered_meta=None):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
             reusable_path = (
@@ -431,26 +598,130 @@ class FigureExecution:
                 and reusable_path is not None
                 and reusable_path.is_file()
                 and pre_rendered_meta.get("content_hash") == hash_file(reusable_path)
+                and pre_rendered_meta.get("condition_hash") == condition["condition_hash"]
             ):
                 report = self.provider.validate_image_asset(
                     path, physical_size_mm=tuple(panel["physical_size"])
                 )
                 return (el["element_id"], pre_rendered_meta, report, None)
-            meta = self.provider.generate_image_asset(el["prompt"], {}, output_path=path)
+            candidate_count = int(el.get("candidate_count", 1))
+            if not 1 <= candidate_count <= 4:
+                raise ValueError("candidate_count must be between 1 and 4")
+            if candidate_count > 1:
+                meta, report = self._select_candidate(
+                    el["element_id"], condition, panel, path, candidate_count,
+                )
+                return (el["element_id"], meta, report, None)
+            meta = self._generate_condition(condition, path)
             report = self.provider.validate_image_asset(
                 path, physical_size_mm=tuple(panel["physical_size"]))
             return (el["element_id"], meta, report, None)
         except Exception as e:  # noqa: BLE001
             return (el["element_id"], None, None, e)
 
+    def _select_candidate(
+        self,
+        asset_id: str,
+        condition: dict[str, Any],
+        panel: dict[str, Any],
+        output_path: Path,
+        candidate_count: int,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        candidates: list[tuple[tuple[int, int, int, int], dict, dict, Path]] = []
+        records = []
+        for index in range(1, candidate_count + 1):
+            candidate_path = (
+                self.run_dir / "assets" / "candidates" / f"{asset_id}-{index}.png"
+            )
+            candidate_path.parent.mkdir(parents=True, exist_ok=True)
+            candidate_condition = copy.deepcopy(condition)
+            candidate_condition["parameters"] = {
+                **dict(candidate_condition.get("parameters") or {}),
+                "candidate_index": index,
+            }
+            meta = self._generate_condition(candidate_condition, candidate_path)
+            report = self.provider.validate_image_asset(
+                candidate_path,
+                physical_size_mm=tuple(panel["physical_size"]),
+            )
+            summary = report.get("summary") or {}
+            rank = (
+                1 if summary.get("blocking") else 0,
+                int(summary.get("errors", 0)),
+                int(summary.get("warnings", 0)),
+                -int(summary.get("passed", 0)),
+            )
+            candidates.append((rank, meta, report, candidate_path))
+            records.append({
+                "candidate": index,
+                "path": str(candidate_path),
+                "content_hash": meta["content_hash"],
+                "blocking": bool(summary.get("blocking")),
+                "errors": int(summary.get("errors", 0)),
+                "warnings": int(summary.get("warnings", 0)),
+                "passed": int(summary.get("passed", 0)),
+            })
+        selected_index, selected = min(
+            enumerate(candidates, start=1), key=lambda item: item[1][0]
+        )
+        _rank, meta, report, selected_path = selected
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(selected_path, output_path)
+        selected_meta = copy.deepcopy(meta)
+        selected_meta["path"] = str(output_path)
+        selected_meta["content_hash"] = hash_file(output_path)
+        self.store.commit_json(
+            f"validation/candidate_selection/{asset_id}.json",
+            {
+                "schema_version": "1.0",
+                "asset_id": asset_id,
+                "selected_candidate": selected_index,
+                "selection_policy": "hard-gates-then-quality",
+                "candidates": records,
+            },
+        )
+        return selected_meta, report
+
+    def _placement_bbox(self, asset_id: str, plan: dict, panel: dict) -> list[float]:
+        asset = next(
+            (
+                item for item in plan.get("assets", [])
+                if item.get("asset_id") == asset_id
+            ),
+            None,
+        )
+        if not asset or not asset.get("bbox"):
+            return list(panel["bbox"])
+        bbox = [float(value) for value in asset["bbox"]]
+        if asset.get("bbox_space") != "panel":
+            return bbox
+        px, py, pw, ph = (float(value) for value in panel["bbox"])
+        x, y, width, height = bbox
+        return [
+            round(px + x * pw, 12),
+            round(py + y * ph, 12),
+            round(width * pw, 12),
+            round(height * ph, 12),
+        ]
+
     def _render_labels(self, plan, manifest_assets, export_target: str) -> list[dict]:
         text_placements: list[dict] = []
+        profile = get_publication_profile(
+            str(self.request.get("publication_profile") or "general")
+        )
         for i, label in enumerate(self.request.get("labels", [])):
             asset_id = label["element_id"]
+            font_size = (
+                float(profile.get("panel_label_pt", 9))
+                if label.get("kind", "label") == "label"
+                else float((profile.get("ordinary_text_pt") or [7, 9])[-1])
+            )
             svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
             if not svg_path.is_file():
                 canvas = SvgCanvas(width=200, height=40)
-                canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
+                canvas.text(
+                    2, 16, label["content"], font_size=font_size, fill="#000000"
+                )
                 svg = normalize_svg_bytes(
                     canvas.to_string().encode("utf-8"), export_target=export_target
                 ).decode("utf-8")
@@ -462,7 +733,7 @@ class FigureExecution:
                     "x": panel["bbox"][0] + 0.02,
                     "y": panel["bbox"][1] + 0.02,
                     "text": label["content"],
-                    "font_size": 9,
+                    "font_size": font_size,
                     "element_id": asset_id,
                     "kind": label.get("kind", "label"),
                     "panel_id": panel["panel_id"],
@@ -498,6 +769,7 @@ class FigureExecution:
             "path": meta["path"], "content_hash": meta["content_hash"],
             "generation": {"model": meta["model"], "parameters": meta["parameters"]},
             "prompt_hash": meta["prompt_hash"],
+            "condition_hash": meta.get("condition_hash"),
             "reference_hashes": meta["reference_hashes"],
             "pixel_dimensions": meta["pixel_dimensions"],
             "transparent": meta["transparent"],

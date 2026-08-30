@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Mapping, Protocol, Sequence
 
 from figure_tools.state import RunState
@@ -17,6 +18,7 @@ from figure_tools.lifecycle_prompts import (
     PHASE_PROMPT_VERSION,
     prompt_for,
 )
+from figure_tools.imaging.edit_validation import evaluate_local_edit
 from figure_tools.phase_workers import StructuredPhaseWorker
 from figure_tools.provenance import hash_file
 from figure_tools.run_invalidator import RunInvalidator
@@ -707,19 +709,74 @@ class FigureOrchestrator:
         plan_assets = {asset["asset_id"]: asset for asset in plan.get("assets", [])}
         allowed = {item.get("asset_id") for item in repair_plan.get("repairs", [])}
         repaired_routes: dict[str, str] = {}
+        edit_outcomes: list[tuple[str, dict[str, Any]]] = []
         for item in repairs:
             if not isinstance(item, Mapping):
                 raise ValueError("each repair must be an object")
             asset_id = item.get("asset_id")
             route = item.get("route")
+            operation = item.get("operation")
             if not isinstance(asset_id, str) or not asset_id:
                 raise ValueError("each repair requires a non-empty asset_id")
-            if not isinstance(route, str):
-                raise ValueError("each repair requires a route")
             if asset_id not in allowed or asset_id not in elements:
                 raise ValueError(f"asset {asset_id!r} is not in the Repair plan")
             element = elements[asset_id]
             self.state.record_retry(f"repair:{asset_id}", "quality")
+            if operation == "layout_patch":
+                bbox = item.get("bbox")
+                if (
+                    not isinstance(bbox, list)
+                    or len(bbox) != 4
+                    or any(not isinstance(value, (int, float)) for value in bbox)
+                    or any(float(value) < 0 or float(value) > 1 for value in bbox)
+                    or float(bbox[2]) <= 0
+                    or float(bbox[3]) <= 0
+                    or float(bbox[0]) + float(bbox[2]) > 1
+                    or float(bbox[1]) + float(bbox[3]) > 1
+                ):
+                    raise ValueError(
+                        "layout_patch requires a normalized [x, y, width, height] bbox"
+                    )
+                bbox_space = str(item.get("bbox_space") or "panel")
+                if bbox_space not in {"panel", "canvas"}:
+                    raise ValueError("layout_patch bbox_space must be panel or canvas")
+                element["bbox"] = list(bbox)
+                plan_assets[asset_id]["bbox"] = list(bbox)
+                plan_assets[asset_id]["bbox_space"] = bbox_space
+                plan_assets[asset_id].setdefault("source", {})["bbox"] = list(bbox)
+                repaired_routes[asset_id] = "layout_patch"
+                continue
+            if operation == "connector_patch":
+                edge_id = item.get("edge_id")
+                graph = self.request.get("figure_graph")
+                if not isinstance(graph, dict) or not isinstance(edge_id, str):
+                    raise ValueError(
+                        "connector_patch requires an existing Figure Graph edge_id"
+                    )
+                edge = next(
+                    (
+                        candidate for candidate in graph.get("typed_edges", [])
+                        if candidate.get("edge_id") == edge_id
+                    ),
+                    None,
+                )
+                if edge is None:
+                    raise ValueError(f"unknown Figure Graph edge {edge_id!r}")
+                for field in (
+                    "source_port", "target_port", "direction", "semantic_type"
+                ):
+                    value = item.get(field)
+                    if not isinstance(value, str) or not value:
+                        raise ValueError(f"connector_patch requires {field}")
+                    edge[field] = value
+                repaired_routes[asset_id] = "connector_patch"
+                continue
+            if operation == "vector_patch":
+                route = "svg"
+            elif operation == "raster_edit":
+                route = "image_edit"
+            if not isinstance(route, str):
+                raise ValueError("each repair requires a route")
             repaired_routes[str(asset_id)] = str(route)
             if element.get("type") in {"data_plot", "label", "annotation", "text", "equation", "vector_element"}:
                 if route == "image_edit":
@@ -761,11 +818,73 @@ class FigureOrchestrator:
                     prompt = plan_item.get("action")
                 if not isinstance(prompt, str) or not prompt:
                     raise ValueError("image_edit repair requires prompt")
-                meta = self.provider.edit_image_asset(
-                    parent_path, prompt, {}, output_path=parent_path,
-                    parent_asset_id=asset_id,
+                edit_path = (
+                    self.run_dir / "assets" / "edits"
+                    / f"{asset_id}-v{int(plan.get('revision', 1)) + 1}.png"
                 )
-                pre_rendered[asset_id] = meta
+                edit_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_mask_path = item.get("mask_path")
+                mask_path = (
+                    Path(raw_mask_path)
+                    if isinstance(raw_mask_path, str) and raw_mask_path
+                    else None
+                )
+                meta = self.provider.edit_image_asset(
+                    parent_path,
+                    prompt,
+                    {},
+                    output_path=edit_path,
+                    parent_asset_id=asset_id,
+                    mask_path=mask_path,
+                )
+                panel = next(
+                    (
+                        candidate for candidate in self.request.get("panels", [])
+                        if any(
+                            child.get("element_id") == asset_id
+                            for child in candidate.get("elements", [])
+                        )
+                    ),
+                    None,
+                )
+                physical_size = (
+                    (
+                        float(panel["physical_size"][0]),
+                        float(panel["physical_size"][1]),
+                    )
+                    if panel is not None
+                    else None
+                )
+                outcome = evaluate_local_edit(
+                    parent_path,
+                    edit_path,
+                    mask_path=mask_path,
+                    physical_size_mm=physical_size,
+                )
+                if outcome["accepted"]:
+                    shutil.copyfile(edit_path, parent_path)
+                    meta["path"] = str(parent_path)
+                    meta["content_hash"] = hash_file(parent_path)
+                    meta["condition_hash"] = (
+                        manifest_asset or {}
+                    ).get("condition_hash")
+                    pre_rendered[asset_id] = meta
+                    status = "accepted"
+                else:
+                    edit_path.unlink(missing_ok=True)
+                    status = "rolled_back"
+                edit_outcomes.append((asset_id, {
+                        "schema_version": "1.0",
+                        "asset_id": asset_id,
+                        "status": status,
+                        "reason": outcome["reason"],
+                        "mask_path": str(mask_path) if mask_path else None,
+                        "original_summary": outcome["original_summary"],
+                        "edited_summary": outcome["edited_summary"],
+                        "unmasked_mean_absolute_difference": outcome[
+                            "unmasked_mean_absolute_difference"
+                        ],
+                    }))
             else:
                 raise ValueError(f"asset {asset_id!r} is not repairable")
         self.store.validate(plan, "figure-plan.schema.json")
@@ -782,7 +901,14 @@ class FigureOrchestrator:
         if pre_rendered:
             self.store.commit_json("plans/pre_rendered_assets.json", pre_rendered)
         self.invalidator.after_repairs(repaired_routes)
-        if "python" in repaired_routes.values():
+        for asset_id, outcome in edit_outcomes:
+            self.store.commit_json(
+                f"validation/edit_outcomes/{asset_id}.json", outcome,
+            )
+        if any(
+            route in {"python", "layout_patch", "connector_patch"}
+            for route in repaired_routes.values()
+        ):
             from figure_tools.execution import FigureExecution
 
             FigureExecution(
@@ -817,6 +943,7 @@ class FigureOrchestrator:
                 "model": generation.get("model"),
                 "parameters": dict(generation.get("parameters") or {}),
                 "prompt_hash": asset.get("prompt_hash"),
+                "condition_hash": asset.get("condition_hash"),
                 "reference_hashes": list(asset.get("reference_hashes") or []),
                 "pixel_dimensions": list(asset.get("pixel_dimensions") or []),
                 "transparent": bool(asset.get("transparent")),

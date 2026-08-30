@@ -16,7 +16,16 @@ LEGACY_PROVIDER_PROTOCOLS = {
     "anthropic": "anthropic",
 }
 PROVIDER_TYPE_FIELD_DEFAULTS: dict[str, Mapping[str, Any]] = {
-    "openai": {"supports_image_edit": False},
+    "openai": {
+        "supports_image_edit": False,
+        "supports_reference_image": False,
+        "supports_multi_reference": False,
+        "supports_mask_edit": False,
+        "supports_structure_control": False,
+        "supports_native_alpha": False,
+        "supports_seed": False,
+        "supports_candidate_batch": False,
+    },
     "anthropic": {
         "auth_scheme": "x-api-key",
         "messages_path": "/messages",

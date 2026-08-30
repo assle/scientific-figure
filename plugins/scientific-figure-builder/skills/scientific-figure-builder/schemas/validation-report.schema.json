@@ -34,7 +34,11 @@
           "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
           "method": { "type": "string" },
           "evidence_path": { "type": "string" },
-          "repair_action": { "type": "string" }
+          "repair_action": { "type": "string" },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": {"type": "number"}
+          }
         }
       }
     },

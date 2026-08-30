@@ -40,7 +40,7 @@ class SvgCanvas:
             f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" {self._attr_str(**kw)} />'
         )
 
-    def text(self, x, y, content, font_size=10, **kw) -> None:
+    def text(self, x, y, content, font_size: float = 10, **kw) -> None:
         escaped = escape(str(content))
         self._body.append(
             f'<text x="{x}" y="{y}" font-size="{font_size}" {self._attr_str(**kw)}>'

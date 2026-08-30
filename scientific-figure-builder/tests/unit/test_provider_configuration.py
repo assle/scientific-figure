@@ -110,3 +110,24 @@ def test_route_compatibility_uses_provider_type_and_declared_capabilities():
     edit = route_compatibility("image_edit", models, providers)
     assert not edit.compatible
     assert "supports_image_edit" in edit.reason
+
+
+def test_openai_provider_normalizes_generation_capabilities():
+    provider = normalize_provider("images", {
+        "type": "openai",
+        "supports_reference_image": True,
+        "supports_multi_reference": True,
+        "supports_mask_edit": True,
+        "supports_structure_control": True,
+        "supports_native_alpha": True,
+        "supports_seed": True,
+        "supports_candidate_batch": True,
+    })
+
+    assert provider["supports_reference_image"] is True
+    assert provider["supports_multi_reference"] is True
+    assert provider["supports_mask_edit"] is True
+    assert provider["supports_structure_control"] is True
+    assert provider["supports_native_alpha"] is True
+    assert provider["supports_seed"] is True
+    assert provider["supports_candidate_batch"] is True

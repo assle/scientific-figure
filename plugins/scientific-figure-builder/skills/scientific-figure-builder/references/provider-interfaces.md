@@ -19,8 +19,11 @@ A **provider** is a named endpoint described by:
   no Keyring-backed `credential_id` is available.
 - optional `credential_id`: a stable UUID locating the credential in the
   operating system credential store.
-- optional per-provider flags (`supports_image_edit`, `auth_scheme`,
-  `messages_path`, `anthropic_version`).
+- optional per-provider flags (`supports_image_edit`,
+  `supports_reference_image`, `supports_multi_reference`,
+  `supports_mask_edit`, `supports_structure_control`,
+  `supports_native_alpha`, `supports_seed`, `supports_candidate_batch`,
+  `auth_scheme`, `messages_path`, `anthropic_version`).
 
 Each **model role** is `{model: <id>, provider: <provider-name>}`. The
 `ProviderRouter` routes each role to the transport of its referenced provider.
@@ -119,6 +122,14 @@ built-in default. For Ark vision, use the `anthropic` dialect
   reserved for generated or source-less rasters and reuses the generation model
   unless an override is configured. Opaque model output is background-removed to
   a genuinely transparent PNG.
+- Execution sends one canonical Generation Condition per raster asset. Content,
+  style, structure, parent, and mask references remain distinct through cache,
+  provenance, and transport mapping. A required undeclared capability fails
+  before the Provider call instead of being ignored.
+- Three or more related raster assets use the first approved asset as a style
+  anchor for later assets in the same Style group. Candidate generation is
+  budgeted explicitly and selects hard-gate-valid results before considering
+  softer quality signals.
 - `validate_image_asset` combines deterministic image checks with one multimodal
   validation call and returns a `validation-report`-conformant dict.
 - Every paid call records against the run budget; identical requests hit the

@@ -14,6 +14,14 @@ approved plan and uses Python, SVG, image generation/editing, and assembly as
 Generation routes. Review produces a Validation report or targeted Repair
 plan. Export is deterministic and crosses the Export gate.
 
+Planning also derives a Figure Graph, Solved layout, editable SVG blueprint,
+and graph-derived structure questions. Before paid image generation, Execution
+compiles each raster asset into a schema-governed Generation Condition that
+combines scientific intent, Style Bible, Publication profile, Reference roles,
+Provider capabilities, and cache identity. Asset bounding boxes are relative to
+their panel when explicitly declared; layout-only revisions preserve raster
+assets.
+
 Each model-assisted lifecycle phase receives a fresh Phase worker context with
 only its Phase prompt, allowed tools, and upstream Phase artifacts. Prompt
 version, prompt hash, and allowed tools are recorded under the run's
@@ -61,6 +69,11 @@ No `latest` resolution or silent model upgrades.
 
 Explicit user instruction > supplied style-reference image > project
 `style_bible.json` > Skill defaults.
+
+Publication profiles are independent of this precedence: they own physical
+dimensions, final typography, accessibility, vector editability, and export
+constraints rather than visual tone. `nature_research` is available alongside
+the general profile.
 
 ## Approval
 

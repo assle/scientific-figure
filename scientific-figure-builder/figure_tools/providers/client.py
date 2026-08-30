@@ -69,6 +69,9 @@ class ProviderClient:
             )
         return str(model_config["model"])
 
+    def generation_capabilities(self) -> dict[str, bool]:
+        return dict(self.transport.capabilities())
+
     def _record_call(self, role: str) -> None:
         if self.state is not None:
             budget_role = role
@@ -195,6 +198,7 @@ class ProviderClient:
                              output_path: str | Path,
                              reference_hashes: list[str] | None = None,
                              reference_paths: list[str] | None = None,
+                             reference_descriptors: list[dict[str, Any]] | None = None,
                              force: bool = False) -> dict[str, Any]:
         role = "generation"
         model = self._role_model(role)
@@ -209,7 +213,11 @@ class ProviderClient:
                 return self._image_meta(cached, out, role, parameters, prompt_hash,
                                         ref_hashes, cached=True)
         self._record_call(role)
-        resp = self._post(role, {"prompt": prompt, "parameters": parameters},
+        resp = self._post(role, {
+            "prompt": prompt,
+            "parameters": parameters,
+            "references": list(reference_descriptors or []),
+        },
                           image_paths=list(reference_paths or []))
         image_bytes = resp["image_bytes"]
         if self.cache is not None:
@@ -220,12 +228,17 @@ class ProviderClient:
 
     def edit_image_asset(self, parent_path: str | Path, prompt: str, parameters: dict,
                          output_path: str | Path, parent_asset_id: str | None = None,
+                         mask_path: str | Path | None = None,
                          force: bool = False) -> dict[str, Any]:
         role = "edits"
         model = self._role_model(role)
         prompt_hash = _sha(prompt)
         parent_hash = hash_file(parent_path)
         ref_hashes = [parent_hash]
+        image_paths = [str(parent_path)]
+        if mask_path is not None:
+            ref_hashes.append(hash_file(mask_path))
+            image_paths.append(str(mask_path))
         key = Cache.make_key(model, prompt_hash, parameters, ref_hashes)
         out = Path(output_path)
         if not force and self.cache is not None:
@@ -236,8 +249,9 @@ class ProviderClient:
                                         ref_hashes, cached=True, parent_asset_id=parent_asset_id)
         self._record_call(role)
         resp = self._post(role, {"prompt": prompt, "parameters": parameters,
-                                 "parent_hash": parent_hash},
-                          image_paths=[str(parent_path)])
+                                 "parent_hash": parent_hash,
+                                 "mask_hash": ref_hashes[1] if mask_path is not None else None},
+                          image_paths=image_paths)
         image_bytes = resp["image_bytes"]
         if self.cache is not None:
             self.cache.put_bytes(key, image_bytes)

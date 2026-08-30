@@ -14,6 +14,11 @@ ARTIFACTS = (
     "plans/figure_plan.json",
     "plans/layout_wireframe.svg",
     "plans/layout_analysis.json",
+    "plans/figure_graph.json",
+    "plans/solved_layout.json",
+    "plans/figure_blueprint.svg",
+    "plans/structure_questions.json",
+    "plans/generation_conditions.json",
     "plans/execution_result.json",
     "plans/repair_plan.json",
     "plans/export_result.json",
@@ -85,6 +90,8 @@ def test_figure_plan_change_preserves_the_new_plan_and_invalidates_derived_outpu
 
     assert (tmp_path / "plans/figure_plan.json").exists()
     assert not (tmp_path / "plans/layout_analysis.json").exists()
+    assert not (tmp_path / "plans/figure_graph.json").exists()
+    assert not (tmp_path / "plans/generation_conditions.json").exists()
     assert (tmp_path / "plots/plot-a/plot.png").exists()
     assert (tmp_path / "vectors/label-a.svg").exists()
     assert (tmp_path / "assets/raster-a.png").exists()

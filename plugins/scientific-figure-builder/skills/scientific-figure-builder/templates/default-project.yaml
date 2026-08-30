@@ -76,6 +76,13 @@ providers:
     base_url: ""
     key_env: OPENAI_API_KEY
     supports_image_edit: true
+    supports_reference_image: false
+    supports_multi_reference: false
+    supports_mask_edit: false
+    supports_structure_control: false
+    supports_native_alpha: false
+    supports_seed: false
+    supports_candidate_batch: false
   anthropic:
     type: anthropic
     base_url: ""

@@ -96,6 +96,13 @@ class OpenAICompatibleTransport(ProviderTransport):
             credential = resolver.resolve(name, config)
         api_key = credential.value if isinstance(credential, ResolvedCredential) else credential
         self.supports_image_edit = bool(config.get("supports_image_edit", False))
+        self.supports_reference_image = bool(
+            config.get("supports_reference_image", False)
+        )
+        self.supports_multi_reference = bool(
+            config.get("supports_multi_reference", False)
+        )
+        self.supports_mask_edit = bool(config.get("supports_mask_edit", False))
         if not self.base_url:
             raise ProviderError(f"provider {name!r} requires base_url")
         if not api_key:
@@ -115,6 +122,14 @@ class OpenAICompatibleTransport(ProviderTransport):
             redactor=self.redactor,
             timeout=self.timeout,
         )
+
+    def capabilities(self) -> dict[str, bool]:
+        return {
+            "supports_image_edit": self.supports_image_edit,
+            "supports_reference_image": self.supports_reference_image,
+            "supports_multi_reference": self.supports_multi_reference,
+            "supports_mask_edit": self.supports_mask_edit,
+        }
 
     def post(
         self,
@@ -174,7 +189,45 @@ class OpenAICompatibleTransport(ProviderTransport):
                 )
             if not image_paths:
                 raise ProviderError("image editing requires a parent image")
+            if len(image_paths) > 2:
+                raise ProviderError("image editing accepts one parent and one mask")
             body["image"] = _data_url(image_paths[0])
+            if len(image_paths) == 2:
+                if not self.supports_mask_edit:
+                    raise ProviderError(
+                        f"provider {self.name!r} must declare supports_mask_edit "
+                        "to use an edit mask"
+                    )
+                body["mask"] = _data_url(image_paths[1])
+        elif image_paths:
+            if not self.supports_reference_image:
+                raise ProviderError(
+                    f"provider {self.name!r} must declare "
+                    "supports_reference_image to use generation references"
+                )
+            if len(image_paths) > 1 and not self.supports_multi_reference:
+                raise ProviderError(
+                    f"provider {self.name!r} must declare "
+                    "supports_multi_reference for multiple generation references"
+                )
+            descriptors = list(payload.get("references") or [])
+            if descriptors and len(descriptors) != len(image_paths):
+                raise ProviderError(
+                    "reference descriptors and image paths must have equal length"
+                )
+            if not descriptors:
+                descriptors = [
+                    {"role": "content", "strength": 1.0}
+                    for _path in image_paths
+                ]
+            body["references"] = [
+                {
+                    "image": _data_url(path),
+                    "role": str(descriptor.get("role") or "content"),
+                    "strength": float(descriptor.get("strength", 1.0)),
+                }
+                for descriptor, path in zip(descriptors, image_paths, strict=True)
+            ]
         response = self._post("/images/generations", body)
         if response.get("error"):
             raise ProviderError(

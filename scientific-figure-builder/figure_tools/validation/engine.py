@@ -7,6 +7,7 @@ do not thread the figure's parts through a wide parameter list.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,9 @@ from figure_tools.validation.evidence import generate_evidence
 from figure_tools.validation.extractors.assembly import map_bbox
 from figure_tools.validation.extractors.raster_ocr import detect_text_elements
 from figure_tools.validation.models import AssembledFigure, read_layout_manifest
+from figure_tools.validation.graph_structure import validate_graph_structure
+from figure_tools.validation.publication import publication_profile_checks
+from figure_tools.provenance import hash_json
 from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
     asset_bounds,
@@ -106,6 +110,45 @@ def _multimodal_final_checks(
     return out
 
 
+def _figure_graph_checks(
+    figure_plan: dict[str, Any],
+    composed_image_path: str | Path,
+) -> list[dict[str, Any]]:
+    graph_ref = figure_plan.get("figure_graph_ref") or {}
+    layout_ref = figure_plan.get("solved_layout_ref") or {}
+    if not graph_ref or not layout_ref:
+        return [make_check(
+            "figure_graph_checks",
+            "final",
+            "warning",
+            "skipped",
+            "Figure plan has no Figure Graph references",
+        )]
+    run_dir = Path(composed_image_path).parent.parent
+
+    def load(reference: dict[str, Any]) -> dict[str, Any]:
+        relative = Path(str(reference.get("artifact") or ""))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("Figure Graph references must stay inside the run")
+        value = json.loads((run_dir / relative).read_text(encoding="utf-8"))
+        if hash_json(value) != reference.get("content_hash"):
+            raise ValueError(f"artifact hash mismatch: {relative}")
+        return value
+
+    try:
+        graph = load(graph_ref)
+        solved_layout = load(layout_ref)
+    except Exception as exc:  # noqa: BLE001
+        return [make_check(
+            "figure_graph_checks",
+            "final",
+            "error",
+            "fail",
+            str(exc),
+        )]
+    return validate_graph_structure(graph, solved_layout)
+
+
 class FigureQAEngine:
     def __init__(
         self,
@@ -188,6 +231,7 @@ class FigureQAEngine:
         checks.extend(_deterministic_final_checks(
             figure.figure_plan, figure.asset_manifest, figure.image_path,
             figure.physical_size_mm, min_dpi))
+        checks.extend(_figure_graph_checks(figure.figure_plan, figure.image_path))
 
         manifest = None
         if figure.layout_manifest_path and Path(figure.layout_manifest_path).exists():
@@ -205,6 +249,13 @@ class FigureQAEngine:
             checks.append(make_check(
                 "geometry_checks_skipped", "final", "warning", "skipped",
                 "no layout manifest; geometry rules skipped"))
+
+        checks.extend(publication_profile_checks(
+            str(figure.figure_plan.get("publication_profile") or "general"),
+            manifest,
+            figure.physical_size_mm,
+            editable_svg_exists=Path(figure.image_path).with_suffix(".svg").is_file(),
+        ))
 
         # OCR fallback for raster/AI assets without layout metadata (plan 15).
         checks.extend(self._ocr_ai_text_checks(

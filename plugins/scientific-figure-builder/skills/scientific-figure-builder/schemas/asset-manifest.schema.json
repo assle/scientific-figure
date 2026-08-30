@@ -45,6 +45,7 @@
           }
         },
         "prompt_hash": { "type": "string" },
+        "condition_hash": { "type": ["string", "null"] },
         "reference_hashes": { "type": "array", "items": { "type": "string" } },
         "provenance": {
           "type": "object",

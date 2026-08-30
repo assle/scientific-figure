@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/generation-conditions.schema.json",
+  "title": "Generation Conditions",
+  "description": "Canonical Provider-neutral conditions for raster assets in one Figure plan.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "conditions"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "conditions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/condition"}
+    }
+  },
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "asset_id",
+        "model_role",
+        "prompt",
+        "negative_constraints",
+        "parameters",
+        "references",
+        "control",
+        "publication_profile",
+        "warnings",
+        "style_bible_hash",
+        "publication_profile_hash",
+        "condition_hash"
+      ],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "asset_id": {"type": "string", "minLength": 1},
+        "model_role": {"type": "string", "enum": ["image_generate", "image_edit"]},
+        "prompt": {"type": "string", "minLength": 1},
+        "negative_constraints": {"type": "string"},
+        "parameters": {"type": "object"},
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "path", "content_hash", "strength"],
+            "properties": {
+              "role": {"type": "string", "enum": ["content", "style", "structure", "parent", "mask"]},
+              "path": {"type": "string", "minLength": 1},
+              "content_hash": {"type": "string", "minLength": 1},
+              "strength": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "control": {"type": ["object", "null"]},
+        "publication_profile": {"type": "object"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "style_bible_hash": {"type": "string"},
+        "publication_profile_hash": {"type": "string"},
+        "condition_hash": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

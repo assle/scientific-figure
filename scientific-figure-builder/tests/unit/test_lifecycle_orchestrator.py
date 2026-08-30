@@ -6,11 +6,13 @@ workflow helpers or the prose of phase prompts.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
+from PIL import Image
 
 from figure_tools.orchestrator import FigureOrchestrator, PhaseInvocation
 from figure_tools.provenance import hash_json
@@ -74,6 +76,16 @@ class BriefProducingWorker:
         }
 
 
+class BlankEditTransport(MockProviderTransport):
+    def _response(self, role, model, payload):
+        if role == "edits":
+            image = Image.new("RGBA", (2048, 2048), (0, 0, 0, 0))
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            return {"image_bytes": buffer.getvalue(), "model": model, "seed": 0}
+        return super()._response(role, model, payload)
+
+
 def _request(**over):
     base = {
         "figure_id": "figure-01",
@@ -108,9 +120,10 @@ def _orchestrator(
     *,
     run_dir: Path | None = None,
     state: RunState | None = None,
+    transport=None,
 ):
     run_dir = run_dir or RunDirectory(base_dir=tmp_path).create(request["figure_id"])
-    transport = MockProviderTransport()
+    transport = transport or MockProviderTransport()
     state = state or RunState(run_id=run_dir.name, budget=BUDGET)
     client = ProviderClient(MODELS, transport, state=state,
                             cache=Cache(run_dir / "cache"), output_dir=run_dir)
@@ -522,6 +535,197 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
     fiber = next(asset for asset in manifest["assets"] if asset["asset_id"] == "fiber")
     assert fiber["parent_asset_id"] == "fiber"
     assert unrelated_marker.read_text(encoding="utf-8") == "preserve"
+
+
+def test_raster_edit_rolls_back_when_the_edited_asset_fails_hard_checks(tmp_path: Path):
+    transport = BlankEditTransport()
+    orchestrator, run_dir, client = _orchestrator(
+        tmp_path, _request(), transport=transport,
+    )
+    assert orchestrator.advance()["status"] == "completed"
+    parent_path = run_dir / "assets" / "fiber.png"
+    original_hash = hash_json({"bytes": parent_path.read_bytes().hex()})
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    repair_plan = {
+        "schema_version": "1.0",
+        "artifact_type": "repair_plan",
+        "run_id": client.state.run_id,
+        "plan_ref": {"artifact": "plans/figure_plan.json",
+                     "content_hash": hash_json(plan)},
+        "execution_ref": {"artifact": "plans/execution_result.json",
+                         "content_hash": hash_json(execution)},
+        "validation_ref": {"artifact": "validation/final.json",
+                          "content_hash": hash_json(validation)},
+        "repairs": [{
+            "asset_id": "fiber",
+            "route": "image_edit",
+            "operation": "raster_edit",
+            "action": "fix the receptor",
+            "source_check": "multimodal_semantic",
+            "status": "pending",
+        }],
+        "status": "pending",
+    }
+    (run_dir / "plans" / "repair_plan.json").write_text(
+        json.dumps(repair_plan), encoding="utf-8"
+    )
+    generation_before = client.state.calls_used("generation")
+
+    result = orchestrator.advance({
+        "action": "apply_repair",
+        "repairs": [{
+            "asset_id": "fiber",
+            "operation": "raster_edit",
+            "prompt": "fix the receptor",
+        }],
+    })
+
+    assert result["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_before
+    assert hash_json({"bytes": parent_path.read_bytes().hex()}) == original_hash
+    outcome = json.loads(
+        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text()
+    )
+    assert outcome["status"] == "rolled_back"
+    assert outcome["reason"] == "edited asset failed hard checks"
+
+
+def test_layout_patch_reuses_raster_asset_and_rebuilds_graph_layout(tmp_path: Path):
+    orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
+    assert orchestrator.advance()["status"] == "completed"
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    repair_plan = {
+        "schema_version": "1.0",
+        "artifact_type": "repair_plan",
+        "run_id": client.state.run_id,
+        "plan_ref": {"artifact": "plans/figure_plan.json",
+                     "content_hash": hash_json(plan)},
+        "execution_ref": {"artifact": "plans/execution_result.json",
+                         "content_hash": hash_json(execution)},
+        "validation_ref": {"artifact": "validation/final.json",
+                          "content_hash": hash_json(validation)},
+        "repairs": [{
+            "asset_id": "fiber",
+            "route": "image_edit",
+            "operation": "layout_patch",
+            "action": "move fiber inside panel b",
+            "source_check": "layout",
+            "status": "pending",
+        }],
+        "status": "pending",
+    }
+    (run_dir / "plans" / "repair_plan.json").write_text(
+        json.dumps(repair_plan), encoding="utf-8"
+    )
+    generation_before = client.state.calls_used("generation")
+
+    result = orchestrator.advance({
+        "action": "apply_repair",
+        "repairs": [{
+            "asset_id": "fiber",
+            "operation": "layout_patch",
+            "bbox": [0.1, 0.1, 0.8, 0.8],
+            "bbox_space": "panel",
+        }],
+    })
+
+    assert result["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_before
+    revised = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    fiber = next(item for item in revised["assets"] if item["asset_id"] == "fiber")
+    assert fiber["bbox"] == [0.1, 0.1, 0.8, 0.8]
+    assert fiber["bbox_space"] == "panel"
+    graph = json.loads((run_dir / "plans" / "figure_graph.json").read_text())
+    node = next(item for item in graph["nodes"] if item["node_id"] == "fiber")
+    assert node["bbox"] == [0.55, 0.1, 0.4, 0.8]
+
+
+def test_connector_patch_rebuilds_port_bound_edge_without_regeneration(tmp_path: Path):
+    request = _request()
+    request["figure_graph"] = {
+        "ports": [
+            {"port_id": "curve-out", "node_id": "curve", "side": "right"},
+            {"port_id": "fiber-in", "node_id": "fiber", "side": "left"},
+            {"port_id": "fiber-out", "node_id": "fiber", "side": "right"},
+            {"port_id": "curve-in", "node_id": "curve", "side": "left"},
+        ],
+        "typed_edges": [{
+            "edge_id": "flow",
+            "source_port": "curve-out",
+            "target_port": "fiber-in",
+            "direction": "forward",
+            "semantic_type": "transfer",
+        }],
+        "groups": [],
+        "labels": [],
+        "constraints": [],
+    }
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
+    assert orchestrator.advance()["status"] == "completed"
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    repair_plan = {
+        "schema_version": "1.0",
+        "artifact_type": "repair_plan",
+        "run_id": client.state.run_id,
+        "plan_ref": {"artifact": "plans/figure_plan.json",
+                     "content_hash": hash_json(plan)},
+        "execution_ref": {"artifact": "plans/execution_result.json",
+                         "content_hash": hash_json(execution)},
+        "validation_ref": {"artifact": "validation/final.json",
+                          "content_hash": hash_json(validation)},
+        "repairs": [{
+            "asset_id": "fiber",
+            "route": "image_edit",
+            "operation": "connector_patch",
+            "action": "reverse the flow",
+            "source_check": "graph_edge_recovery",
+            "status": "pending",
+        }],
+        "status": "pending",
+    }
+    (run_dir / "plans" / "repair_plan.json").write_text(
+        json.dumps(repair_plan), encoding="utf-8"
+    )
+    generation_before = client.state.calls_used("generation")
+
+    result = orchestrator.advance({
+        "action": "apply_repair",
+        "repairs": [{
+            "asset_id": "fiber",
+            "operation": "connector_patch",
+            "edge_id": "flow",
+            "source_port": "fiber-out",
+            "target_port": "curve-in",
+            "direction": "forward",
+            "semantic_type": "feedback",
+        }],
+    })
+
+    assert result["status"] == "completed"
+    assert client.state.calls_used("generation") == generation_before
+    graph = json.loads((run_dir / "plans" / "figure_graph.json").read_text())
+    assert graph["typed_edges"] == [{
+        "edge_id": "flow",
+        "source_port": "fiber-out",
+        "target_port": "curve-in",
+        "direction": "forward",
+        "semantic_type": "feedback",
+    }]
+    assembly_layout = json.loads(
+        (run_dir / "assembly" / "layout_manifest.json").read_text()
+    )
+    connector = next(
+        item for item in assembly_layout["elements"]
+        if item["element_type"] == "connector"
+    )
+    assert connector["element_id"] == "edge:flow"
+    assert connector["metadata"]["semantic_type"] == "feedback"
 
 
 def test_force_export_publishes_existing_blocked_execution_without_regeneration(tmp_path: Path):

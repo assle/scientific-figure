@@ -208,6 +208,73 @@ def test_openai_image_uses_b64_json(tmp_path: Path, monkeypatch):
     assert json.loads(requests[0].data)["prompt"] == "draw"
 
 
+def test_openai_generation_transmits_role_tagged_references(
+    tmp_path: Path, monkeypatch,
+):
+    encoded = base64.b64encode(b"image-bytes").decode("ascii")
+    reference = tmp_path / "style.png"
+    _png(reference)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    monkeypatch.setenv("CUSTOM_API_KEY", "test-key")
+    transport = OpenAICompatibleTransport(
+        "custom",
+        {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+            "supports_reference_image": True,
+        },
+        opener=opener,
+    )
+
+    transport.post(
+        "generation",
+        "image-model",
+        {
+            "prompt": "draw",
+            "references": [{"role": "style", "strength": 0.75}],
+        },
+        [reference],
+    )
+
+    body = json.loads(requests[0].data)
+    assert body["references"][0]["role"] == "style"
+    assert body["references"][0]["strength"] == 0.75
+    assert body["references"][0]["image"].startswith("data:image/png;base64,")
+
+
+def test_openai_generation_rejects_undeclared_reference_support(
+    tmp_path: Path, monkeypatch,
+):
+    reference = tmp_path / "style.png"
+    _png(reference)
+    monkeypatch.setenv("CUSTOM_API_KEY", "test-key")
+    transport = OpenAICompatibleTransport(
+        "custom",
+        {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+        },
+    )
+
+    with pytest.raises(ProviderError, match="supports_reference_image"):
+        transport.post(
+            "generation",
+            "image-model",
+            {
+                "prompt": "draw",
+                "references": [{"role": "style", "strength": 1.0}],
+            },
+            [reference],
+        )
+
+
 def test_anthropic_vision_uses_messages_api(tmp_path: Path, monkeypatch):
     image = tmp_path / "input.png"
     _png(image)
@@ -327,6 +394,53 @@ def test_provider_router_reuses_generation_provider_for_optional_edits(
     )
 
     assert result["image_bytes"] == b"edited-image"
+
+
+def test_openai_edit_transmits_mask_only_when_capability_is_declared(
+    tmp_path: Path, monkeypatch,
+):
+    encoded = base64.b64encode(b"edited-image").decode("ascii")
+    parent = tmp_path / "parent.png"
+    mask = tmp_path / "mask.png"
+    _png(parent)
+    _png(mask)
+    requests = []
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({"data": [{"b64_json": encoded}]})
+
+    monkeypatch.setenv("CUSTOM_API_KEY", "test-key")
+    capable = OpenAICompatibleTransport(
+        "custom",
+        {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+            "supports_image_edit": True,
+            "supports_mask_edit": True,
+        },
+        opener=opener,
+    )
+
+    capable.post("edits", "image-model", {"prompt": "fix"}, [parent, mask])
+
+    body = json.loads(requests[0].data)
+    assert body["image"].startswith("data:image/png;base64,")
+    assert body["mask"].startswith("data:image/png;base64,")
+
+    incapable = OpenAICompatibleTransport(
+        "custom",
+        {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+            "supports_image_edit": True,
+        },
+        opener=opener,
+    )
+    with pytest.raises(ProviderError, match="supports_mask_edit"):
+        incapable.post("edits", "image-model", {"prompt": "fix"}, [parent, mask])
 
 
 def test_provider_router_does_not_require_unused_provider_credentials(
