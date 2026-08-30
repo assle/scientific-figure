@@ -149,4 +149,27 @@ def compile_generation_condition(request: Mapping[str, Any]) -> dict[str, Any]:
     return condition
 
 
-__all__ = ["GenerationConditionError", "compile_generation_condition"]
+def add_reference_to_condition(
+    condition: Mapping[str, Any],
+    reference: Mapping[str, Any],
+    provider_capabilities: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a new Execution condition without mutating its approved base."""
+
+    _reject_secrets(reference)
+    updated = {
+        key: value for key, value in condition.items() if key != "condition_hash"
+    }
+    updated["references"] = _compile_references(
+        [*condition.get("references", []), reference],
+        provider_capabilities,
+    )
+    updated["condition_hash"] = hash_json(updated)
+    return updated
+
+
+__all__ = [
+    "GenerationConditionError",
+    "add_reference_to_condition",
+    "compile_generation_condition",
+]

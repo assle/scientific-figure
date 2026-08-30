@@ -285,6 +285,9 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
     layout = FigurePlanningArtifacts(
         request, config, run_dir, client, base_dir=ROOT,
     ).prepare(plan)
+    approved_conditions = (
+        run_dir / "plans" / "generation_conditions.json"
+    ).read_bytes()
 
     paused = module.execute_plan(plan, layout_report=layout)
     pre_rendered = json.loads(
@@ -302,6 +305,10 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
     ]
     assert paused["pause_reason"] == "style_anchor_approval"
     assert completed["paused"] is False
+    assert (
+        run_dir / "plans" / "generation_conditions.json"
+    ).read_bytes() == approved_conditions
+    assert (run_dir / "assets" / "style_anchor_conditions.json").is_file()
     assert len(generation_requests) == 4
     assert generation_requests[0]["image_paths"] == []
     assert generation_requests[1]["image_paths"] == []

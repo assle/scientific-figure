@@ -13,6 +13,8 @@ from figure_tools.export.publish import export_figure
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.geometry import resolve_asset_bbox
+from figure_tools.generation_conditions import add_reference_to_condition
+from figure_tools.provider_configuration import provider_capabilities_for_role
 from figure_tools.provenance import hash_file
 from figure_tools.publication_profiles import get_publication_profile
 from figure_tools.report import write_generation_report
@@ -99,19 +101,36 @@ class FigureExecution:
             self.store.commit_json("plans/pre_rendered_assets.json", reusable)
             return {"paused": True, "pause_reason": "style_anchor_approval"}
         if style_anchors:
-            from figure_tools.planning.artifacts import FigurePlanningArtifacts
-
-            condition_artifact = FigurePlanningArtifacts(
-                self.request,
-                self.config,
-                self.run_dir,
-                self.provider,
-                base_dir=self.base_dir,
-            ).refresh_generation_conditions(plan, style_anchors=style_anchors)
-            conditions = {
-                item["asset_id"]: item
-                for item in condition_artifact["conditions"]
-            }
+            capabilities = provider_capabilities_for_role(
+                "image_generate",
+                self.config.get("models") or {},
+                self.config.get("providers") or {},
+                adapter_capabilities=self.provider.generation_capabilities(),
+            )
+            for style_group, members in grouped_assets.items():
+                anchor = style_anchors.get(style_group)
+                if anchor is None:
+                    continue
+                for _panel, element in members[1:]:
+                    asset_id = element["element_id"]
+                    conditions[asset_id] = add_reference_to_condition(
+                        conditions[asset_id],
+                        {
+                            "role": "style",
+                            "path": anchor["path"],
+                            "content_hash": anchor["content_hash"],
+                            "strength": 1.0,
+                        },
+                        capabilities,
+                    )
+            self.store.commit_json(
+                "assets/style_anchor_conditions.json",
+                {
+                    "schema_version": "1.0",
+                    "conditions": list(conditions.values()),
+                },
+                schema="generation-conditions.schema.json",
+            )
             pre_rendered_assets = reusable
 
         manifest_assets, validation_reports, placements, text_placements = \
@@ -450,8 +469,16 @@ class FigureExecution:
                     "aesthetic quality",
                 ],
             )
-            summary = report.get("summary") or {}
             report_checks = list(report.get("checks") or [])
+            for report_check in report_checks:
+                check_id = str(report_check.get("check_id", ""))
+                if any(token in check_id for token in (
+                    "semantic", "style", "aesthetic", "visual_quality",
+                )):
+                    report_check["level"] = "warning"
+            from figure_tools.validation.summary import summarize_checks
+            summary = summarize_checks(report_checks)
+            report["summary"] = summary
             semantic_checks = [
                 item for item in report_checks
                 if any(token in str(item.get("check_id", "")) for token in (

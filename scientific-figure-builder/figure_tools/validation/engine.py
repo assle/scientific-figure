@@ -172,6 +172,7 @@ def _figure_graph_checks(
             elif element.element_type == "group":
                 observed_groups.append({
                     "group_id": element.element_id.removeprefix("group:"),
+                    "node_ids": list(element.metadata.get("node_ids", [])),
                 })
     graph_checks = validate_graph_structure(
         graph,

@@ -20,8 +20,9 @@ Generation Conditions before approval. Each Generation Condition
 combines scientific intent, Style Bible, Publication profile, Reference roles,
 Provider capabilities, and cache identity. Asset bounding boxes are relative to
 their panel when explicitly declared; layout-only revisions preserve raster
-assets. Execution may refresh Generation Conditions only after an approved
-Style anchor becomes available.
+assets. After a Style anchor is approved, Execution derives a separate
+anchor-conditioned Execution artifact without rewriting the approved Planning
+conditions.
 
 Each model-assisted lifecycle phase receives a fresh Phase worker context with
 only its Phase prompt, allowed tools, and upstream Phase artifacts. Prompt

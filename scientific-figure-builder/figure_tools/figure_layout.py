@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -25,6 +26,92 @@ def _overlap(a: list[float], b: list[float]) -> bool:
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
     return ax < bx + bw and bx < ax + aw and ay < by + bh and by < ay + ah
+
+
+def _default_placement_hints(
+    nodes: list[dict[str, Any]],
+    supplied: Mapping[str, list[float]],
+    panel_boxes: Mapping[str, list[float]],
+) -> dict[str, list[float]]:
+    hints = {str(key): list(value) for key, value in supplied.items()}
+    missing_by_panel: dict[str, list[dict[str, Any]]] = {}
+    for node in nodes:
+        if str(node["node_id"]) not in hints:
+            missing_by_panel.setdefault(str(node.get("panel_id") or ""), []).append(node)
+    for panel_id, missing in missing_by_panel.items():
+        px, py, pw, ph = panel_boxes.get(panel_id, [0.0, 0.0, 1.0, 1.0])
+        columns = max(1, math.ceil(math.sqrt(len(missing))))
+        rows = max(1, math.ceil(len(missing) / columns))
+        gap = min(pw, ph) * 0.04
+        cell_width = (pw - gap * (columns + 1)) / columns
+        cell_height = (ph - gap * (rows + 1)) / rows
+        for index, node in enumerate(missing):
+            column = index % columns
+            row = index // columns
+            hints[str(node["node_id"])] = [
+                px + gap + column * (cell_width + gap),
+                py + gap + row * (cell_height + gap),
+                cell_width,
+                cell_height,
+            ]
+    return hints
+
+
+def _segment_hits_bbox(
+    start: list[float], end: list[float], bbox: list[float],
+) -> bool:
+    x, y, width, height = bbox
+    if start[0] == end[0]:
+        return x < start[0] < x + width and max(start[1], end[1]) > y \
+            and min(start[1], end[1]) < y + height
+    if start[1] == end[1]:
+        return y < start[1] < y + height and max(start[0], end[0]) > x \
+            and min(start[0], end[0]) < x + width
+    return False
+
+
+def _segments_cross(
+    first_start: list[float], first_end: list[float],
+    second_start: list[float], second_end: list[float],
+) -> bool:
+    first_vertical = first_start[0] == first_end[0]
+    second_vertical = second_start[0] == second_end[0]
+    if first_vertical == second_vertical:
+        return False
+    vertical_start, vertical_end = (
+        (first_start, first_end) if first_vertical else (second_start, second_end)
+    )
+    horizontal_start, horizontal_end = (
+        (second_start, second_end) if first_vertical else (first_start, first_end)
+    )
+    x = vertical_start[0]
+    y = horizontal_start[1]
+    return (
+        min(horizontal_start[0], horizontal_end[0]) < x
+        < max(horizontal_start[0], horizontal_end[0])
+        and min(vertical_start[1], vertical_end[1]) < y
+        < max(vertical_start[1], vertical_end[1])
+    )
+
+
+def _route_score(
+    points: list[list[float]],
+    obstacles: list[list[float]],
+    existing_routes: list[list[list[float]]],
+) -> tuple[int, int]:
+    segments = list(zip(points, points[1:], strict=False))
+    obstacle_hits = sum(
+        _segment_hits_bbox(start, end, bbox)
+        for start, end in segments
+        for bbox in obstacles
+    )
+    crossings = sum(
+        _segments_cross(start, end, other_start, other_end)
+        for start, end in segments
+        for route in existing_routes
+        for other_start, other_end in zip(route, route[1:], strict=False)
+    )
+    return obstacle_hits, crossings
 
 
 def _apply_constraints(
@@ -101,15 +188,6 @@ def solve_figure_layout(
     panel_hints: Mapping[str, list[float]] | None = None,
 ) -> dict[str, Any]:
     nodes = [copy.deepcopy(dict(item)) for item in graph.get("nodes", [])]
-    hints = placement_hints or {}
-    for node in nodes:
-        node_id = str(node["node_id"])
-        if node_id not in hints:
-            raise ValueError(f"missing placement hint for Figure Graph node {node_id!r}")
-        node["bbox"] = [float(value) for value in hints[node_id]]
-    node_by_id = {str(item["node_id"]): item for item in nodes}
-    ports = {str(item["port_id"]): item for item in graph.get("ports", [])}
-    conflicts: list[dict[str, Any]] = []
     panel_boxes = {
         str(panel_id): [float(value) for value in bbox]
         for panel_id, bbox in (panel_hints or {}).items()
@@ -121,6 +199,13 @@ def solve_figure_layout(
         bbox = [float(value) for value in constraint.get("bbox", [])]
         if panel_id and len(bbox) == 4:
             panel_boxes[panel_id] = bbox
+    hints = _default_placement_hints(nodes, placement_hints or {}, panel_boxes)
+    for node in nodes:
+        node_id = str(node["node_id"])
+        node["bbox"] = [float(value) for value in hints[node_id]]
+    node_by_id = {str(item["node_id"]): item for item in nodes}
+    ports = {str(item["port_id"]): item for item in graph.get("ports", [])}
+    conflicts: list[dict[str, Any]] = []
     exclusions = _apply_constraints(
         nodes, [dict(item) for item in graph.get("constraints", [])]
     )
@@ -180,6 +265,7 @@ def solve_figure_layout(
                     "detail": "move the node outside the declared exclusion zone",
                 })
     connectors = []
+    existing_routes: list[list[list[float]]] = []
     for edge in graph.get("typed_edges", []):
         source_port = ports[str(edge["source_port"])]
         target_port = ports[str(edge["target_port"])]
@@ -188,7 +274,24 @@ def solve_figure_layout(
         source = _port_point(source_node["bbox"], str(source_port["side"]))
         target = _port_point(target_node["bbox"], str(target_port["side"]))
         middle_x = round((source[0] + target[0]) / 2, 12)
-        points = [source, [middle_x, source[1]], [middle_x, target[1]], target]
+        middle_y = round((source[1] + target[1]) / 2, 12)
+        route_candidates = [
+            [source, [middle_x, source[1]], [middle_x, target[1]], target],
+            [source, [source[0], middle_y], [target[0], middle_y], target],
+        ]
+        obstacle_boxes = [
+            node["bbox"] for node_id, node in node_by_id.items()
+            if node_id not in {str(source_port["node_id"]), str(target_port["node_id"])}
+        ]
+        obstacle_boxes.extend(
+            [float(value) for value in exclusion.get("bbox", [])]
+            for exclusion in exclusions if len(exclusion.get("bbox", [])) == 4
+        )
+        points = min(
+            route_candidates,
+            key=lambda route: _route_score(route, obstacle_boxes, existing_routes),
+        )
+        existing_routes.append(points)
         connectors.append({
             "edge_id": str(edge["edge_id"]),
             "source_port": str(edge["source_port"]),

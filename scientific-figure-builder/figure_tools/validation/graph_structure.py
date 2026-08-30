@@ -90,15 +90,22 @@ def validate_graph_structure(
         metrics=_f1(set(expected_edges), recovered_edges | set(extra_edges)),
     )
     expected_groups = {
-        str(item.get("group_id")) for item in graph.get("groups", [])
-        if item.get("group_id")
+        str(item.get("group_id")): sorted(str(node) for node in item.get("node_ids", []))
+        for item in graph.get("groups", []) if item.get("group_id")
     }
     observed_groups = {
-        str(item.get("group_id")) for item in observed_structure.get("groups", [])
-        if item.get("group_id")
+        str(item.get("group_id")): sorted(str(node) for node in item.get("node_ids", []))
+        for item in observed_structure.get("groups", []) if item.get("group_id")
     }
-    missing_groups = sorted(expected_groups - observed_groups)
-    extra_groups = sorted(observed_groups - expected_groups)
+    missing_groups = sorted(
+        group_id for group_id, members in expected_groups.items()
+        if observed_groups.get(group_id) != members
+    )
+    extra_groups = sorted(set(observed_groups) - set(expected_groups))
+    recovered_groups = {
+        group_id for group_id, members in expected_groups.items()
+        if observed_groups.get(group_id) == members
+    }
     group_check = make_check(
         "graph_group_recovery",
         "final",
@@ -110,7 +117,7 @@ def validate_graph_structure(
             else "all Figure Graph phases and groups recovered"
         ),
         element_ids=[*missing_groups, *extra_groups],
-        metrics=_f1(expected_groups, observed_groups),
+        metrics=_f1(set(expected_groups), recovered_groups | set(extra_groups)),
     )
     conflicts = list(conflicts or [])
     conflict_check = make_check(

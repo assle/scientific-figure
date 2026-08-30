@@ -860,9 +860,6 @@ class FigureOrchestrator:
                     if panel is not None
                     else None
                 )
-                original_validation = self.provider.validate_image_asset(
-                    parent_path, physical_size_mm=physical_size,
-                )
                 edited_validation = self.provider.validate_image_asset(
                     edit_path, physical_size_mm=physical_size,
                 )
@@ -878,12 +875,10 @@ class FigureOrchestrator:
                         None,
                     )
 
-                original_status = source_status(original_validation)
+                original_status = source_status(validation_report)
                 edited_status = source_status(edited_validation)
                 target_improved = (
-                    edited_status == "pass"
-                    if original_status == "fail"
-                    else None
+                    original_status == "fail" and edited_status == "pass"
                 )
                 outcome = evaluate_local_edit(
                     parent_path,

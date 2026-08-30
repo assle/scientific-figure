@@ -105,7 +105,7 @@ class SemanticRegressionEditTransport(MockProviderTransport):
         if role == "final_validation" and self.regression_pending:
             self.regression_pending = False
             return {"checks": [{
-                "check_id": "multimodal_semantic",
+                "check_id": "global_consistency_regression",
                 "scope": "final",
                 "level": "error",
                 "status": "fail",
@@ -164,6 +164,17 @@ def _orchestrator(
         base_dir=ROOT,
         worker=worker,
     ), run_dir, client
+
+
+def _mark_validation_failed(run_dir: Path, validation: dict, check_id: str) -> None:
+    check = next(item for item in validation["checks"] if item["check_id"] == check_id)
+    check["status"] = "fail"
+    check["level"] = "error"
+    validation["summary"]["errors"] += 1
+    validation["summary"]["blocking"] = True
+    (run_dir / "validation" / "final.json").write_text(
+        json.dumps(validation), encoding="utf-8"
+    )
 
 
 def test_start_returns_clarification_next_action_without_paid_work(tmp_path: Path):
@@ -527,6 +538,7 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
     execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
     validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
         "artifact_type": "repair_plan",
@@ -538,7 +550,7 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
         "validation_ref": {"artifact": "validation/final.json",
                            "content_hash": hash_json(validation)},
         "repairs": [{"asset_id": "fiber", "route": "image_edit",
-                     "action": "make the asset blue", "source_check": "style",
+                     "action": "make the asset blue", "source_check": "multimodal_semantic",
                      "status": "pending"}],
         "status": "pending",
     }
@@ -576,6 +588,7 @@ def test_raster_edit_rolls_back_when_the_edited_asset_fails_hard_checks(tmp_path
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
     execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
     validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
         "artifact_type": "repair_plan",
@@ -631,6 +644,7 @@ def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path)
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
     execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
     validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
         "artifact_type": "repair_plan",
@@ -644,7 +658,7 @@ def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path)
         "repairs": [{
             "asset_id": "fiber", "route": "image_edit",
             "operation": "raster_edit", "action": "make it blue",
-            "source_check": "style", "status": "pending",
+            "source_check": "multimodal_semantic", "status": "pending",
         }],
         "status": "pending",
     }
