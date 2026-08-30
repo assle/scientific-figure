@@ -35,10 +35,43 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 | 组件 | 职责 |
 |---|---|
 | 工作流 Skill | 告诉 Calling Agent 何时以及如何执行工作流 |
-| 生命周期 MCP 服务 | 提供项目初始化和生命周期推进能力 |
-| 核心运行时 | 在本地执行绘图、组装、验证和导出 |
+| 生命周期 MCP 服务 | 只公开 `initialize_figure_project` 与 `advance_figure_workflow` |
+| 核心运行时 | 在本地拥有生命周期状态、执行、绘图、组装、验证和导出 |
 | 配置应用 | 管理 Provider、Model route 和系统凭据 |
 | Agent 集成 | 让 Codex 或 OpenCode 发现 Skill 与 MCP 服务 |
+
+## 架构与生命周期
+
+产品只有一条公开生命周期路径，也只有一个 Phase transition 权威：
+
+```text
+Calling Agent
+  → 生命周期 MCP 服务（2 个公开工具）
+    → Orchestrator（唯一生命周期权威）
+      ├─ Phase worker → 受 Schema 约束的 Phase artifact
+      ├─ Run Store + Run Invalidator → 原子持久化与精确复用
+      └─ Figure Execution Module
+         ├─ Python 数据图与 SVG/文字
+         ├─ Provider 路由的 raster 素材
+         └─ 组装 → 验证 → 导出
+```
+
+MCP 服务是轻量 stdio Adapter，不会把绘图、Provider、验证或导出 helper 作为隐藏产品
+工具发布。`advance_figure_workflow` 会校验输入/输出 Schema，构造一次 Runtime Context，
+再由 Orchestrator 推进到下一个用户决策点或完成状态。
+
+| 深模块 | 拥有的知识与行为 |
+|---|---|
+| Orchestrator | Intake、Planning、Execution、Review and repair、Export、审批、重试、恢复和 Export gate |
+| Figure Execution Module | 已批准计划的派生产物、Generation route、组装、验证输入和发布 |
+| Run Store | Run 目录结构、原子 JSON commit、Schema 校验、统一 hash、Artifact reference 和安全加载 |
+| Run Invalidator | Figure brief/plan 变化、Repair、Assembly 变化与仅重新导出时的精确下游失效 |
+| Provider Configuration | Provider type、旧协议迁移、类型字段、Model role catalog、继承和 Route compatibility |
+| Runtime Context Factory | Effective configuration、凭据、transport、Provider client、预算、cache、Run state 和 Phase worker |
+
+Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配或被外部替换的产物不会复用。
+仅布局变化的计划修订会保留有效的付费 raster；Python/SVG Repair 只重绘其源码派生输出；
+图像编辑会保留无关的确定性素材和付费素材。
 
 ## 能得到什么
 
@@ -82,8 +115,8 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 
 - **Providers**：负责端点增删改、接口方言和可选能力。
 - **凭据与连接**：把 API Key 保存到操作系统 Keyring；只有用户点击时才测试当前未保存草稿。
-- **模型路由**：把 `vision_analyze`、`image_generate`、可选 `image_edit` 和
-  `vision_validate` 绑定到 Provider 与固定模型 ID。
+- **模型路由**：把可选 `phase_reasoning`、`vision_analyze`、`image_generate`、
+  可选 `image_edit` 和 `vision_validate` 绑定到 Provider 与固定模型 ID。
 - 没有 Provider 时，路由选择器会禁用并直接引导到新增流程。
 
 ## 快速开始
@@ -100,7 +133,7 @@ codex plugin add scientific-figure-builder@scientific-figure
 
 核心命令只安装确定性引擎、生命周期 MCP 服务、CLI 和可选配置应用，不修改 Codex
 配置；repo marketplace 随后让 Codex 原生安装并管理插件。无桌面环境可省略
-`--with-gui`。OpenCode 用户使用独立入口 `./install.sh --opencode-only`。
+`--with-gui`。OpenCode 用户使用独立入口 `./install.sh --opencode`。
 
 ### 2. 配置 Provider
 
@@ -129,7 +162,8 @@ scientific-figure install-gui
 
 生命周期 Orchestrator 会先把导出目标、图宽、语言和风格记录到 Figure brief，
 再在付费生成前展示 Figure plan 与线框图。Calling Agent 根据 Orchestrator 返回的
-下一动作继续，不再手动串联底层工具。
+下一动作继续，不再手动串联底层工具。每次响应都包含当前 Lifecycle phase、状态、
+下一动作和规范化 Artifact reference。
 
 ## 核心规则
 
@@ -225,6 +259,11 @@ OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
 活动运行时记录。任一步失败或进程中断都会按相反顺序恢复已替换路径。同一 scope 的锁
 拒绝并发安装；后续安全运行会清理死亡安装器留下的孤儿 staging。
 
+Delivery Interface 是 `InstallRequest → InstallResult`。Request 携带目标、Runtime scope、
+Product version 和 GUI 选择；Result 报告 committed、retained、pruned 与日志路径。CLI
+只负责把参数翻译到这个 Interface。OpenCode 与 deprecated 手工 Codex 交付由同一事务
+中的独立 Host delivery Adapter 处理；原生 Codex 插件仍由宿主管理。
+
 保留策略只留下活动 Product version 和至多一个已验证旧运行时。临时事务备份在提交或
 回滚后删除。脱敏事务日志位于对应 XDG state 目录并最多保留 20 条，只记录路径和结果，
 不记录配置正文或凭据。卸载器能够识别活动锁，不会删除正在安装的 runtime。
@@ -272,6 +311,7 @@ cd scientific-figure-builder
 uv sync --extra gui
 uv run --extra gui pytest -q
 uv run --extra gui python -m figure_tools gui
+uvx pyright --pythonpath .venv/bin/python figure_tools install
 ```
 
 延伸阅读：

@@ -39,10 +39,46 @@ optional Configuration app outside the host plugin cache.
 | Component | Responsibility |
 |---|---|
 | Workflow Skill | Teaches the Calling Agent when and how to run the workflow |
-| Lifecycle MCP server | Exposes project initialization and lifecycle advancement |
-| Core runtime | Performs plotting, assembly, validation, and export locally |
+| Lifecycle MCP server | Exposes exactly `initialize_figure_project` and `advance_figure_workflow` |
+| Core runtime | Owns lifecycle state, execution, plotting, assembly, validation, and export locally |
 | Configuration app | Manages Providers, Model routes, and system credentials |
 | Agent integrations | Make the Skill and MCP server discoverable in Codex or OpenCode |
+
+## Architecture and lifecycle
+
+There is one public lifecycle path and one authority for phase transitions:
+
+```text
+Calling Agent
+  → Lifecycle MCP server (2 public tools)
+    → Orchestrator (the only lifecycle authority)
+      ├─ Phase worker → schema-governed Phase artifact
+      ├─ Run Store + Run Invalidator → atomic persistence and precise reuse
+      └─ Figure Execution Module
+         ├─ Python plots and SVG/text
+         ├─ Provider-routed raster assets
+         └─ assembly → validation → export
+```
+
+The MCP server is a thin stdio Adapter. It does not publish plotting, Provider,
+validation, or export helpers as hidden product tools. `advance_figure_workflow`
+validates its input and output schemas, constructs one Runtime Context, and asks
+the Orchestrator to advance until the next user decision or completion.
+
+| Deep module | Owns |
+|---|---|
+| Orchestrator | Intake, Planning, Execution, Review and repair, Export, approvals, retries, resume, and the Export gate |
+| Figure Execution Module | Approved-plan artifacts, Generation routes, assembly, validation inputs, and publication |
+| Run Store | Run-directory structure, atomic JSON commit, schema validation, canonical hashes, references, and safe loads |
+| Run Invalidator | Exact downstream invalidation for Figure brief/plan changes, repairs, assembly changes, and export-only reruns |
+| Provider Configuration | Provider types, legacy migration, type-specific fields, Model role catalog, inheritance, and Route compatibility |
+| Runtime Context Factory | Effective configuration, credentials, transport, Provider client, budget, cache, Run state, and Phase worker |
+
+Run reuse is content-based rather than file-existence-based. Schema-invalid,
+hash-mismatched, or externally replaced artifacts are not reused. Layout-only
+plan revisions preserve valid paid raster assets; Python/SVG repairs rerender
+their source-derived outputs; image edits preserve unrelated deterministic and
+paid assets.
 
 ## What it delivers
 
@@ -88,8 +124,9 @@ opening or saving configuration.
 - **Providers** handles endpoint CRUD, wire dialects, and optional capabilities.
 - **Credentials & Connection** stores API Keys in the operating-system Keyring and
   tests the current unsaved draft only when the user clicks the button.
-- **Model routes** bind `vision_analyze`, `image_generate`, optional `image_edit`,
-  and `vision_validate` to a Provider and fixed model identifier.
+- **Model routes** bind optional `phase_reasoning`, `vision_analyze`,
+  `image_generate`, optional `image_edit`, and `vision_validate` to a Provider
+  and fixed model identifier.
 - With no Provider configured, route selectors stay disabled and lead directly to
   the Provider creation flow.
 
@@ -109,7 +146,7 @@ The Core runtime command installs deterministic engines, the lifecycle MCP serve
 the CLI, and the optional Configuration app without editing Codex configuration.
 The repo marketplace then lets Codex install and own the Native plugin. Omit
 `--with-gui` for a headless Core runtime. OpenCode users install its separate
-Agent integration with `./install.sh --opencode-only`.
+Agent integration with `./install.sh --opencode`.
 
 ### 2. Configure Providers
 
@@ -142,7 +179,9 @@ from data.csv. Export PNG, SVG, and PDF, and keep the SVG PowerPoint-friendly.
 The lifecycle Orchestrator first records export target, figure width, language,
 and style in a Figure brief, then shows the Figure plan and wireframe before
 paid generation. Calling Agent commands resume from the Orchestrator's next
-action instead of manually sequencing low-level tools.
+action instead of manually sequencing low-level tools. Each response contains
+the current Lifecycle phase, status, next action, and canonical Artifact
+references.
 
 ## The core rule
 
@@ -250,6 +289,13 @@ interruption restores replaced paths in reverse order. A scope lock rejects
 concurrent installs, while the next safe run removes orphan staging from a dead
 installer.
 
+The Delivery Interface is `InstallRequest → InstallResult`. The request carries
+target, Runtime scope, Product version, and GUI selection; the result reports
+committed, retained, pruned, and logged paths. The CLI only translates flags
+into this Interface. OpenCode and deprecated manual Codex delivery are separate
+Host delivery Adapters inside the same transaction, while the Native Codex
+plugin remains host-managed.
+
 The retention policy keeps the active Product version and at most one previously
 verified runtime. Temporary transaction backups are deleted after commit or
 rollback. Sanitized transaction logs are stored below the scope's XDG state
@@ -306,6 +352,7 @@ cd scientific-figure-builder
 uv sync --extra gui
 uv run --extra gui pytest -q
 uv run --extra gui python -m figure_tools gui
+uvx pyright --pythonpath .venv/bin/python figure_tools install
 ```
 
 Useful references:
