@@ -42,7 +42,22 @@ def test_assembly_manifest_maps_source_elements_and_labels(tmp_path: Path) -> No
 
     out = compose_assets(placements, output_dir=tmp_path / "out", canvas_mm=(180, 90),
                          dpi=300, text_placements=text_placements,
-                         source_layouts=source_layouts)
+                         source_layouts=source_layouts,
+                         connectors=[{
+                             "edge_id": "flow",
+                             "source_port": "curve-out",
+                             "target_port": "curve2-in",
+                             "source": [0.45, 0.5],
+                             "target": [0.55, 0.5],
+                             "direction": "forward",
+                             "semantic_type": "transfer",
+                         }],
+                         groups=[{
+                             "group_id": "pipeline",
+                             "node_ids": ["curve", "curve2"],
+                             "bbox": [0.0, 0.0, 1.0, 1.0],
+                             "z_order": 0,
+                         }])
 
     assert "layout_manifest" in out
     manifest = read_layout_manifest(out["layout_manifest"])
@@ -65,6 +80,19 @@ def test_assembly_manifest_maps_source_elements_and_labels(tmp_path: Path) -> No
     b_label = next(e for e in labels if e.element_id == "label-b")
     assert a_label.bbox.x2 <= cw / 2
     assert b_label.bbox.x1 >= cw / 2
+
+    connector = next(
+        element for element in manifest.elements
+        if element.element_type == "connector"
+    )
+    assert connector.element_id == "edge:flow"
+    assert connector.metadata["source_port"] == "curve-out"
+    assert connector.metadata["target_port"] == "curve2-in"
+    group = next(
+        element for element in manifest.elements
+        if element.element_type == "group"
+    )
+    assert group.element_id == "group:pipeline"
 
     # A source axis label from plot (a) maps into the left half of the canvas.
     a_axis = next(e for e in manifest.elements

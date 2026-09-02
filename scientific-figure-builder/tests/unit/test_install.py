@@ -350,7 +350,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         runtime_sync=_use_test_python,
     )
     assert (paths.skill_dir / "SKILL.md").is_file()
-    assert (paths.skill_dir / "references" / "routing-rules.md").is_file()
+    assert not (paths.skill_dir / "references").exists()
     assert paths.command_file.is_file()
     assert result.mcp_tools == 2
     assert result.active_runtime["version"] == "0.2.0"

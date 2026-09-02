@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shutil
 from typing import Any, Mapping, Protocol, Sequence
 
 from figure_tools.state import RunState
@@ -17,7 +18,9 @@ from figure_tools.lifecycle_prompts import (
     PHASE_PROMPT_VERSION,
     prompt_for,
 )
+from figure_tools.imaging.edit_validation import evaluate_local_edit
 from figure_tools.phase_workers import StructuredPhaseWorker
+from figure_tools.planning.artifacts import FigurePlanningArtifacts
 from figure_tools.provenance import hash_file
 from figure_tools.run_invalidator import RunInvalidator
 from figure_tools.run_store import RunStore
@@ -90,8 +93,14 @@ class FigureOrchestrator:
             raise ValueError("request is required to start a figure run")
         assert self.request is not None
         if action_name == "apply_repair":
-            self._apply_repair(action_data)
-            return self.advance("resume")
+            accepted_edits = self._apply_repair(action_data)
+            result = self.advance("resume")
+            if accepted_edits and self._global_validation_regressed(accepted_edits):
+                self._rollback_accepted_edits(accepted_edits)
+                return self.advance("resume")
+            for edit in accepted_edits:
+                Path(edit["backup_path"]).unlink(missing_ok=True)
+            return result
         if action_name == "submit_clarifications":
             self._apply_clarifications(action_data)
             action_name = "resume"
@@ -145,17 +154,13 @@ class FigureOrchestrator:
                             "plans/pre_rendered_assets.json", reusable
                         )
                     self.invalidator.after_figure_plan_change(previous_plan, plan)
-                    from figure_tools.execution import FigureExecution
-
-                    FigureExecution(
+                    FigurePlanningArtifacts(
                         self.request,
                         self.config,
                         self.run_dir,
                         self.provider,
-                        self.state,
                         base_dir=self.base_dir,
-                        compose_dpi=self.compose_dpi,
-                    ).prepare_plan_artifacts(plan)
+                    ).prepare(plan)
                     self.store.commit_json(
                         f"plans/figure_plan.v{plan['revision']}.json", plan
                     )
@@ -421,12 +426,13 @@ class FigureOrchestrator:
         request["style"] = brief.get("style")
         request["canvas"] = plan["canvas"]
         request["brief_ref"] = plan["brief_ref"]
-        from figure_tools.execution import FigureExecution
-        execution_module = FigureExecution(
-            request, self.config, self.run_dir, self.provider, self.state,
-            base_dir=self.base_dir, compose_dpi=self.compose_dpi,
-        )
-        execution_module.prepare_plan_artifacts(plan)
+        FigurePlanningArtifacts(
+            request,
+            self.config,
+            self.run_dir,
+            self.provider,
+            base_dir=self.base_dir,
+        ).prepare(plan)
         self.store.commit_json(f"plans/figure_plan.v{plan.get('revision', 1)}.json", plan)
         self.state.request_approval("plan_approval", "pending")
         return plan
@@ -673,7 +679,7 @@ class FigureOrchestrator:
             },
         }
 
-    def _apply_repair(self, action: Mapping[str, Any]) -> None:
+    def _apply_repair(self, action: Mapping[str, Any]) -> list[dict[str, Any]]:
         assert self.request is not None
         repairs = action.get("repairs")
         if not isinstance(repairs, list) or not repairs:
@@ -707,19 +713,75 @@ class FigureOrchestrator:
         plan_assets = {asset["asset_id"]: asset for asset in plan.get("assets", [])}
         allowed = {item.get("asset_id") for item in repair_plan.get("repairs", [])}
         repaired_routes: dict[str, str] = {}
+        edit_outcomes: list[tuple[str, dict[str, Any]]] = []
+        accepted_edits: list[dict[str, Any]] = []
         for item in repairs:
             if not isinstance(item, Mapping):
                 raise ValueError("each repair must be an object")
             asset_id = item.get("asset_id")
             route = item.get("route")
+            operation = item.get("operation")
             if not isinstance(asset_id, str) or not asset_id:
                 raise ValueError("each repair requires a non-empty asset_id")
-            if not isinstance(route, str):
-                raise ValueError("each repair requires a route")
             if asset_id not in allowed or asset_id not in elements:
                 raise ValueError(f"asset {asset_id!r} is not in the Repair plan")
             element = elements[asset_id]
             self.state.record_retry(f"repair:{asset_id}", "quality")
+            if operation == "layout_patch":
+                bbox = item.get("bbox")
+                if (
+                    not isinstance(bbox, list)
+                    or len(bbox) != 4
+                    or any(not isinstance(value, (int, float)) for value in bbox)
+                    or any(float(value) < 0 or float(value) > 1 for value in bbox)
+                    or float(bbox[2]) <= 0
+                    or float(bbox[3]) <= 0
+                    or float(bbox[0]) + float(bbox[2]) > 1
+                    or float(bbox[1]) + float(bbox[3]) > 1
+                ):
+                    raise ValueError(
+                        "layout_patch requires a normalized [x, y, width, height] bbox"
+                    )
+                bbox_space = str(item.get("bbox_space") or "panel")
+                if bbox_space not in {"panel", "canvas"}:
+                    raise ValueError("layout_patch bbox_space must be panel or canvas")
+                element["bbox"] = list(bbox)
+                plan_assets[asset_id]["bbox"] = list(bbox)
+                plan_assets[asset_id]["bbox_space"] = bbox_space
+                plan_assets[asset_id].setdefault("source", {})["bbox"] = list(bbox)
+                repaired_routes[asset_id] = "layout_patch"
+                continue
+            if operation == "connector_patch":
+                edge_id = item.get("edge_id")
+                graph = self.request.get("figure_graph")
+                if not isinstance(graph, dict) or not isinstance(edge_id, str):
+                    raise ValueError(
+                        "connector_patch requires an existing Figure Graph edge_id"
+                    )
+                edge = next(
+                    (
+                        candidate for candidate in graph.get("typed_edges", [])
+                        if candidate.get("edge_id") == edge_id
+                    ),
+                    None,
+                )
+                if edge is None:
+                    raise ValueError(f"unknown Figure Graph edge {edge_id!r}")
+                for field in (
+                    "source_port", "target_port", "direction", "semantic_type"
+                ):
+                    value = item.get(field)
+                    if not isinstance(value, str) or not value:
+                        raise ValueError(f"connector_patch requires {field}")
+                    edge[field] = value
+                repaired_routes[asset_id] = "connector_patch"
+                continue
+            if operation == "vector_patch":
+                route = "svg"
+            elif operation == "raster_edit":
+                route = "image_edit"
+            if not isinstance(route, str):
+                raise ValueError("each repair requires a route")
             repaired_routes[str(asset_id)] = str(route)
             if element.get("type") in {"data_plot", "label", "annotation", "text", "equation", "vector_element"}:
                 if route == "image_edit":
@@ -752,48 +814,210 @@ class FigureOrchestrator:
                 parent_path = Path(manifest_asset["path"]) if manifest_asset else None
                 if parent_path is None or not parent_path.is_file():
                     raise ValueError(f"cannot edit missing raster asset {asset_id!r}")
+                repair_item = next(
+                    entry for entry in repair_plan.get("repairs", [])
+                    if entry.get("asset_id") == asset_id
+                )
                 prompt = item.get("prompt")
                 if not isinstance(prompt, str) or not prompt:
-                    plan_item = next(
-                        entry for entry in repair_plan.get("repairs", [])
-                        if entry.get("asset_id") == asset_id
-                    )
-                    prompt = plan_item.get("action")
+                    prompt = repair_item.get("action")
                 if not isinstance(prompt, str) or not prompt:
                     raise ValueError("image_edit repair requires prompt")
-                meta = self.provider.edit_image_asset(
-                    parent_path, prompt, {}, output_path=parent_path,
-                    parent_asset_id=asset_id,
+                edit_path = (
+                    self.run_dir / "assets" / "edits"
+                    / f"{asset_id}-v{int(plan.get('revision', 1)) + 1}.png"
                 )
-                pre_rendered[asset_id] = meta
+                edit_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_mask_path = item.get("mask_path")
+                mask_path = (
+                    Path(raw_mask_path)
+                    if isinstance(raw_mask_path, str) and raw_mask_path
+                    else None
+                )
+                meta = self.provider.edit_image_asset(
+                    parent_path,
+                    prompt,
+                    {},
+                    output_path=edit_path,
+                    parent_asset_id=asset_id,
+                    mask_path=mask_path,
+                )
+                panel = next(
+                    (
+                        candidate for candidate in self.request.get("panels", [])
+                        if any(
+                            child.get("element_id") == asset_id
+                            for child in candidate.get("elements", [])
+                        )
+                    ),
+                    None,
+                )
+                physical_size = (
+                    (
+                        float(panel["physical_size"][0]),
+                        float(panel["physical_size"][1]),
+                    )
+                    if panel is not None
+                    else None
+                )
+                edited_validation = self.provider.validate_image_asset(
+                    edit_path, physical_size_mm=physical_size,
+                )
+                source_check = str(repair_item.get("source_check") or "")
+
+                def source_status(report: Mapping[str, Any]) -> str | None:
+                    return next(
+                        (
+                            str(check.get("status"))
+                            for check in report.get("checks", [])
+                            if check.get("check_id") == source_check
+                        ),
+                        None,
+                    )
+
+                original_status = source_status(validation_report)
+                edited_status = source_status(edited_validation)
+                target_improved = (
+                    original_status == "fail" and edited_status == "pass"
+                )
+                outcome = evaluate_local_edit(
+                    parent_path,
+                    edit_path,
+                    mask_path=mask_path,
+                    physical_size_mm=physical_size,
+                    target_improved=target_improved,
+                )
+                outcome["target_check"] = source_check or None
+                outcome["target_before"] = original_status
+                outcome["target_after"] = edited_status
+                if outcome["accepted"]:
+                    original_meta = dict(pre_rendered.get(asset_id) or {})
+                    backup_path = (
+                        self.run_dir / "assets" / "edit_backups"
+                        / f"{asset_id}-v{int(plan.get('revision', 1))}.png"
+                    )
+                    backup_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(parent_path, backup_path)
+                    shutil.copyfile(edit_path, parent_path)
+                    meta["path"] = str(parent_path)
+                    meta["content_hash"] = hash_file(parent_path)
+                    meta["condition_hash"] = (
+                        manifest_asset or {}
+                    ).get("condition_hash")
+                    pre_rendered[asset_id] = meta
+                    accepted_edits.append({
+                        "asset_id": asset_id,
+                        "parent_path": str(parent_path),
+                        "backup_path": str(backup_path),
+                        "original_meta": original_meta,
+                        "baseline_validation": validation_report,
+                    })
+                    status = "accepted"
+                else:
+                    edit_path.unlink(missing_ok=True)
+                    status = "rolled_back"
+                edit_outcomes.append((asset_id, {
+                        "schema_version": "1.0",
+                        "asset_id": asset_id,
+                        "status": status,
+                        "reason": outcome["reason"],
+                        "mask_path": str(mask_path) if mask_path else None,
+                        "original_summary": outcome["original_summary"],
+                        "edited_summary": outcome["edited_summary"],
+                        "unmasked_mean_absolute_difference": outcome[
+                            "unmasked_mean_absolute_difference"
+                        ],
+                        "target_check": outcome["target_check"],
+                        "target_before": outcome["target_before"],
+                        "target_after": outcome["target_after"],
+                    }))
             else:
                 raise ValueError(f"asset {asset_id!r} is not repairable")
         self.store.validate(plan, "figure-plan.schema.json")
         plan["revision"] = int(plan.get("revision", 1)) + 1
         plan["plan_id"] = f"{plan['figure_id']}-plan-v{plan['revision']}"
         self.store.validate(plan, "figure-plan.schema.json")
-        self.store.commit_json("plans/figure_plan.json", plan)
+        self.invalidator.after_repairs(repaired_routes)
+        rebuild_plan_artifacts = any(
+            route in {"python", "layout_patch", "connector_patch"}
+            for route in repaired_routes.values()
+        )
+        if rebuild_plan_artifacts:
+            planning_artifacts = FigurePlanningArtifacts(
+                self.request,
+                self.config,
+                self.run_dir,
+                self.provider,
+                base_dir=self.base_dir,
+            )
+            planning_artifacts.refresh_after_repairs(plan, repaired_routes)
+        else:
+            self.store.commit_json(
+                "plans/figure_plan.json", plan, schema="figure-plan.schema.json"
+            )
         self.store.commit_json(f"plans/figure_plan.v{plan['revision']}.json", plan)
         self.state.mark_step("planning", "completed", {
             "figure_plan": self.store.hash_json(plan),
         })
         self._record_artifact("figure_plan", "plans/figure_plan.json")
-        self.store.commit_json("plans/request.json", json.loads(json.dumps(self.request, default=str)))
+        self.store.commit_json(
+            "plans/request.json",
+            json.loads(json.dumps(self.request, default=str)),
+        )
         if pre_rendered:
             self.store.commit_json("plans/pre_rendered_assets.json", pre_rendered)
-        self.invalidator.after_repairs(repaired_routes)
-        if "python" in repaired_routes.values():
-            from figure_tools.execution import FigureExecution
+        for asset_id, outcome in edit_outcomes:
+            self.store.commit_json(
+                f"validation/edit_outcomes/{asset_id}.json", outcome,
+            )
+        return accepted_edits
 
-            FigureExecution(
-                self.request,
-                self.config,
-                self.run_dir,
-                self.provider,
-                self.state,
-                base_dir=self.base_dir,
-                compose_dpi=self.compose_dpi,
-            ).prepare_plan_artifacts(plan)
+    def _global_validation_regressed(self, edits: list[dict[str, Any]]) -> bool:
+        current = self.store.load_optional_json("validation/final.json") or {}
+        current_failures = {
+            (str(check.get("check_id")), str(check.get("scope"))): check
+            for check in current.get("checks", [])
+            if check.get("level") == "error" and check.get("status") == "fail"
+        }
+        for edit in edits:
+            baseline = edit.get("baseline_validation") or {}
+            baseline_failures = {
+                (str(check.get("check_id")), str(check.get("scope")))
+                for check in baseline.get("checks", [])
+                if check.get("level") == "error" and check.get("status") == "fail"
+            }
+            if any(key not in baseline_failures for key in current_failures):
+                return True
+        return False
+
+    def _rollback_accepted_edits(self, edits: list[dict[str, Any]]) -> None:
+        reusable: dict[str, dict[str, Any]] = {}
+        outcomes: list[tuple[str, dict[str, Any]]] = []
+        for edit in edits:
+            asset_id = str(edit["asset_id"])
+            parent_path = Path(edit["parent_path"])
+            backup_path = Path(edit["backup_path"])
+            shutil.copyfile(backup_path, parent_path)
+            backup_path.unlink(missing_ok=True)
+            original_meta = dict(edit.get("original_meta") or {})
+            original_meta["path"] = str(parent_path)
+            original_meta["content_hash"] = hash_file(parent_path)
+            reusable[asset_id] = original_meta
+            outcome = self.store.load_optional_json(
+                f"validation/edit_outcomes/{asset_id}.json"
+            ) or {"schema_version": "1.0", "asset_id": asset_id}
+            outcome["status"] = "rolled_back"
+            outcome["reason"] = "global validation regressed after raster edit"
+            outcomes.append((asset_id, outcome))
+        if reusable:
+            self.store.commit_json("plans/pre_rendered_assets.json", reusable)
+            self.invalidator.after_repairs({
+                asset_id: "image_edit" for asset_id in reusable
+            })
+        for asset_id, outcome in outcomes:
+            self.store.commit_json(
+                f"validation/edit_outcomes/{asset_id}.json", outcome,
+            )
 
     @staticmethod
     def _reusable_raster_assets(
@@ -817,6 +1041,7 @@ class FigureOrchestrator:
                 "model": generation.get("model"),
                 "parameters": dict(generation.get("parameters") or {}),
                 "prompt_hash": asset.get("prompt_hash"),
+                "condition_hash": asset.get("condition_hash"),
                 "reference_hashes": list(asset.get("reference_hashes") or []),
                 "pixel_dimensions": list(asset.get("pixel_dimensions") or []),
                 "transparent": bool(asset.get("transparent")),

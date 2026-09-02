@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "conditions": [
+    {
+      "schema_version": "1.0",
+      "asset_id": "cell",
+      "model_role": "image_generate",
+      "prompt": "isolated cell on transparent background",
+      "negative_constraints": "no text; no symbols; no watermark",
+      "parameters": {"size": "2048x2048", "seed": 7},
+      "references": [],
+      "control": null,
+      "publication_profile": {"profile_id": "general"},
+      "warnings": [],
+      "style_bible_hash": "sha256:style",
+      "publication_profile_hash": "sha256:profile",
+      "condition_hash": "sha256:condition"
+    }
+  ]
+}

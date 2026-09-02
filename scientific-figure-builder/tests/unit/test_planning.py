@@ -78,12 +78,48 @@ def test_plan_routes_data_plot_to_python_and_ai_to_image_model():
     assert by_id["label-a"]["routing"] == "svg"
 
 
+def test_plan_records_panel_relative_asset_bbox_when_element_declares_one():
+    request = _request()
+    request["panels"][1]["elements"][0]["bbox"] = [0.1, 0.2, 0.7, 0.6]
+
+    plan = create_figure_plan(request)
+    asset = next(item for item in plan["assets"] if item["asset_id"] == "fiber")
+
+    assert asset["bbox"] == [0.1, 0.2, 0.7, 0.6]
+    assert asset["bbox_space"] == "panel"
+
+
 def test_plan_estimates_paid_calls():
     plan = create_figure_plan(_request())
     est = plan["estimated_paid_calls"]
     assert est["generation"] == 1  # one AI asset
     assert est["validations"] == 1  # one per AI asset
     assert est["final_validation"] == 1
+
+
+def test_plan_estimates_disclosed_candidate_calls():
+    request = _request()
+    request["panels"][1]["elements"][0]["candidate_count"] = 3
+
+    estimated = create_figure_plan(request)["estimated_paid_calls"]
+
+    assert estimated["generation"] == 3
+    assert estimated["validations"] == 3
+
+
+def test_plan_discloses_every_per_asset_reference_upload():
+    request = _request()
+    request["panels"][1]["elements"][0]["references"] = [{
+        "role": "style",
+        "path": "/references/style.png",
+        "content_hash": "sha256:style",
+        "strength": 0.75,
+    }]
+
+    uploads = create_figure_plan(request)["planned_uploads"]
+
+    assert {item["path"] for item in uploads} == {"/references/style.png"}
+    assert uploads[0]["reason"] == "style reference for fiber"
 
 
 def test_plan_approval_pending_by_default():

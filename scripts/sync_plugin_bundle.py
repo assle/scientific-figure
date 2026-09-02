@@ -25,7 +25,10 @@ def sync() -> None:
         raise RuntimeError("plugin destination escaped the generated plugin root")
     SKILL_DESTINATION.mkdir(parents=True, exist_ok=True)
     shutil.copy2(SOURCE / "SKILL.md", SKILL_DESTINATION / "SKILL.md")
-    for name in ("agents", "references", "schemas", "templates"):
+    obsolete_references = SKILL_DESTINATION / "references"
+    if obsolete_references.exists():
+        shutil.rmtree(obsolete_references)
+    for name in ("agents", "schemas", "templates"):
         destination = SKILL_DESTINATION / name
         if destination.exists():
             shutil.rmtree(destination)

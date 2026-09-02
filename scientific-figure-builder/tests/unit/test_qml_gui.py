@@ -58,6 +58,8 @@ def test_qml_controller_saves_routes_providers_and_keyring(tmp_path: Path, app):
     controller.updateProvider("key_env", "DEMO_API_KEY")
     controller.updateProvider("api_key", "temporary-secret")
     controller.updateProviderBool("supports_image_edit", True)
+    controller.updateProviderBool("supports_reference_image", True)
+    controller.updateProviderBool("supports_mask_edit", True)
     controller.updateRole("vision_analyze", "provider", "demo_provider")
     controller.updateRole("vision_analyze", "model", "vision-model")
     assert controller.dirty is True
@@ -67,6 +69,8 @@ def test_qml_controller_saves_routes_providers_and_keyring(tmp_path: Path, app):
     provider = draft.providers["demo_provider"]
     assert provider["base_url"] == "https://models.example/v1"
     assert provider["supports_image_edit"] is True
+    assert provider["supports_reference_image"] is True
+    assert provider["supports_mask_edit"] is True
     assert draft.models["vision_analyze"]["model"] == "vision-model"
     assert store.values[provider["credential_id"]] == "temporary-secret"
     assert controller.dirty is False

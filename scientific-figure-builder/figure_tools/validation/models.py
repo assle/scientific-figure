@@ -26,6 +26,8 @@ ElementType = Literal[
     "legend",
     "colorbar",
     "equation",
+    "connector",
+    "group",
 ]
 
 VALID_ELEMENT_TYPES: frozenset[str] = frozenset(get_args(ElementType))

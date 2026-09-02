@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "figure_id": "mechanism",
+  "nodes": [
+    {
+      "node_id": "receptor",
+      "node_type": "image_asset",
+      "asset_id": "receptor",
+      "panel_id": "a",
+      "z_order": 1
+    }
+  ],
+  "ports": [
+    {"port_id": "receptor-out", "node_id": "receptor", "side": "right"}
+  ],
+  "typed_edges": [],
+  "groups": [],
+  "labels": [],
+  "constraints": []
+}

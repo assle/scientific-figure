@@ -72,7 +72,7 @@ def test_plugin_mcp_uses_bundled_adapter_not_user_codex_config() -> None:
 
 def test_generated_plugin_skill_matches_canonical_sources() -> None:
     destination = PLUGIN_ROOT / "skills" / "scientific-figure-builder"
-    for name in ("SKILL.md", "agents", "references", "schemas", "templates"):
+    for name in ("SKILL.md", "agents", "schemas", "templates"):
         source = PACKAGE_ROOT / name
         target = destination / name
         if source.is_file():
@@ -87,6 +87,7 @@ def test_generated_plugin_skill_matches_canonical_sources() -> None:
             for path in target.rglob("*") if path.is_file()
         }
         assert target_files == source_files
+    assert not (destination / "references").exists()
 
 
 @pytest.mark.parametrize("platform_name", ["posix", "nt"])

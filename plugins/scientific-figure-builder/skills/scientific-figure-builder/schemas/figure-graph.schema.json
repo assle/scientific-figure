@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/figure-graph.schema.json",
+  "title": "Figure Graph",
+  "description": "Versioned scientific nodes, ports, relations, groups, labels, and constraints.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "figure_id", "nodes", "ports", "typed_edges", "groups", "labels", "constraints"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "figure_id": {"type": "string", "minLength": 1},
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "node_type", "asset_id", "panel_id", "z_order"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "node_type": {"type": "string", "minLength": 1},
+          "asset_id": {"type": "string", "minLength": 1},
+          "panel_id": {"type": "string", "minLength": 1},
+          "z_order": {"type": "integer"}
+        }
+      }
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["port_id", "node_id", "side"],
+        "properties": {
+          "port_id": {"type": "string", "minLength": 1},
+          "node_id": {"type": "string", "minLength": 1},
+          "side": {"type": "string", "enum": ["left", "right", "top", "bottom", "center"]}
+        }
+      }
+    },
+    "typed_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edge_id", "source_port", "target_port", "direction", "semantic_type"],
+        "properties": {
+          "edge_id": {"type": "string", "minLength": 1},
+          "source_port": {"type": "string", "minLength": 1},
+          "target_port": {"type": "string", "minLength": 1},
+          "direction": {"type": "string", "enum": ["forward", "reverse", "bidirectional"]},
+          "semantic_type": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "groups": {"type": "array", "items": {"type": "object"}},
+    "labels": {"type": "array", "items": {"type": "object"}},
+    "constraints": {"type": "array", "items": {"type": "object"}}
+  }
+}

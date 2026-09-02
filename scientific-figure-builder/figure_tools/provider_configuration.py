@@ -16,7 +16,16 @@ LEGACY_PROVIDER_PROTOCOLS = {
     "anthropic": "anthropic",
 }
 PROVIDER_TYPE_FIELD_DEFAULTS: dict[str, Mapping[str, Any]] = {
-    "openai": {"supports_image_edit": False},
+    "openai": {
+        "supports_image_edit": False,
+        "supports_reference_image": False,
+        "supports_multi_reference": False,
+        "supports_mask_edit": False,
+        "supports_structure_control": False,
+        "supports_native_alpha": False,
+        "supports_seed": False,
+        "supports_candidate_batch": False,
+    },
     "anthropic": {
         "auth_scheme": "x-api-key",
         "messages_path": "/messages",
@@ -289,6 +298,32 @@ def route_compatibility(
             inherited,
         )
     return RouteCompatibility(role, True, "compatible", provider_id, inherited)
+
+
+def provider_capabilities_for_role(
+    role: str,
+    models: Mapping[str, Mapping[str, Any]],
+    providers: Mapping[str, Mapping[str, Any]],
+    *,
+    adapter_capabilities: Mapping[str, Any] | None = None,
+) -> dict[str, bool]:
+    """Return only normalized boolean Provider capabilities for one Model role."""
+
+    capabilities = {
+        str(name): bool(value)
+        for name, value in (adapter_capabilities or {}).items()
+        if name.startswith("supports_")
+    }
+    route = effective_model_route(role, models)
+    provider_id = route.get("provider") if route is not None else None
+    raw_provider = providers.get(str(provider_id)) if provider_id else None
+    if not isinstance(raw_provider, Mapping):
+        return capabilities
+    provider = normalize_provider(str(provider_id), raw_provider, warn_legacy=False)
+    for name, value in provider.items():
+        if name.startswith("supports_") and isinstance(value, bool):
+            capabilities[name] = value
+    return capabilities
 
 
 def _definition(role: str) -> ModelRoleDefinition:

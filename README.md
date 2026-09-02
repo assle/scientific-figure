@@ -53,11 +53,15 @@ Calling Agent
   → Lifecycle MCP server (2 public tools)
     → Orchestrator (the only lifecycle authority)
       ├─ Phase worker → schema-governed Phase artifact
+      ├─ Figure Planning Module
+      │  └─ Figure Graph → Solved layout → SVG blueprint
+      │     → Generation Conditions + structure questions
       ├─ Run Store + Run Invalidator → atomic persistence and precise reuse
       └─ Figure Execution Module
          ├─ Python plots and SVG/text
-         ├─ Provider-routed raster assets
-         └─ assembly → validation → export
+         ├─ Provider-routed isolated raster assets
+         └─ deterministic connectors/groups → assembly
+            → layered validation → localized repair → export
 ```
 
 The MCP server is a thin stdio Adapter. It does not publish plotting, Provider,
@@ -68,7 +72,8 @@ the Orchestrator to advance until the next user decision or completion.
 | Deep module | Owns |
 |---|---|
 | Orchestrator | Intake, Planning, Execution, Review and repair, Export, approvals, retries, resume, and the Export gate |
-| Figure Execution Module | Approved-plan artifacts, Generation routes, assembly, validation inputs, and publication |
+| Figure Planning Module | Figure Graph, Solved layout, editable blueprint, structure questions, Style Bible, and Generation Conditions before approval |
+| Figure Execution Module | Approved Generation routes, Style-anchor conditions, candidate selection, deterministic assembly, validation inputs, and publication |
 | Run Store | Run-directory structure, atomic JSON commit, schema validation, canonical hashes, references, and safe loads |
 | Run Invalidator | Exact downstream invalidation for Figure brief/plan changes, repairs, assembly changes, and export-only reruns |
 | Provider Configuration | Provider types, legacy migration, type-specific fields, Model role catalog, inheritance, and Route compatibility |
@@ -85,9 +90,10 @@ paid assets.
 | | Capability | Result |
 |---|---|---|
 | 📊 | Deterministic plots | CSV-backed line, scatter, bar, heatmap, error-bar, and multipanel figures |
+| 🧠 | Structure-first mechanism figures | Addressable nodes, named ports, typed directed edges, groups, constraints, and editable SVG blueprints |
 | 🎨 | Provider-neutral AI assets | Isolated, non-quantitative raster assets with provenance and background removal |
-| 🧩 | Precise assembly | Python/SVG composition with editable labels, arrows, and equations |
-| ✅ | Two-layer validation | Authoritative geometry checks enriched by multimodal review |
+| 🧩 | Precise assembly and repair | Asset-level placement, port-bound connectors, exact vector labels/equations, masked edits, and rollback |
+| ✅ | Layered validation | Rendered graph recovery, exact source/OCR text and formulas, geometry, Publication profiles, and multimodal review |
 | 📦 | Publication export | PNG, SVG, PDF, plus optional PowerPoint-friendly SVG/PPTX |
 
 <p align="center">
@@ -122,6 +128,9 @@ opening or saving configuration.
 </table>
 
 - **Providers** handles endpoint CRUD, wire dialects, and optional capabilities.
+- **Provider capabilities** explicitly declare reference images, multiple
+  references, mask editing, structure control, native alpha, seeds, and
+  candidate batches; unsupported controls fail instead of being ignored.
 - **Credentials & Connection** stores API Keys in the operating-system Keyring and
   tests the current unsaved draft only when the user clicks the button.
 - **Model routes** bind optional `phase_reasoning`, `vision_analyze`,
@@ -177,16 +186,18 @@ from data.csv. Export PNG, SVG, and PDF, and keep the SVG PowerPoint-friendly.
 ```
 
 The lifecycle Orchestrator first records export target, figure width, language,
-and style in a Figure brief, then shows the Figure plan and wireframe before
-paid generation. Calling Agent commands resume from the Orchestrator's next
-action instead of manually sequencing low-level tools. Each response contains
-the current Lifecycle phase, status, next action, and canonical Artifact
-references.
+style, and optional Publication profile in a Figure brief. Planning then derives
+the Figure Graph, Solved layout, editable SVG blueprint, structure questions,
+and Generation Conditions before any paid work. Calling Agent commands resume
+from the Orchestrator's next action instead of manually sequencing low-level
+tools. Each response contains the current Lifecycle phase, status, next action,
+and canonical Artifact references.
 
 ## The core rule
 
 ```text
 Exact data, axes, equations, labels, and geometry  →  Python / SVG
+Scientific nodes, phases, ports, and directed flow →  Figure Graph + SVG
 Isolated non-quantitative visual assets            →  configured image Provider
 Final composition and export                       →  deterministic local pipeline
 ```
@@ -194,6 +205,25 @@ Final composition and export                       →  deterministic local pipe
 AI image models never draw data plots or the final compound figure. Deterministic
 findings remain authoritative; a vision model may enrich them but cannot turn a
 failed geometry check into a pass.
+
+## Mechanism-figure workflow
+
+```text
+Scientific intent
+  → Figure Graph (nodes, ports, typed edges, groups, constraints)
+  → Solved layout + editable SVG blueprint
+  → Provider-neutral Generation Conditions
+  → isolated raster assets + deterministic text/connectors
+  → assembled-figure structure/OCR/publication validation
+  → layout, connector, vector, or masked-raster patch with rollback
+```
+
+Asset bounding boxes are panel-relative when explicitly supplied. Layout-only
+changes preserve paid raster assets. Related assets use approved per-group Style
+anchors; references are role-tagged as content, style, structure, parent, or
+mask and are hash-verified before upload. `nature_research` is available as a
+Publication profile for Nature dimensions, typography, editable vectors, and
+palette-accessibility checks, while `general` remains the default.
 
 ## Minimal Provider configuration
 
@@ -210,6 +240,13 @@ providers:
     base_url: https://images.example.com/v1
     key_env: IMAGE_API_KEY
     supports_image_edit: true
+    supports_reference_image: true
+    supports_multi_reference: true
+    supports_mask_edit: true
+    supports_structure_control: false
+    supports_native_alpha: false
+    supports_seed: true
+    supports_candidate_batch: false
 
 models:
   vision_analyze:  {provider: vision_provider, model: vision-model}
@@ -218,7 +255,8 @@ models:
 ```
 
 Omit `image_edit` to inherit `image_generate`. A Keyring-backed credential takes
-precedence over its environment fallback.
+precedence over its environment fallback. Declare only capabilities the Provider
+actually supports; they are compatibility contracts, not hints.
 
 ## Export targets
 
@@ -385,8 +423,6 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 Useful references:
 
 - [Domain vocabulary](./CONTEXT.md)
-- [Provider interfaces](./scientific-figure-builder/references/provider-interfaces.md)
-- [Workflow details](./scientific-figure-builder/references/workflow-details.md)
 - [Security policy](./SECURITY.md)
 - [GUI platform verification](./docs/verification/gui-platforms.md)
 - [OpenAI plugin architecture](https://developers.openai.com/plugins/concepts/plugins)

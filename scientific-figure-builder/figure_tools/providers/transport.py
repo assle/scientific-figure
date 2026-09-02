@@ -48,6 +48,9 @@ class RateLimitError(ProviderError):
 
 
 class ProviderTransport:
+    def capabilities(self) -> dict[str, bool]:
+        return {}
+
     def post(
         self,
         role: str,
@@ -75,17 +78,36 @@ class MockProviderTransport(ProviderTransport):
     def __init__(self, fail_once_roles: set[str] | None = None) -> None:
         self.fail_once_roles = set(fail_once_roles or set())
         self.calls: list[tuple[str, str]] = []
+        self.requests: list[dict[str, Any]] = []
         self.local_region_calls: int = 0
         self._failed: set[str] = set()
 
     def post(self, role, model, payload, image_paths=None):
         self.calls.append((role, model))
+        self.requests.append({
+            "role": role,
+            "model": model,
+            "payload": payload,
+            "image_paths": list(image_paths or []),
+        })
         if payload.get("mode") == "local_region":
             self.local_region_calls += 1
         if role in self.fail_once_roles and role not in self._failed:
             self._failed.add(role)
             raise RateLimitError("429 rate limited (mock)")
         return self._response(role, model, payload)
+
+    def capabilities(self) -> dict[str, bool]:
+        return {
+            "supports_image_edit": True,
+            "supports_reference_image": True,
+            "supports_multi_reference": True,
+            "supports_mask_edit": True,
+            "supports_structure_control": True,
+            "supports_native_alpha": True,
+            "supports_seed": True,
+            "supports_candidate_batch": True,
+        }
 
     def _response(self, role, model, payload):
         if role == "reference_analysis":

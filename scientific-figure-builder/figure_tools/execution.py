@@ -12,8 +12,11 @@ from figure_tools.assembly.compositor import compose_assets
 from figure_tools.export.publish import export_figure
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
-from figure_tools.planning.layout_analysis import analyze_layout
+from figure_tools.planning.geometry import resolve_asset_bbox
+from figure_tools.generation_conditions import add_reference_to_condition
+from figure_tools.provider_configuration import provider_capabilities_for_role
 from figure_tools.provenance import hash_file
+from figure_tools.publication_profiles import get_publication_profile
 from figure_tools.report import write_generation_report
 from figure_tools.run_store import RunStore
 from figure_tools.validation.engine import FigureQAEngine
@@ -21,7 +24,6 @@ from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
-from figure_tools.vector.wireframe import generate_wireframe
 
 
 class FigureExecution:
@@ -48,18 +50,6 @@ class FigureExecution:
         c = self.request["canvas"]
         return float(c["width"]), float(c["height"])
 
-    def prepare_plan_artifacts(self, plan: dict[str, Any]) -> dict[str, Any]:
-        """Persist the deterministic artifacts derived from one Figure plan."""
-        self.store.commit_json("plans/figure_plan.json", plan)
-        self.store.commit_text("plans/layout_wireframe.svg", generate_wireframe(plan))
-
-        data_chars = self._collect_data_characteristics()
-        layout_report = analyze_layout(plan, data_chars)
-        self.store.commit_json("plans/layout_analysis.json", layout_report)
-        self._write_style_bible()
-        self._copy_inputs()
-        return layout_report
-
     def execute_plan(
         self,
         plan: dict[str, Any],
@@ -79,27 +69,78 @@ class FigureExecution:
             for el in panel.get("elements", [])
             if el["type"] == "image_asset"
         ]
-        if len(ai_elements) >= 3:
-            anchor_id = ai_elements[0][1]["element_id"]
+        conditions = self._generation_conditions()
+        grouped_assets: dict[str, list[tuple[dict, dict]]] = {}
+        for panel, element in ai_elements:
+            grouped_assets.setdefault(
+                str(element.get("style_group") or "figure"), []
+            ).append((panel, element))
+        style_anchors: dict[str, dict[str, Any]] = {}
+        reusable = dict(pre_rendered_assets or {})
+        for style_group, members in grouped_assets.items():
+            if len(members) < 2:
+                continue
+            anchor_id = members[0][1]["element_id"]
             anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
-            anchor_meta = None
-            if not anchor_path.exists():
-                anchor_meta = self.provider.generate_image_asset(
-                    ai_elements[0][1]["prompt"], {}, output_path=anchor_path)
-            if not style_anchor_approved:
-                if anchor_meta is not None:
-                    self.store.commit_json(
-                        "plans/pre_rendered_assets.json", {anchor_id: anchor_meta}
+            anchor_meta = reusable.get(anchor_id)
+            if (
+                anchor_meta is None
+                or not anchor_path.is_file()
+                or anchor_meta.get("content_hash") != hash_file(anchor_path)
+            ):
+                anchor_meta = self._generate_condition(
+                    conditions[anchor_id], anchor_path,
+                )
+                reusable[anchor_id] = anchor_meta
+            style_anchors[style_group] = {
+                "asset_id": anchor_id,
+                "path": str(anchor_path),
+                "content_hash": anchor_meta["content_hash"],
+            }
+        if style_anchors and not style_anchor_approved:
+            self.store.commit_json("plans/pre_rendered_assets.json", reusable)
+            return {"paused": True, "pause_reason": "style_anchor_approval"}
+        if style_anchors:
+            capabilities = provider_capabilities_for_role(
+                "image_generate",
+                self.config.get("models") or {},
+                self.config.get("providers") or {},
+                adapter_capabilities=self.provider.generation_capabilities(),
+            )
+            for style_group, members in grouped_assets.items():
+                anchor = style_anchors.get(style_group)
+                if anchor is None:
+                    continue
+                for _panel, element in members[1:]:
+                    asset_id = element["element_id"]
+                    conditions[asset_id] = add_reference_to_condition(
+                        conditions[asset_id],
+                        {
+                            "role": "style",
+                            "path": anchor["path"],
+                            "content_hash": anchor["content_hash"],
+                            "strength": 1.0,
+                        },
+                        capabilities,
                     )
-                return {"paused": True, "pause_reason": "style_anchor_approval"}
+            self.store.commit_json(
+                "assets/style_anchor_conditions.json",
+                {
+                    "schema_version": "1.0",
+                    "conditions": list(conditions.values()),
+                },
+                schema="generation-conditions.schema.json",
+            )
+            pre_rendered_assets = reusable
 
         manifest_assets, validation_reports, placements, text_placements = \
-            self._render_assets(plan, ai_elements, export_target,
+            self._render_assets(plan, ai_elements, export_target, conditions,
                                 pre_rendered_assets=pre_rendered_assets)
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self.store.commit_json("asset_manifest.json", manifest)
 
         assembly_dir = self.run_dir / "assembly"
+        solved_layout = self.store.load_optional_json("plans/solved_layout.json") or {}
         source_layouts = {
             p["asset_id"]: p["layout_manifest"]
             for p in placements
@@ -110,6 +151,8 @@ class FigureExecution:
             placements, output_dir=assembly_dir,
             canvas_mm=self._canvas_mm(), dpi=self.compose_dpi,
             text_placements=text_placements, source_layouts=source_layouts,
+            connectors=list(solved_layout.get("connectors") or []),
+            groups=list(solved_layout.get("groups") or []),
             export_target=export_target,
         )
         composed_png = Path(assembly_result["files"]["png"])
@@ -203,6 +246,7 @@ class FigureExecution:
             "include_pptx": delivery.get("include_pptx", False),
             "language": plan.get("language", "zh"),
             "style": plan.get("style", plan.get("style_bible_ref", "default")),
+            "publication_profile": plan.get("publication_profile", "general"),
             "brief_ref": plan.get("brief_ref"),
             "auto_execute": True,
         }
@@ -255,41 +299,36 @@ class FigureExecution:
             value = (self.config.get("export") or {}).get("export_target")
         return resolve_export_target(value)
 
-    def _write_style_bible(self) -> None:
-        from figure_tools._resources import template_path
+    def _generation_conditions(self) -> dict[str, dict[str, Any]]:
+        artifact = self.store.load_optional_json("plans/generation_conditions.json")
+        if artifact is None:
+            raise ValueError(
+                "approved Figure plan is missing its Generation Conditions"
+            )
+        return {
+            str(item["asset_id"]): dict(item)
+            for item in artifact.get("conditions", [])
+        }
 
-        style = self.request.get("style", "default")
-        destination = self.run_dir / "style_bible.json"
-        if isinstance(style, dict):
-            self.store.commit_json("style_bible.json", style)
-            return
-        if isinstance(style, str) and style not in {"", "default"}:
-            candidate = Path(style)
-            if candidate.is_file():
-                shutil.copyfile(candidate, destination)
-                return
-        src = template_path("default-style-bible.json")
-        self.store.commit_json(
-            "style_bible.json", json.loads(src.read_text(encoding="utf-8"))
+    def _generate_condition(
+        self,
+        condition: dict[str, Any],
+        output_path: str | Path,
+    ) -> dict[str, Any]:
+        references = list(condition.get("references") or [])
+        meta = self.provider.generate_image_asset(
+            condition["prompt"],
+            dict(condition.get("parameters") or {}),
+            output_path=output_path,
+            reference_hashes=[item["content_hash"] for item in references],
+            reference_paths=[item["path"] for item in references],
+            reference_descriptors=[
+                {"role": item["role"], "strength": item["strength"]}
+                for item in references
+            ],
         )
-
-    def _copy_inputs(self) -> None:
-        inputs = self.run_dir / "inputs"
-        inputs.mkdir(parents=True, exist_ok=True)
-        for ref in self.request.get("reference_figures", []):
-            src = Path(ref)
-            if src.exists():
-                shutil.copyfile(src, inputs / src.name)
-        for panel in self.request["panels"]:
-            for el in panel.get("elements", []):
-                if el["type"] == "data_plot":
-                    try:
-                        spec = load_plot_spec(el["plot_spec"])
-                        src = self.base_dir / spec.source_data["path"]
-                        if src.exists():
-                            shutil.copyfile(src, inputs / src.name)
-                    except Exception:  # noqa: BLE001
-                        pass
+        meta["condition_hash"] = condition["condition_hash"]
+        return meta
 
     def _error_report(self, asset_id: str, detail: str) -> dict:
         from figure_tools.validation.summary import summarize_checks
@@ -299,64 +338,7 @@ class FigureExecution:
         return {"schema_version": "1.0", "run_id": asset_id,
                 "checks": checks, "summary": summarize_checks(checks)}
 
-    def _collect_data_characteristics(self) -> dict[str, Any]:
-        panels: dict[str, Any] = {}
-        labels = self.request.get("labels", [])
-        for i, panel in enumerate(self.request["panels"]):
-            pid = panel["panel_id"]
-            element_count = 0
-            label_len = 0
-            densities = {
-                "upper_left": 0.3, "upper_right": 0.3,
-                "lower_left": 0.3, "lower_right": 0.3,
-            }
-            for el in panel.get("elements", []):
-                element_count += 1
-                if el["type"] == "data_plot":
-                    try:
-                        spec = load_plot_spec(el["plot_spec"])
-                        element_count += max(len(spec.series) - 1, 0)
-                        for v in spec.labels.values():
-                            label_len = max(label_len, len(str(v)))
-                        computed = self._compute_density(spec)
-                        if computed:
-                            densities = computed
-                    except Exception:  # noqa: BLE001
-                        pass
-            if i < len(labels):
-                label_len = max(label_len, len(labels[i].get("content", "")))
-            panels[pid] = {
-                "data_element_count": element_count,
-                "label_text_length": label_len,
-                "data_density_by_region": densities,
-            }
-        return {"panels": panels}
-
-    def _compute_density(self, spec) -> dict[str, float] | None:
-        import pandas as pd
-
-        data_path = self.base_dir / spec.source_data["path"]
-        if not data_path.exists():
-            return None
-        df = pd.read_csv(data_path)
-        x_col = spec.column_mapping.get("x", "")
-        y_col = spec.column_mapping.get("y", "")
-        if x_col not in df.columns or y_col not in df.columns:
-            return None
-        x_mid = (df[x_col].min() + df[x_col].max()) / 2
-        y_mid = (df[y_col].min() + df[y_col].max()) / 2
-        total = len(df)
-        if total == 0:
-            return None
-        quadrants = {
-            "upper_left": ((df[x_col] < x_mid) & (df[y_col] >= y_mid)).sum(),
-            "upper_right": ((df[x_col] >= x_mid) & (df[y_col] >= y_mid)).sum(),
-            "lower_left": ((df[x_col] < x_mid) & (df[y_col] < y_mid)).sum(),
-            "lower_right": ((df[x_col] >= x_mid) & (df[y_col] < y_mid)).sum(),
-        }
-        return {k: round(v / total, 2) for k, v in quadrants.items()}
-
-    def _render_assets(self, plan, ai_elements, export_target: str,
+    def _render_assets(self, plan, ai_elements, export_target: str, conditions,
                        pre_rendered_assets: dict[str, dict[str, Any]] | None = None):
         manifest_assets: list[dict] = []
         validation_reports: list[dict] = []
@@ -382,7 +364,8 @@ class FigureExecution:
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
-                                       "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                                       "bbox": self._placement_bbox(asset_id, plan, panel),
+                                       "panel_id": panel["panel_id"],
                                        "z_order": self._zorder(asset_id, plan),
                                        "layout_manifest": str(out / "layout_manifest.json")})
                 except Exception as e:  # noqa: BLE001
@@ -395,7 +378,7 @@ class FigureExecution:
 
             with ThreadPoolExecutor(max_workers=2) as ex:
                 futs = {ex.submit(
-                    self._safe_gen_ai, panel, el,
+                    self._safe_gen_ai, panel, el, conditions[el["element_id"]],
                     (pre_rendered_assets or {}).get(el["element_id"]),
                 ): el["element_id"]
                         for panel, el in ai_elements}
@@ -412,13 +395,14 @@ class FigureExecution:
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
             placements.append({"asset_id": asset_id, "path": meta["path"],
-                               "bbox": panel["bbox"], "panel_id": panel["panel_id"],
+                               "bbox": self._placement_bbox(asset_id, plan, panel),
+                               "panel_id": panel["panel_id"],
                                "z_order": self._zorder(asset_id, plan)})
 
         text_placements = self._render_labels(plan, manifest_assets, export_target)
         return manifest_assets, validation_reports, placements, text_placements
 
-    def _safe_gen_ai(self, panel, el, pre_rendered_meta=None):
+    def _safe_gen_ai(self, panel, el, condition, pre_rendered_meta=None):
         try:
             path = self.run_dir / "assets" / f"{el['element_id']}.png"
             reusable_path = (
@@ -431,26 +415,170 @@ class FigureExecution:
                 and reusable_path is not None
                 and reusable_path.is_file()
                 and pre_rendered_meta.get("content_hash") == hash_file(reusable_path)
+                and pre_rendered_meta.get("condition_hash") == condition["condition_hash"]
             ):
                 report = self.provider.validate_image_asset(
                     path, physical_size_mm=tuple(panel["physical_size"])
                 )
                 return (el["element_id"], pre_rendered_meta, report, None)
-            meta = self.provider.generate_image_asset(el["prompt"], {}, output_path=path)
+            candidate_count = int(el.get("candidate_count", 1))
+            if not 1 <= candidate_count <= 4:
+                raise ValueError("candidate_count must be between 1 and 4")
+            if candidate_count > 1:
+                meta, report = self._select_candidate(
+                    el["element_id"], condition, panel, path, candidate_count,
+                )
+                return (el["element_id"], meta, report, None)
+            meta = self._generate_condition(condition, path)
             report = self.provider.validate_image_asset(
                 path, physical_size_mm=tuple(panel["physical_size"]))
             return (el["element_id"], meta, report, None)
         except Exception as e:  # noqa: BLE001
             return (el["element_id"], None, None, e)
 
+    def _select_candidate(
+        self,
+        asset_id: str,
+        condition: dict[str, Any],
+        panel: dict[str, Any],
+        output_path: Path,
+        candidate_count: int,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        candidates: list[tuple[tuple[int | float, ...], dict, dict, Path]] = []
+        records = []
+        for index in range(1, candidate_count + 1):
+            candidate_path = (
+                self.run_dir / "assets" / "candidates" / f"{asset_id}-{index}.png"
+            )
+            candidate_path.parent.mkdir(parents=True, exist_ok=True)
+            candidate_condition = copy.deepcopy(condition)
+            candidate_condition["parameters"] = {
+                **dict(candidate_condition.get("parameters") or {}),
+                "candidate_index": index,
+            }
+            meta = self._generate_condition(candidate_condition, candidate_path)
+            report = self.provider.validate_image_asset(
+                candidate_path,
+                physical_size_mm=tuple(panel["physical_size"]),
+                checks=[
+                    f"component fidelity for {asset_id}",
+                    "structural fidelity to the Generation Condition",
+                    "no unexpected text or symbols",
+                    "Publication profile asset quality",
+                    "Style group consistency",
+                    "aesthetic quality",
+                ],
+            )
+            report_checks = list(report.get("checks") or [])
+            for report_check in report_checks:
+                check_id = str(report_check.get("check_id", ""))
+                if any(token in check_id for token in (
+                    "semantic", "style", "aesthetic", "visual_quality",
+                )):
+                    report_check["level"] = "warning"
+            from figure_tools.validation.summary import summarize_checks
+            summary = summarize_checks(report_checks)
+            report["summary"] = summary
+            semantic_checks = [
+                item for item in report_checks
+                if any(token in str(item.get("check_id", "")) for token in (
+                    "semantic", "component", "object", "count", "structure",
+                ))
+            ]
+            style_checks = [
+                item for item in report_checks
+                if any(token in str(item.get("check_id", "")) for token in (
+                    "style", "aesthetic", "visual_quality",
+                ))
+            ]
+            semantic_failures = sum(
+                item.get("status") == "fail" for item in semantic_checks
+            )
+            semantic_passes = sum(
+                item.get("status") == "pass" for item in semantic_checks
+            )
+            style_failures = sum(
+                item.get("status") == "fail" for item in style_checks
+            )
+            style_score = max(
+                (float(item.get("confidence", 0.0)) for item in style_checks),
+                default=0.0,
+            )
+            rank = (
+                1 if summary.get("blocking") else 0,
+                int(summary.get("errors", 0)),
+                semantic_failures,
+                -semantic_passes,
+                style_failures,
+                -style_score,
+                int(summary.get("warnings", 0)),
+                -int(summary.get("passed", 0)),
+            )
+            candidates.append((rank, meta, report, candidate_path))
+            records.append({
+                "candidate": index,
+                "path": str(candidate_path),
+                "content_hash": meta["content_hash"],
+                "blocking": bool(summary.get("blocking")),
+                "errors": int(summary.get("errors", 0)),
+                "warnings": int(summary.get("warnings", 0)),
+                "passed": int(summary.get("passed", 0)),
+                "semantic_failures": semantic_failures,
+                "semantic_passes": semantic_passes,
+                "style_failures": style_failures,
+                "style_score": style_score,
+            })
+        selected_index, selected = min(
+            enumerate(candidates, start=1), key=lambda item: item[1][0]
+        )
+        _rank, meta, report, selected_path = selected
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(selected_path, output_path)
+        selected_meta = copy.deepcopy(meta)
+        selected_meta["path"] = str(output_path)
+        selected_meta["content_hash"] = hash_file(output_path)
+        self.store.commit_json(
+            f"validation/candidate_selection/{asset_id}.json",
+            {
+                "schema_version": "1.0",
+                "asset_id": asset_id,
+                "selected_candidate": selected_index,
+                "selection_policy": "authoritative-gates-then-quality",
+                "candidates": records,
+            },
+        )
+        return selected_meta, report
+
+    def _placement_bbox(self, asset_id: str, plan: dict, panel: dict) -> list[float]:
+        asset = next(
+            (
+                item for item in plan.get("assets", [])
+                if item.get("asset_id") == asset_id
+            ),
+            None,
+        )
+        if not asset or not asset.get("bbox"):
+            return list(panel["bbox"])
+        return resolve_asset_bbox(asset, panel)
+
     def _render_labels(self, plan, manifest_assets, export_target: str) -> list[dict]:
         text_placements: list[dict] = []
+        profile = get_publication_profile(
+            str(self.request.get("publication_profile") or "general")
+        )
         for i, label in enumerate(self.request.get("labels", [])):
             asset_id = label["element_id"]
+            font_size = (
+                float(profile.get("panel_label_pt", 9))
+                if label.get("kind", "label") == "label"
+                else float((profile.get("ordinary_text_pt") or [7, 9])[-1])
+            )
             svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
             if not svg_path.is_file():
                 canvas = SvgCanvas(width=200, height=40)
-                canvas.text(2, 16, label["content"], font_size=12, fill="#000000")
+                canvas.text(
+                    2, 16, label["content"], font_size=font_size, fill="#000000"
+                )
                 svg = normalize_svg_bytes(
                     canvas.to_string().encode("utf-8"), export_target=export_target
                 ).decode("utf-8")
@@ -462,7 +590,7 @@ class FigureExecution:
                     "x": panel["bbox"][0] + 0.02,
                     "y": panel["bbox"][1] + 0.02,
                     "text": label["content"],
-                    "font_size": 9,
+                    "font_size": font_size,
                     "element_id": asset_id,
                     "kind": label.get("kind", "label"),
                     "panel_id": panel["panel_id"],
@@ -498,6 +626,7 @@ class FigureExecution:
             "path": meta["path"], "content_hash": meta["content_hash"],
             "generation": {"model": meta["model"], "parameters": meta["parameters"]},
             "prompt_hash": meta["prompt_hash"],
+            "condition_hash": meta.get("condition_hash"),
             "reference_hashes": meta["reference_hashes"],
             "pixel_dimensions": meta["pixel_dimensions"],
             "transparent": meta["transparent"],

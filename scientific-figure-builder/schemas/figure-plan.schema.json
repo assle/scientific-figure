@@ -89,6 +89,11 @@
         "content_hash": {"type": "string", "minLength": 1}
       }
     },
+    "figure_graph_ref": {"$ref": "#/$defs/artifactRef"},
+    "solved_layout_ref": {"$ref": "#/$defs/artifactRef"},
+    "blueprint_ref": {"$ref": "#/$defs/artifactRef"},
+    "structure_questions_ref": {"$ref": "#/$defs/artifactRef"},
+    "generation_conditions_ref": {"$ref": "#/$defs/artifactRef"},
     "delivery": {
       "type": "object",
       "additionalProperties": false,
@@ -100,9 +105,19 @@
     },
     "language": {"type": "string", "enum": ["zh", "en"]},
     "style": {"type": "string", "minLength": 1},
+    "publication_profile": {"type": "string", "minLength": 1},
     "approval": { "$ref": "#/$defs/approval" }
   },
   "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact", "content_hash"],
+      "properties": {
+        "artifact": {"type": "string", "minLength": 1},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
     "bbox": {
       "type": "array",
       "minItems": 4,
@@ -142,6 +157,7 @@
         },
         "panel_id": {"type": "string", "minLength": 1},
         "bbox": {"$ref": "#/$defs/bbox"},
+        "bbox_space": {"type": "string", "enum": ["canvas", "panel"]},
         "physical_size": {
           "type": "array",
           "minItems": 2,

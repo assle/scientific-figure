@@ -196,7 +196,7 @@ class GuiController(QObject):
             canonical = {**base, "type": provider_type}
         anthropic_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["anthropic"]
         openai_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["openai"]
-        return {
+        view = {
             "id": provider_id,
             "type": provider_type,
             "base_url": str(canonical.get("base_url", "")),
@@ -221,6 +221,10 @@ class GuiController(QObject):
             )),
             "api_key": str(base.get("api_key", "")),
         }
+        for field, default in openai_defaults.items():
+            if isinstance(default, bool):
+                view[field] = bool(canonical.get(field, default))
+        return view
 
     def _mark_dirty(self) -> None:
         if not self._dirty:
@@ -262,7 +266,11 @@ class GuiController(QObject):
 
     @Slot(str, bool)
     def updateProviderBool(self, field: str, value: bool) -> None:  # noqa: N802
-        if self._selected_provider and field == "supports_image_edit":
+        allowed = {
+            name for name, default in PROVIDER_TYPE_FIELD_DEFAULTS["openai"].items()
+            if isinstance(default, bool)
+        }
+        if self._selected_provider and field in allowed:
             if bool(self._provider_view(self._selected_provider).get(field, False)) == bool(value):
                 return
             self._provider_drafts.setdefault(self._selected_provider, {})[field] = bool(value)

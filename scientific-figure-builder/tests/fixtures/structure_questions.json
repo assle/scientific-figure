@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "figure_id": "mechanism",
+  "questions": [
+    {
+      "question_id": "component-existence",
+      "level": "component",
+      "question": "Are all required components present?",
+      "expected": ["receptor"],
+      "critical": true
+    }
+  ]
+}

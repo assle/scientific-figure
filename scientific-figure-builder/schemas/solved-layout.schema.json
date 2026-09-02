@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/solved-layout.schema.json",
+  "title": "Solved Figure Layout",
+  "description": "Deterministic node placements, port-bound connectors, and conflicts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "figure_id", "canvas", "panels", "nodes", "connectors", "groups", "labels", "conflicts"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "figure_id": {"type": "string", "minLength": 1},
+    "canvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["aspect_ratio", "width", "height"],
+      "properties": {
+        "aspect_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["node_id", "node_type", "asset_id", "panel_id", "bbox"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "node_type": {"type": "string", "minLength": 1},
+          "asset_id": {"type": "string", "minLength": 1},
+          "panel_id": {"type": "string", "minLength": 1},
+          "z_order": {"type": "integer"},
+          "bbox": {"$ref": "#/$defs/bbox"}
+        }
+      }
+    },
+    "panels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["panel_id", "bbox"],
+        "properties": {
+          "panel_id": {"type": "string", "minLength": 1},
+          "bbox": {"$ref": "#/$defs/bbox"}
+        }
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edge_id", "source_port", "target_port", "direction", "semantic_type", "source", "target"],
+        "properties": {
+          "edge_id": {"type": "string", "minLength": 1},
+          "source_port": {"type": "string", "minLength": 1},
+          "target_port": {"type": "string", "minLength": 1},
+          "direction": {"type": "string", "enum": ["forward", "reverse", "bidirectional"]},
+          "semantic_type": {"type": "string", "minLength": 1},
+          "source": {"$ref": "#/$defs/point"},
+          "target": {"$ref": "#/$defs/point"},
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "items": {"$ref": "#/$defs/point"}
+          }
+        }
+      }
+    },
+    "groups": {"type": "array", "items": {"type": "object"}},
+    "labels": {"type": "array", "items": {"type": "object"}},
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "element_ids", "detail"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 1},
+          "element_ids": {"type": "array", "items": {"type": "string"}},
+          "detail": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "point": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    }
+  }
+}

@@ -179,6 +179,27 @@ def test_generate_cache_hit_no_second_call(tmp_path: Path):
     assert out1.read_bytes() == out2.read_bytes()
 
 
+def test_generate_transmits_reference_roles_through_transport_seam(tmp_path: Path):
+    transport = MockProviderTransport()
+    client, _, _ = _client(tmp_path, transport=transport)
+    reference = tmp_path / "style.png"
+    _save_png(reference)
+
+    client.generate_image_asset(
+        "red circle",
+        {},
+        output_path=tmp_path / "asset.png",
+        reference_hashes=["sha256:style"],
+        reference_paths=[str(reference)],
+        reference_descriptors=[{"role": "style", "strength": 0.75}],
+    )
+
+    assert transport.requests[-1]["payload"]["references"] == [
+        {"role": "style", "strength": 0.75}
+    ]
+    assert transport.requests[-1]["image_paths"] == [str(reference)]
+
+
 def test_generate_respects_budget(tmp_path: Path):
     client, _, _ = _client(tmp_path)
     out = tmp_path / "a.png"
@@ -295,6 +316,29 @@ def test_edit_produces_child_with_parent(tmp_path: Path):
     assert out.is_file()
     assert meta["parent_asset_id"] == "asset-1"
     assert meta["reference_hashes"] == [hash_file(parent)]
+
+
+def test_edit_includes_mask_in_cache_identity_and_transport(tmp_path: Path):
+    from figure_tools.provenance import hash_file
+
+    transport = MockProviderTransport()
+    client, _, _ = _client(tmp_path, transport=transport)
+    parent = tmp_path / "parent.png"
+    mask = tmp_path / "mask.png"
+    _save_rgba(parent)
+    _save_rgba(mask)
+
+    meta = client.edit_image_asset(
+        parent,
+        "fix receptor",
+        {},
+        output_path=tmp_path / "edited.png",
+        parent_asset_id="asset-1",
+        mask_path=mask,
+    )
+
+    assert meta["reference_hashes"] == [hash_file(parent), hash_file(mask)]
+    assert transport.requests[-1]["image_paths"] == [str(parent), str(mask)]
 
 
 def test_edit_reuses_generation_model_when_override_is_absent(tmp_path: Path):

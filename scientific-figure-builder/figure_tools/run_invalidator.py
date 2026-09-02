@@ -32,6 +32,24 @@ _EXECUTION_PATHS = (
     "exports",
 )
 
+_LAYOUT_DERIVED_PATHS = (
+    "plans/layout_wireframe.svg",
+    "plans/solved_layout.json",
+    "plans/figure_blueprint.svg",
+)
+
+_GRAPH_DERIVED_PATHS = (
+    "plans/figure_graph.json",
+    "plans/structure_questions.json",
+    *_LAYOUT_DERIVED_PATHS,
+)
+
+_PLANNING_DERIVED_PATHS = (
+    "plans/layout_analysis.json",
+    *_GRAPH_DERIVED_PATHS,
+    "plans/generation_conditions.json",
+)
+
 _EXECUTION_STEPS = ("execution", "review_and_repair", "export")
 _EXECUTION_ARTIFACTS = (
     "execution_result",
@@ -52,8 +70,7 @@ class RunInvalidator:
         return self.apply(InvalidationPlan(
             removed_paths=(
                 "plans/figure_plan.json",
-                "plans/layout_wireframe.svg",
-                "plans/layout_analysis.json",
+                *_PLANNING_DERIVED_PATHS,
                 *_EXECUTION_PATHS,
             ),
             cleared_steps=("planning", "planning_approval", *_EXECUTION_STEPS),
@@ -66,8 +83,7 @@ class RunInvalidator:
                 "plans/figure_brief.json",
                 "plans/request.json",
                 "plans/figure_plan.json",
-                "plans/layout_wireframe.svg",
-                "plans/layout_analysis.json",
+                *_PLANNING_DERIVED_PATHS,
                 *_EXECUTION_PATHS,
             ),
             cleared_steps=(
@@ -82,8 +98,7 @@ class RunInvalidator:
         current_plan: Mapping[str, Any],
     ) -> InvalidationPlan:
         removed = [
-            "plans/layout_wireframe.svg",
-            "plans/layout_analysis.json",
+            *_PLANNING_DERIVED_PATHS,
             "plans/execution_result.json",
             "plans/repair_plan.json",
             "plans/export_result.json",
@@ -161,6 +176,10 @@ class RunInvalidator:
                 paths.extend((f"plots/{asset_id}", "plans/layout_analysis.json"))
             elif route == "svg":
                 paths.append(f"vectors/{asset_id}.svg")
+            elif route == "layout_patch":
+                paths.extend(_LAYOUT_DERIVED_PATHS)
+            elif route == "connector_patch":
+                paths.extend(_GRAPH_DERIVED_PATHS)
             elif route != "image_edit":
                 raise ValueError(f"unknown repair route: {route}")
         return self.apply(InvalidationPlan(

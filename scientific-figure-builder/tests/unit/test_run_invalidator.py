@@ -14,6 +14,11 @@ ARTIFACTS = (
     "plans/figure_plan.json",
     "plans/layout_wireframe.svg",
     "plans/layout_analysis.json",
+    "plans/figure_graph.json",
+    "plans/solved_layout.json",
+    "plans/figure_blueprint.svg",
+    "plans/structure_questions.json",
+    "plans/generation_conditions.json",
     "plans/execution_result.json",
     "plans/repair_plan.json",
     "plans/export_result.json",
@@ -85,6 +90,8 @@ def test_figure_plan_change_preserves_the_new_plan_and_invalidates_derived_outpu
 
     assert (tmp_path / "plans/figure_plan.json").exists()
     assert not (tmp_path / "plans/layout_analysis.json").exists()
+    assert not (tmp_path / "plans/figure_graph.json").exists()
+    assert not (tmp_path / "plans/generation_conditions.json").exists()
     assert (tmp_path / "plots/plot-a/plot.png").exists()
     assert (tmp_path / "vectors/label-a.svg").exists()
     assert (tmp_path / "assets/raster-a.png").exists()
@@ -129,6 +136,7 @@ def test_repair_invalidation_is_route_specific(
     assert (tmp_path / retained).exists()
     assert not (tmp_path / "validation/final.json").exists()
     assert not (tmp_path / "exports/figure.png").exists()
+
     assert state.step_status("execution") == "pending"
 
 
@@ -150,3 +158,24 @@ def test_assembly_change_and_export_rerun_have_narrow_downstream_plans(tmp_path)
 
     assert (tmp_path / "validation/final.json").exists()
     assert not (tmp_path / "exports/figure.png").exists()
+
+
+def test_layout_and_connector_patches_preserve_unrelated_planning_artifacts(tmp_path):
+    layout_dir = tmp_path / "layout"
+    layout_invalidator, _ = _prepared_run(layout_dir)
+
+    layout_invalidator.after_repairs({"raster-a": "layout_patch"})
+
+    assert (layout_dir / "plans/figure_graph.json").exists()
+    assert (layout_dir / "plans/structure_questions.json").exists()
+    assert (layout_dir / "plans/generation_conditions.json").exists()
+    assert not (layout_dir / "plans/solved_layout.json").exists()
+
+    connector_dir = tmp_path / "connector"
+    connector_invalidator, _ = _prepared_run(connector_dir)
+
+    connector_invalidator.after_repairs({"raster-a": "connector_patch"})
+
+    assert not (connector_dir / "plans/figure_graph.json").exists()
+    assert not (connector_dir / "plans/structure_questions.json").exists()
+    assert (connector_dir / "plans/generation_conditions.json").exists()

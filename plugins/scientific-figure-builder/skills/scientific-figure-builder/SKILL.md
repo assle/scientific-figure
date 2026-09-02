@@ -27,18 +27,18 @@ between phases.
 
 - Intake must resolve output target (`general` or `ppt`), physical width, text
   language, and style before Planning can start.
-- Planning must produce a Figure plan and wireframe and wait for approval before
-  paid execution unless the user explicitly selected `auto_execute`.
+- Planning must produce a Figure plan, Figure Graph, Solved layout, editable
+  blueprint, structure questions, and Generation Conditions before paid work.
+  Wait for approval unless the user explicitly selected `auto_execute`.
 - Data plots, axes, exact numbers, equations, labels, and final composition
   come from deterministic Python/SVG/local assembly.
 - Image-generation models produce only isolated, non-quantitative raster
   assets; image editing is allowed only for eligible raster repairs.
+- Provider features such as references, masks, structure control, native alpha,
+  seeds, and candidate batches must be explicitly declared capabilities;
+  unsupported controls fail instead of being silently ignored.
 - Deterministic validation findings are authoritative. Export remains blocked
   by blocking findings unless the user explicitly chooses force export and
   provides an audit reason.
 - Keep raw CSV/Excel/JSON data local by default and disclose every upload before
   a network operation.
-
-For route-specific details and the run artifact contract, see
-`references/routing-rules.md`, `references/workflow-details.md`, and
-`references/output-contract.md`.

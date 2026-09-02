@@ -54,5 +54,4 @@ def test_skill_md_body_is_nonempty_and_concise() -> None:
     _, body = _parse_frontmatter(SKILL_MD.read_text(encoding="utf-8"))
     stripped = body.strip()
     assert len(stripped) > 0, "SKILL.md body is empty"
-    # Plan section 6: keep SKILL.md concise. Detail belongs in references/.
-    assert len(stripped) <= 6000, "SKILL.md body exceeds concise budget; move detail to references/"
+    assert len(stripped) <= 6000, "SKILL.md body exceeds the concise Skill budget"

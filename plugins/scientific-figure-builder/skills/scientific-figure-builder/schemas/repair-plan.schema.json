@@ -49,6 +49,10 @@
         "properties": {
           "asset_id": {"type": "string", "minLength": 1},
           "route": {"type": "string", "enum": ["python", "svg", "image_edit"]},
+          "operation": {
+            "type": "string",
+            "enum": ["layout_patch", "connector_patch", "vector_patch", "raster_edit"]
+          },
           "action": {"type": "string", "minLength": 1},
           "source_check": {"type": "string", "minLength": 1},
           "status": {"type": "string", "enum": ["pending", "completed", "failed"]}

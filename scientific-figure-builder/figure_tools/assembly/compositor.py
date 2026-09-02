@@ -9,7 +9,7 @@ projects every source element onto the final canvas (plan section 9).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import matplotlib
 
@@ -17,6 +17,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.image import imread  # noqa: E402
+from matplotlib.patches import Rectangle  # noqa: E402
 
 from figure_tools.export.exporters import save_figure  # noqa: E402
 from figure_tools.validation.extractors.assembly import (  # noqa: E402
@@ -39,13 +40,15 @@ def compose_assets(
     canvas_mm: tuple[float, float],
     dpi: int = 300,
     text_placements: list[dict[str, Any]] | None = None,
+    connectors: list[dict[str, Any]] | None = None,
+    groups: list[dict[str, Any]] | None = None,
     source_layouts: dict[str, str | Path] | None = None,
     export_target: str | None = None,
 ) -> dict[str, Any]:
     export_target = resolve_export_target(export_target or "general")
     w_mm, h_mm = canvas_mm
     fig = plt.figure(figsize=(w_mm / 25.4, h_mm / 25.4), dpi=dpi)
-    ax = fig.add_axes([0, 0, 1, 1])
+    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
@@ -54,9 +57,25 @@ def compose_assets(
         img = imread(p["path"])
         x, y, bw, bh = p["bbox"]
         # Plan bbox y origin is top; matplotlib extent y origin is bottom.
-        extent = [x, x + bw, 1 - (y + bh), 1 - y]
+        extent = (x, x + bw, 1 - (y + bh), 1 - y)
         ax.imshow(img, extent=extent, aspect="auto",
                   zorder=p.get("z_order", 0), interpolation="nearest")
+
+    for group in groups or []:
+        if not group.get("bbox"):
+            continue
+        x, y, width, height = group["bbox"]
+        rectangle = Rectangle(
+            (x, 1 - y - height),
+            width,
+            height,
+            fill=False,
+            edgecolor="#777777",
+            linewidth=0.75,
+            linestyle="--",
+            zorder=group.get("z_order", 0),
+        )
+        ax.add_patch(rectangle)
 
     # Track composed text artists so their real bboxes can be extracted after
     # the figure is drawn (plan section 9.3).
@@ -68,10 +87,32 @@ def compose_assets(
                          ha="left", va="top", zorder=100, clip_on=False)
         text_artists.append((t, artist))
 
+    for connector in connectors or []:
+        points = connector.get("points") or [
+            connector["source"], connector["target"]
+        ]
+        if len(points) > 2:
+            ax.plot(
+                [point[0] for point in points[:-1]],
+                [1 - point[1] for point in points[:-1]],
+                color="#333333",
+                linewidth=0.75,
+                zorder=90,
+            )
+        source_x, source_y = points[-2]
+        target_x, target_y = points[-1]
+        ax.annotate(
+            "",
+            xy=(target_x, 1 - target_y),
+            xytext=(source_x, 1 - source_y),
+            arrowprops={"arrowstyle": "->", "color": "#333333", "linewidth": 0.75},
+            zorder=90,
+        )
+
     canvas_w, canvas_h = fig.canvas.get_width_height()
     try:
         fig.canvas.draw()
-        renderer = fig.canvas.get_renderer()
+        renderer = cast(Any, fig.canvas).get_renderer()
     except Exception:  # noqa: BLE001
         renderer = None
 
@@ -92,6 +133,47 @@ def compose_assets(
             z_order=int(p.get("z_order", 0)),
         ))
 
+    for group in groups or []:
+        if not group.get("bbox"):
+            continue
+        x, y, width, height = group["bbox"]
+        elements.append(LayoutElement(
+            element_id=f"group:{group.get('group_id', len(elements))}",
+            element_type="group",
+            bbox=PixelBBox(
+                x * canvas_w,
+                y * canvas_h,
+                (x + width) * canvas_w,
+                (y + height) * canvas_h,
+            ),
+            source="assembly",
+            z_order=int(group.get("z_order", 0)),
+            metadata={
+                "node_ids": list(group.get("node_ids", [])),
+            },
+        ))
+
+    for connector in connectors or []:
+        source_x, source_y = connector["source"]
+        target_x, target_y = connector["target"]
+        x1 = min(source_x, target_x) * canvas_w
+        x2 = max(source_x, target_x) * canvas_w
+        y1 = min(source_y, target_y) * canvas_h
+        y2 = max(source_y, target_y) * canvas_h
+        elements.append(LayoutElement(
+            element_id=f"edge:{connector['edge_id']}",
+            element_type="connector",
+            bbox=PixelBBox(x1, y1, x2, y2),
+            source="assembly",
+            z_order=90,
+            metadata={
+                "source_port": connector["source_port"],
+                "target_port": connector["target_port"],
+                "direction": connector.get("direction", "forward"),
+                "semantic_type": connector.get("semantic_type", "relation"),
+            },
+        ))
+
     # Project source layout elements onto the final canvas.
     source_manifests = load_source_manifests(source_layouts)
     placement_by_id = {p.get("asset_id"): p for p in placements if p.get("asset_id")}
@@ -107,7 +189,11 @@ def compose_assets(
     for t, artist in text_artists:
         element_id = t.get("element_id") or f"text_{len(elements)}"
         kind = t.get("kind", "text")
-        element_type = "panel_label" if kind == "label" else "text"
+        element_type = (
+            "panel_label" if kind == "label"
+            else "equation" if kind == "equation"
+            else "text"
+        )
         el = text_artist_element(artist, int(canvas_h), element_id,
                                  t.get("panel_id"), element_type, renderer)
         if el is not None:
@@ -123,7 +209,7 @@ def compose_assets(
     )
 
     try:
-        files = save_figure(fig, output_dir, basename="figure",
+        files = save_figure(fig, Path(output_dir), basename="figure",
                             formats=("png", "svg", "pdf"), dpi=dpi,
                             export_target=export_target)
     finally:

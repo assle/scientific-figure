@@ -468,6 +468,41 @@ ApplicationWindow {
                                     checked: appController.selectedProvider.supports_image_edit || false
                                     onToggled: appController.updateProviderBool("supports_image_edit", checked)
                                 }
+                                Switch {
+                                    text: "支持生成参考图"
+                                    checked: appController.selectedProvider.supports_reference_image || false
+                                    onToggled: appController.updateProviderBool("supports_reference_image", checked)
+                                }
+                                Switch {
+                                    text: "支持多参考图"
+                                    checked: appController.selectedProvider.supports_multi_reference || false
+                                    onToggled: appController.updateProviderBool("supports_multi_reference", checked)
+                                }
+                                Switch {
+                                    text: "支持遮罩编辑"
+                                    checked: appController.selectedProvider.supports_mask_edit || false
+                                    onToggled: appController.updateProviderBool("supports_mask_edit", checked)
+                                }
+                                Switch {
+                                    text: "支持结构控制"
+                                    checked: appController.selectedProvider.supports_structure_control || false
+                                    onToggled: appController.updateProviderBool("supports_structure_control", checked)
+                                }
+                                Switch {
+                                    text: "支持原生透明通道"
+                                    checked: appController.selectedProvider.supports_native_alpha || false
+                                    onToggled: appController.updateProviderBool("supports_native_alpha", checked)
+                                }
+                                Switch {
+                                    text: "支持固定 Seed"
+                                    checked: appController.selectedProvider.supports_seed || false
+                                    onToggled: appController.updateProviderBool("supports_seed", checked)
+                                }
+                                Switch {
+                                    text: "支持批量候选"
+                                    checked: appController.selectedProvider.supports_candidate_batch || false
+                                    onToggled: appController.updateProviderBool("supports_candidate_batch", checked)
+                                }
                                 Text {
                                     Layout.fillWidth: true
                                     text: "仅在 Provider 明确支持基于参考图编辑图片时开启。"

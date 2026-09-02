@@ -42,6 +42,18 @@ _Avoid_: product version, release version
 
 ## Planning
 
+**Figure Graph**:
+The versioned scientific structure of a figure: addressable nodes, named ports, typed directed edges, groups, labels, and layout constraints.
+_Avoid_: scene graph, asset list, flowchart
+
+**Solved layout**:
+The normalized node placements and port-bound connector geometry derived from one Figure Graph for a specific canvas.
+_Avoid_: panel layout, bounding-box list, wireframe
+
+**Publication profile**:
+A named contract for physical dimensions, final typography, line widths, accessibility, vector editability, and export constraints for a publication target.
+_Avoid_: Style Bible, journal style prompt, export target
+
 **Required clarification**:
 A question that must be answered before rendering, generation, assembly, or export can begin: output target, figure width, text language, or style.
 _Avoid_: pending question, optional preference, user input requirement
@@ -62,10 +74,14 @@ implementations directly.
 
 **Figure Execution Module**:
 The deterministic production module that accepts an approved Figure plan and
-prepares plan-derived artifacts, executes Generation routes, assembles and
-validates the figure, and publishes approved exports. It does not clarify
-requirements, approve plans, or advance Lifecycle phases.
+executes Generation routes, assembles and validates the figure, and publishes
+approved exports. It does not derive Planning artifacts, clarify requirements,
+approve plans, or advance Lifecycle phases.
 _Avoid_: workflow, Orchestrator, Lifecycle authority
+
+**Figure Planning Module**:
+The deterministic Planning module that derives the Figure Graph, Solved layout, blueprint, structure questions, Style Bible, and Generation Conditions before plan approval.
+_Avoid_: Figure Execution Module, Phase worker, layout helper
 
 **Run Store**:
 The concrete run-directory module that owns directory structure, atomic JSON
@@ -98,6 +114,18 @@ _Avoid_: user request, Figure plan, prompt
 **Generation route**:
 The production path for a planned figure element within Execution, such as Python, SVG, image generation, image editing, or assembly.
 _Avoid_: Lifecycle phase, Model route, workflow stage
+
+**Generation Condition**:
+The canonical Provider-neutral instructions, parameters, references, controls, and publication constraints that identify one raster-asset generation request.
+_Avoid_: prompt, Provider payload, image settings
+
+**Reference role**:
+The declared purpose of an image condition: content, style, structure, parent, or mask.
+_Avoid_: reference type, uploaded image, image prompt
+
+**Style group**:
+A set of raster assets that intentionally share one approved style anchor and visual language within a figure.
+_Avoid_: panel group, asset group, style preset
 
 ## Model routing
 
@@ -306,6 +334,10 @@ _Avoid_: final figure bundle, composed input
 **Degraded validation**:
 Validation that explicitly reports which geometry checks were skipped because the evidence required to run them is unavailable.
 _Avoid_: fallback validation, weak check, assumed pass
+
+**Repair patch**:
+A localized, reversible change to layout, a connector, a vector element, or a masked raster region.
+_Avoid_: regeneration, manual edit, repair route
 
 ## Export
 

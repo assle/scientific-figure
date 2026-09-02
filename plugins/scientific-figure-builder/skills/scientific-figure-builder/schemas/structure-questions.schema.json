@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/structure-questions.schema.json",
+  "title": "Structure Questions",
+  "description": "Critical graph-derived questions for component, topology, phase, and global semantics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "figure_id", "questions"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "figure_id": {"type": "string", "minLength": 1},
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question_id", "level", "question", "expected", "critical"],
+        "properties": {
+          "question_id": {"type": "string", "minLength": 1},
+          "level": {"type": "string", "enum": ["component", "local_topology", "phase", "global_semantics"]},
+          "question": {"type": "string", "minLength": 1},
+          "expected": {},
+          "critical": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

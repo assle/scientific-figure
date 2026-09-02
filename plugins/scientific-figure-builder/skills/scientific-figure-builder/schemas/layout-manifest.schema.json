@@ -43,7 +43,9 @@
               "title",
               "legend",
               "colorbar",
-              "equation"
+              "equation",
+              "connector",
+              "group"
             ]
           },
           "bbox": {

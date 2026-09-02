@@ -49,11 +49,15 @@ Calling Agent
   → 生命周期 MCP 服务（2 个公开工具）
     → Orchestrator（唯一生命周期权威）
       ├─ Phase worker → 受 Schema 约束的 Phase artifact
+      ├─ Figure Planning Module
+      │  └─ Figure Graph → Solved layout → SVG 蓝图
+      │     → Generation Conditions + 结构问题
       ├─ Run Store + Run Invalidator → 原子持久化与精确复用
       └─ Figure Execution Module
          ├─ Python 数据图与 SVG/文字
-         ├─ Provider 路由的 raster 素材
-         └─ 组装 → 验证 → 导出
+         ├─ Provider 路由的隔离 raster 素材
+         └─ 确定性连接线/分组 → 组装
+            → 分层验证 → 局部修复 → 导出
 ```
 
 MCP 服务是轻量 stdio Adapter，不会把绘图、Provider、验证或导出 helper 作为隐藏产品
@@ -63,7 +67,8 @@ MCP 服务是轻量 stdio Adapter，不会把绘图、Provider、验证或导出
 | 深模块 | 拥有的知识与行为 |
 |---|---|
 | Orchestrator | Intake、Planning、Execution、Review and repair、Export、审批、重试、恢复和 Export gate |
-| Figure Execution Module | 已批准计划的派生产物、Generation route、组装、验证输入和发布 |
+| Figure Planning Module | 审批前的 Figure Graph、Solved layout、可编辑蓝图、结构问题、Style Bible 和 Generation Conditions |
+| Figure Execution Module | 已批准的 Generation route、风格锚点条件、候选选择、确定性组装、验证输入和发布 |
 | Run Store | Run 目录结构、原子 JSON commit、Schema 校验、统一 hash、Artifact reference 和安全加载 |
 | Run Invalidator | Figure brief/plan 变化、Repair、Assembly 变化与仅重新导出时的精确下游失效 |
 | Provider Configuration | Provider type、旧协议迁移、类型字段、Model role catalog、继承和 Route compatibility |
@@ -78,9 +83,10 @@ Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配�
 | | 能力 | 结果 |
 |---|---|---|
 | 📊 | 确定性数据图 | 从 CSV 生成折线、散点、柱状、热图、误差棒和多面板图 |
+| 🧠 | 结构优先机制图 | 可寻址节点、命名端口、有类型有向边、分组、约束和可编辑 SVG 蓝图 |
 | 🎨 | Provider-neutral AI 素材 | 带来源记录和自动去背景的隔离非量化视觉素材 |
-| 🧩 | 精确拼装 | 使用 Python/SVG 组合面板、标签、箭头和公式 |
-| ✅ | 两层验证 | 权威几何规则 + 多模态模型语义补充 |
+| 🧩 | 精确组装与修复 | 资产级布局、端口绑定连接线、精确矢量标签/公式、遮罩编辑和回滚 |
+| ✅ | 分层验证 | 最终图结构恢复、源文本/OCR/公式精确检查、几何、Publication profile 和多模态复核 |
 | 📦 | 出版导出 | PNG、SVG、PDF，以及可选的 PowerPoint 友好 SVG/PPTX |
 
 <p align="center">
@@ -114,6 +120,8 @@ Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配�
 </table>
 
 - **Providers**：负责端点增删改、接口方言和可选能力。
+- **Provider capabilities**：显式声明参考图、多参考图、遮罩编辑、结构控制、
+  原生透明、Seed 和批量候选；不支持的控制会明确失败，不会被静默忽略。
 - **凭据与连接**：把 API Key 保存到操作系统 Keyring；只有用户点击时才测试当前未保存草稿。
 - **模型路由**：把可选 `phase_reasoning`、`vision_analyze`、`image_generate`、
   可选 `image_edit` 和 `vision_validate` 绑定到 Provider 与固定模型 ID。
@@ -160,21 +168,40 @@ scientific-figure install-gui
 导出 PNG、SVG 和 PDF，并让 SVG 适合在 PowerPoint 中继续编辑。
 ```
 
-生命周期 Orchestrator 会先把导出目标、图宽、语言和风格记录到 Figure brief，
-再在付费生成前展示 Figure plan 与线框图。Calling Agent 根据 Orchestrator 返回的
-下一动作继续，不再手动串联底层工具。每次响应都包含当前 Lifecycle phase、状态、
-下一动作和规范化 Artifact reference。
+生命周期 Orchestrator 会先把导出目标、图宽、语言、风格和可选 Publication profile
+记录到 Figure brief。Planning 随后在任何付费工作前派生 Figure Graph、Solved layout、
+可编辑 SVG 蓝图、结构问题和 Generation Conditions。Calling Agent 根据 Orchestrator
+返回的下一动作继续，不再手动串联底层工具。每次响应都包含当前 Lifecycle phase、
+状态、下一动作和规范化 Artifact reference。
 
 ## 核心规则
 
 ```text
 精确数据、坐标轴、公式、文字和几何结构  →  Python / SVG
+科学节点、阶段、端口和有向流向          →  Figure Graph + SVG
 隔离的非量化视觉素材                    →  配置的图像 Provider
 最终组合与导出                          →  本地确定性流水线
 ```
 
 AI 图像模型不会绘制数据图或最终复合图。确定性检查保持权威；视觉模型可以补充
 语义说明，但不能把几何检查的失败改成通过。
+
+## 机制图工作流
+
+```text
+科学意图
+  → Figure Graph（节点、端口、有类型边、分组、约束）
+  → Solved layout + 可编辑 SVG 蓝图
+  → Provider-neutral Generation Conditions
+  → 隔离 raster 素材 + 确定性文字/连接线
+  → 最终图结构/OCR/出版规范验证
+  → 布局、连接线、矢量或遮罩 raster patch，并支持回滚
+```
+
+显式提供资产 bbox 时，坐标相对于所属 panel；仅修改布局会复用已经付费生成的 raster。
+相关资产按 Style group 使用经过审批的风格锚点。参考图会标记为 content、style、
+structure、parent 或 mask，并在上传前重新校验 hash。`nature_research` Publication
+profile 提供 Nature 尺寸、字体、可编辑矢量和配色可访问性检查，`general` 仍是默认值。
 
 ## 最小 Provider 配置
 
@@ -191,6 +218,13 @@ providers:
     base_url: https://images.example.com/v1
     key_env: IMAGE_API_KEY
     supports_image_edit: true
+    supports_reference_image: true
+    supports_multi_reference: true
+    supports_mask_edit: true
+    supports_structure_control: false
+    supports_native_alpha: false
+    supports_seed: true
+    supports_candidate_batch: false
 
 models:
   vision_analyze:  {provider: vision_provider, model: vision-model}
@@ -199,6 +233,7 @@ models:
 ```
 
 省略 `image_edit` 即表示继承 `image_generate`。Keyring 凭据优先于环境变量回退。
+只声明 Provider 实际支持的 capability；它们是兼容性契约，不是提示信息。
 
 ## 导出目标
 
@@ -343,8 +378,6 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 延伸阅读：
 
 - [领域术语](./CONTEXT.md)
-- [Provider 接口](./scientific-figure-builder/references/provider-interfaces.md)
-- [工作流细节](./scientific-figure-builder/references/workflow-details.md)
 - [安全策略](./SECURITY.md)
 - [GUI 跨平台验证](./docs/verification/gui-platforms.md)
 - [OpenAI 插件架构](https://developers.openai.com/plugins/concepts/plugins)
