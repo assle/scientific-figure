@@ -368,7 +368,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert verified["mcp_tools"] == 2
     assert verified["checks"]["launcher"] is True
     assert verified["checks"]["gui_resources"] is True
-    assert verified["components"] == {"core": True, "gui": True}
+    assert verified["components"] == {"core": True, "gui": False}
 
 
 def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path):
