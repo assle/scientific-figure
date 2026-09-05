@@ -40,12 +40,12 @@ def _apply_filter(df: pd.DataFrame, flt: dict) -> pd.DataFrame:
     value = flt["value"]
     if op == "between":
         lo, hi = value
-        return df[(df[col] >= lo) & (df[col] <= hi)]
+        return df.loc[(df[col] >= lo) & (df[col] <= hi), :]
     if op == "in":
-        return df[df[col].isin(value)]
+        return df.loc[df[col].isin(value), :]
     if op not in _FILTER_OPS:
         raise ValueError(f"unsupported filter op: {op}")
-    return df[_FILTER_OPS[op](df[col], value)]
+    return df.loc[_FILTER_OPS[op](df[col], value), :]
 
 
 def _apply_transformation(df: pd.DataFrame, tr: dict) -> pd.DataFrame:

@@ -6,7 +6,7 @@ authors:
   - family-names: "Lu"
     given-names: "Zhendong"
     alias: "assle"
-version: 0.3.0
+version: 0.3.1
 repository-code: "https://github.com/assle/scientific-figure"
 url: "https://github.com/assle/scientific-figure"
 license: MIT

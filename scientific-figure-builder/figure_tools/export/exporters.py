@@ -48,7 +48,7 @@ def export_png(fig, path: Path, dpi: int = 300) -> Path:
 def export_svg(fig, path: Path, export_target: str = "general") -> Path:
     export_target = resolve_export_target(export_target)
     buf = io.BytesIO()
-    rc = {"svg.hashsalt": HASHSALT}
+    rc = matplotlib.RcParams({"svg.hashsalt": HASHSALT})
     if export_target == "ppt":
         rc["svg.fonttype"] = "none"
         rc["font.family"] = PPT_FONT_FAMILY

@@ -28,7 +28,7 @@ def latex_to_svg(latex: str, font_size: int = 10,
     fig.text(0.0, 0.0, f"${latex}$", fontsize=font_size)
     buf = io.BytesIO()
     try:
-        rc = {"svg.hashsalt": HASHSALT, "text.usetex": False}
+        rc = matplotlib.RcParams({"svg.hashsalt": HASHSALT, "text.usetex": False})
         if export_target == "ppt":
             # Equations stay as vector shapes rather than editable text.
             rc["svg.fonttype"] = "path"

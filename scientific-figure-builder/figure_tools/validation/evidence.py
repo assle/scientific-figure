@@ -65,7 +65,7 @@ def generate_evidence(
             crop = Image.alpha_composite(crop, overlay)
         new_w = max(1, int(crop.width * scale))
         new_h = max(1, int(crop.height * scale))
-        crop = crop.resize((new_w, new_h), Image.NEAREST)
+        crop = crop.resize((new_w, new_h), Image.Resampling.NEAREST)
 
         cid = c.get("check_id", "issue")
         n = counters.get(cid, 0) + 1

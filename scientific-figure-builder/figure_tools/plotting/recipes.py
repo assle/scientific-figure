@@ -8,6 +8,7 @@ figures.
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 from figure_tools._resources import template_path
 from figure_tools.plotting.spec import PlotSpec
@@ -51,7 +52,7 @@ def _err_column_for(spec: PlotSpec, series_id: str) -> str | None:
     return None
 
 
-def render_line(spec: PlotSpec, df) -> plt.Figure:
+def render_line(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         fig, ax = plt.subplots(figsize=spec.figure["dimensions"])
         for s in spec.series:
@@ -66,7 +67,7 @@ def render_line(spec: PlotSpec, df) -> plt.Figure:
     return fig
 
 
-def render_scatter(spec: PlotSpec, df) -> plt.Figure:
+def render_scatter(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         fig, ax = plt.subplots(figsize=spec.figure["dimensions"])
         for s in spec.series:
@@ -76,7 +77,7 @@ def render_scatter(spec: PlotSpec, df) -> plt.Figure:
     return fig
 
 
-def render_bar(spec: PlotSpec, df) -> plt.Figure:
+def render_bar(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         fig, ax = plt.subplots(figsize=spec.figure["dimensions"])
         for s in spec.series:
@@ -86,16 +87,20 @@ def render_bar(spec: PlotSpec, df) -> plt.Figure:
     return fig
 
 
-def render_heatmap(spec: PlotSpec, df) -> plt.Figure:
+def render_heatmap(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         fig, ax = plt.subplots(figsize=spec.figure["dimensions"])
         s = spec.series[0]
         x_col, y_col = s["x"], s["y"]
         if "z" in df.columns:
             pivot = df.pivot_table(index=y_col, columns=x_col, values="z")
-            ax.imshow(pivot.values, aspect="auto",
-                      extent=[pivot.columns.min(), pivot.columns.max(),
-                              pivot.index.min(), pivot.index.max()],
+            extent = (
+                float(pivot.columns.min()),
+                float(pivot.columns.max()),
+                float(pivot.index.min()),
+                float(pivot.index.max()),
+            )
+            ax.imshow(pivot.values, aspect="auto", extent=extent,
                       origin="lower")
         else:
             ax.hist2d(df[x_col], df[y_col], bins=10)
@@ -107,7 +112,7 @@ def render_heatmap(spec: PlotSpec, df) -> plt.Figure:
     return fig
 
 
-def render_error_bar(spec: PlotSpec, df) -> plt.Figure:
+def render_error_bar(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         fig, ax = plt.subplots(figsize=spec.figure["dimensions"])
         for s in spec.series:
@@ -120,7 +125,7 @@ def render_error_bar(spec: PlotSpec, df) -> plt.Figure:
     return fig
 
 
-def render_multipanel(spec: PlotSpec, df) -> plt.Figure:
+def render_multipanel(spec: PlotSpec, df) -> Figure:
     with plt.style.context(_style()):
         n = max(1, len(spec.series))
         fig, axes = plt.subplots(1, n, figsize=(spec.figure["dimensions"][0] * n,
@@ -152,7 +157,7 @@ RECIPES = {
 }
 
 
-def render(spec: PlotSpec, df) -> plt.Figure:
+def render(spec: PlotSpec, df) -> Figure:
     try:
         recipe = RECIPES[spec.chart_type]
     except KeyError:

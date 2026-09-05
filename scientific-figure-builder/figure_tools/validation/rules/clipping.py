@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from figure_tools.validation.models import LayoutManifest
+from figure_tools.validation.models import LayoutManifest, PixelBBox
 from figure_tools.validation.rules.geometry import contains
 from figure_tools.validation.rules.overlap import TEXT_TYPES
 from figure_tools.validation.summary import make_check
 
 
-def _panels(manifest: LayoutManifest) -> dict[str, object]:
+def _panels(manifest: LayoutManifest) -> dict[str, PixelBBox]:
     """Map panel_id -> PixelBBox. Prefer explicit ``panel`` elements (the
     allocated region) and fall back to ``data_region`` (the plotting box)."""
-    panels: dict[str, object] = {}
-    fallback: dict[str, object] = {}
+    panels: dict[str, PixelBBox] = {}
+    fallback: dict[str, PixelBBox] = {}
     for e in manifest.elements:
         if e.element_type == "panel" and e.panel_id:
             panels[e.panel_id] = e.bbox

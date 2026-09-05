@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
   <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
-  <img src="https://img.shields.io/badge/版本-0.3.0--dev-orange" alt="开发版本 0.3.0">
+  <img src="https://img.shields.io/badge/版本-0.3.1-blue" alt="版本 0.3.1">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -28,7 +28,7 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-当前 `0.3.0` 开发版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
+当前 `0.3.1` 版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
 核心运行时。原生插件负责 Codex 中 Workflow Skill 与 MCP 声明的发现、启停、升级和
 移除；独立核心运行时让确定性执行与可选配置应用不进入宿主插件缓存。
 
@@ -341,8 +341,8 @@ Scientific Figure Builder 遵循[语义化版本](https://semver.org/lang/zh-CN/
 scientific-figure --version
 ```
 
-项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`0.3.0` 是当前开发版本，
-`v0.1.0` 仍是最新固定发布。只有仓库同时存在不可变的 `vX.Y.Z` Git tag 和对应
+项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`v0.3.1` 是最新固定发布。
+只有仓库同时存在不可变的 `vX.Y.Z` Git tag 和对应
 GitHub Release 时，才构成一次正式发布。Schema、Phase prompt 和绘图 recipe 各自
 拥有独立兼容性版本，不随 Product version 自动变化。
 

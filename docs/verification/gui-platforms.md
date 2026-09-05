@@ -31,6 +31,8 @@ gate.
 component bundle, and the delivery cleanup modules.
 The opt-in Microsoft PowerPoint desktop E2E test also passed on macOS after
 PowerPoint was activated, including SVG insertion, conversion, and ungrouping.
+The repository-wide Pyright check completed with **0 errors, 0 warnings, and 0
+information diagnostics** (`uvx pyright --pythonpath .venv/bin/python figure_tools install`).
 
 ## Platform matrix
 

@@ -44,7 +44,7 @@ def render_plot(
 
         files = save_figure(
             fig,
-            output_dir,
+            out_dir,
             basename=basename,
             formats=tuple(spec.export["formats"]),
             dpi=spec.export.get("dpi", 300),

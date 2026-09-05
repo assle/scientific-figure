@@ -267,7 +267,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     assert global_paths.config_file == config_home / "opencode" / "opencode.json"
     assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
     assert global_paths.runtime_dir == (
-        tmp_path / "install" / "global" / "runtimes" / "0.3.0"
+        tmp_path / "install" / "global" / "runtimes" / "0.3.1"
     )
 
     project = tmp_path / "project"
@@ -358,7 +358,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert not (paths.skill_dir / "references").exists()
     assert paths.command_file.is_file()
     assert result.mcp_tools == 2
-    assert result.active_runtime["version"] == "0.3.0"
+    assert result.active_runtime["version"] == "0.3.1"
     assert result.launcher.is_file()
     assert LAUNCHER_MARKER in result.launcher.read_text(encoding="utf-8")
 

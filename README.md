@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible plots">
-  <img src="https://img.shields.io/badge/version-0.3.0--dev-orange" alt="Development version 0.3.0">
+  <img src="https://img.shields.io/badge/version-0.3.1-blue" alt="Version 0.3.1">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -30,7 +30,7 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The current `0.3.0` development line ships a **Native Codex plugin**, an OpenCode
+The current `0.3.1` release ships a **Native Codex plugin**, an OpenCode
 Agent integration, and an independently versioned Core runtime. The Native plugin
 owns Codex discovery, enablement, upgrade, and removal of its Workflow Skill and
 MCP declaration; the separate Core runtime keeps deterministic execution and the
@@ -387,8 +387,7 @@ scientific-figure --version
 ```
 
 The project is currently pre-1.0, so `0.y.z` releases may still refine public
-interfaces. `0.3.0` is the current development version; `v0.1.0` remains the
-latest fixed release. A release exists only when the repository has an immutable
+interfaces. `v0.3.1` is the latest fixed release. A release exists only when the repository has an immutable
 `vX.Y.Z` Git tag and a matching GitHub Release. Schema, prompt, and recipe
 versions are compatibility contracts of their own and do not follow the Product
 version automatically.

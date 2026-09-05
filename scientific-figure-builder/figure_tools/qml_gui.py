@@ -22,7 +22,13 @@ def run_gui(argv: list[str] | None = None) -> int:
         )
         return 1
     QQuickStyle.setStyle("Basic")
-    app = QGuiApplication.instance() or QGuiApplication(list(argv or []))
+    instance = QGuiApplication.instance()
+    if instance is None:
+        app = QGuiApplication(list(argv or []))
+    elif isinstance(instance, QGuiApplication):
+        app = instance
+    else:
+        raise RuntimeError("an incompatible QCoreApplication already exists")
     app.setApplicationName("Scientific Figure Builder")
     app.setOrganizationName("Scientific Figure Builder")
 
