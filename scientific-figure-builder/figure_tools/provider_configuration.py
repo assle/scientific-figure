@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from typing import Any
 
 
-PROVIDER_TYPES = ("openai", "anthropic")
+PROVIDER_TYPES = ("openai", "anthropic", "dashscope")
+LLM_PROVIDER_TYPES = ("openai", "anthropic")
+IMAGE_PROVIDER_TYPES = ("openai", "dashscope")
 LEGACY_PROVIDER_PROTOCOLS = {
     "responses": "openai",
     "anthropic": "anthropic",
@@ -30,6 +32,16 @@ PROVIDER_TYPE_FIELD_DEFAULTS: dict[str, Mapping[str, Any]] = {
         "auth_scheme": "x-api-key",
         "messages_path": "/messages",
         "anthropic_version": "2023-06-01",
+    },
+    "dashscope": {
+        "supports_image_edit": False,
+        "supports_reference_image": False,
+        "supports_multi_reference": False,
+        "supports_mask_edit": False,
+        "supports_structure_control": False,
+        "supports_native_alpha": False,
+        "supports_seed": False,
+        "supports_candidate_batch": False,
     },
 }
 PROVIDER_TYPE_SPECIFIC_FIELDS = frozenset(
@@ -51,17 +63,17 @@ class ModelRoleDefinition:
 
 
 MODEL_ROLE_CATALOG = (
-    ModelRoleDefinition("phase_reasoning", PROVIDER_TYPES, optional=True),
-    ModelRoleDefinition("image_generate", ("openai",)),
+    ModelRoleDefinition("phase_reasoning", LLM_PROVIDER_TYPES, optional=True),
+    ModelRoleDefinition("image_generate", IMAGE_PROVIDER_TYPES),
     ModelRoleDefinition(
         "image_edit",
-        ("openai",),
+        IMAGE_PROVIDER_TYPES,
         optional=True,
         inherits_from="image_generate",
         required_capability="supports_image_edit",
     ),
-    ModelRoleDefinition("vision_analyze", PROVIDER_TYPES),
-    ModelRoleDefinition("vision_validate", PROVIDER_TYPES),
+    ModelRoleDefinition("vision_analyze", LLM_PROVIDER_TYPES),
+    ModelRoleDefinition("vision_validate", LLM_PROVIDER_TYPES),
 )
 MODEL_ROLES = tuple(item.role for item in MODEL_ROLE_CATALOG)
 ROLE_ENV_VARS = {
@@ -85,6 +97,19 @@ def normalize_provider_base_url(value: Any) -> str:
     for operation_path in _OPERATION_PATHS:
         if root.endswith(operation_path):
             return root[: -len(operation_path)]
+    return root
+
+
+def normalize_dashscope_base_url(value: Any) -> str:
+    """Return the native DashScope API root from a documented endpoint form."""
+
+    root = str(value or "").strip().rstrip("/")
+    compatible_suffix = "/compatible-mode/v1"
+    if root.endswith(compatible_suffix):
+        return root[: -len(compatible_suffix)] + "/api/v1"
+    operation_suffix = "/services/aigc/multimodal-generation/generation"
+    if root.endswith(operation_suffix):
+        return root[: -len(operation_suffix)]
     return root
 
 
@@ -112,7 +137,12 @@ def normalize_provider(
     provider_type = str(provider_type)
     normalized["type"] = provider_type
     if "base_url" in normalized:
-        normalized["base_url"] = normalize_provider_base_url(normalized["base_url"])
+        normalizer = (
+            normalize_dashscope_base_url
+            if provider_type == "dashscope"
+            else normalize_provider_base_url
+        )
+        normalized["base_url"] = normalizer(normalized["base_url"])
     defaults = PROVIDER_TYPE_FIELD_DEFAULTS[provider_type]
     for name in PROVIDER_TYPE_SPECIFIC_FIELDS - defaults.keys():
         normalized.pop(name, None)
@@ -123,6 +153,14 @@ def normalize_provider(
             if isinstance(default, bool)
             else ("" if value is None else str(value).strip()) or default
         )
+    if provider_type == "dashscope":
+        for name in (
+            "supports_mask_edit",
+            "supports_structure_control",
+            "supports_native_alpha",
+            "supports_candidate_batch",
+        ):
+            normalized[name] = False
     return normalized
 
 
@@ -337,6 +375,8 @@ __all__ = [
     "LEGACY_PROVIDER_PROTOCOLS",
     "MODEL_ROLE_CATALOG",
     "MODEL_ROLES",
+    "IMAGE_PROVIDER_TYPES",
+    "LLM_PROVIDER_TYPES",
     "PLACEHOLDER_MODEL",
     "PROVIDER_TYPES",
     "PROVIDER_ID_PATTERN",
@@ -351,6 +391,7 @@ __all__ = [
     "migrate_legacy_provider",
     "normalize_provider",
     "normalize_provider_base_url",
+    "normalize_dashscope_base_url",
     "normalize_provider_id",
     "normalize_providers",
     "route_compatibility",

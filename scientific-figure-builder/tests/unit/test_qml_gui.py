@@ -41,7 +41,7 @@ def _load_qml(controller: GuiController):
 
 def _activate_provider_type(root: QObject, provider_type: str) -> None:
     selector = root.findChild(QObject, "providerTypeSelector")
-    index = {"openai": 0, "anthropic": 1}[provider_type]
+    index = {"openai": 0, "anthropic": 1, "dashscope": 2}[provider_type]
     assert selector.setProperty("currentIndex", index)
     assert QMetaObject.invokeMethod(
         selector,
@@ -111,6 +111,29 @@ def test_qml_controller_saves_only_anthropic_provider_fields(tmp_path: Path, app
     assert provider["messages_path"] == "/v1/messages"
     assert provider["anthropic_version"] == "2024-01-01"
     assert "supports_image_edit" not in provider
+
+
+def test_qml_controller_saves_dashscope_native_provider(tmp_path: Path, app):
+    controller, editor, _store = _controller(tmp_path)
+    assert controller.addProvider("dashscope_images") is True
+    controller.updateProvider("type", "dashscope")
+    controller.updateProvider(
+        "base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+    controller.updateProvider("key_env", "DASHSCOPE_API_KEY")
+    controller.updateProviderBool("supports_image_edit", True)
+    controller.updateProviderBool("supports_reference_image", True)
+    controller.updateProviderBool("supports_multi_reference", True)
+    controller.updateProviderBool("supports_seed", True)
+    controller.updateProviderBool("supports_candidate_batch", True)
+
+    assert controller.save() is True
+
+    provider = editor.load().providers["dashscope_images"]
+    assert provider["type"] == "dashscope"
+    assert provider["base_url"] == "https://dashscope.aliyuncs.com/api/v1"
+    assert provider["supports_image_edit"] is True
+    assert provider["supports_multi_reference"] is True
 
 
 def test_qml_controller_updates_references_on_rename(tmp_path: Path, app):
@@ -244,11 +267,32 @@ def test_qml_switches_from_anthropic_to_openai_provider_fields(tmp_path: Path, a
     del engine
 
 
+def test_qml_switches_to_dashscope_image_provider_fields(tmp_path: Path, app):
+    controller, _editor, _store = _controller(tmp_path)
+    assert controller.addProvider("demo_provider") is True
+    controller.setPage("providers")
+    engine, root = _load_qml(controller)
+
+    _activate_provider_type(root, "dashscope")
+    app.processEvents()
+
+    assert controller.selectedProvider["type"] == "dashscope"
+    assert root.findChild(QObject, "anthropicAdvancedSettings").property(
+        "visible"
+    ) is False
+    assert root.findChild(QObject, "openaiCapabilities").property(
+        "visible"
+    ) is True
+    root.setProperty("visible", False)
+    del engine
+
+
 @pytest.mark.parametrize(
     ("provider_type", "anthropic_visible", "openai_visible"),
     [
         ("openai", False, True),
         ("anthropic", True, False),
+        ("dashscope", False, True),
     ],
 )
 def test_qml_reopens_with_fields_for_saved_provider_type(

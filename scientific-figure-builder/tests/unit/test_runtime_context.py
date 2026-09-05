@@ -62,6 +62,7 @@ def test_factory_loads_effective_configuration_once_and_injects_live_dependencie
     assert context.client.cache is context.cache
     assert context.cache.cache_dir == tmp_path / "cache"
     assert context.state.budget["phase_reasoning"] == 10
+    assert context.state.budget["reference_analysis"] == 4
     assert context.state.budget["generation"] == 5
     assert context.client.clean_error("failed sk-secret") == "failed ***REDACTED***"
 

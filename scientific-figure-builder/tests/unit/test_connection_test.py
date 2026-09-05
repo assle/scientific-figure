@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import json
 from pathlib import Path
 import threading
 
@@ -52,6 +54,21 @@ def test_service_does_not_call_transport_until_run_and_prefers_vision():
     assert result.model == "vision-model"
     assert len(calls) == 1
     assert calls[0][2] == [] or not Path(calls[0][2][0]).exists()
+
+
+def test_service_prefers_vision_over_phase_reasoning_for_shared_provider():
+    calls = []
+    models = {
+        **MODELS,
+        "phase_reasoning": {"provider": "demo", "model": "reasoning-model"},
+    }
+
+    result = _service(calls).run(
+        "demo", PROVIDER, models, temporary_credential="temporary-key",
+    )
+
+    assert result.role == "reference_analysis"
+    assert result.model == "vision-model"
 
 
 def test_service_uses_fake_transport_and_cleans_minimum_image(tmp_path: Path):
@@ -113,3 +130,50 @@ def test_service_honors_cancellation_before_network_call():
             temporary_credential="temporary-key", cancel_event=event,
         )
     assert calls == []
+
+
+def test_service_tests_dashscope_generation_through_native_transport():
+    requests = []
+
+    class Response:
+        def __init__(self, body):
+            raw = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
+            self.body = io.BytesIO(raw)
+
+        def read(self):
+            return self.body.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def opener(request, timeout=None):
+        requests.append(request)
+        if request.full_url == "https://results.example/connection.png":
+            return Response(b"image-bytes")
+        return Response({
+            "output": {"choices": [{"message": {"content": [{
+                "image": "https://results.example/connection.png",
+            }]}}]},
+        })
+
+    service = ConnectionTestService(opener=opener)
+    result = service.run(
+        "images",
+        {
+            "type": "dashscope",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "key_env": "DASHSCOPE_API_KEY",
+        },
+        {"image_generate": {"provider": "images", "model": "qwen-image-3.0"}},
+        temporary_credential="temporary-key",
+    )
+
+    assert result.role == "generation"
+    body = json.loads(requests[0].data)
+    assert body["parameters"]["size"] == "1024*1024"
+    assert body["input"]["messages"][0]["content"] == [
+        {"text": "connection test; return one minimal asset"},
+    ]

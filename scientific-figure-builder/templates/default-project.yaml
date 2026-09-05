@@ -70,6 +70,9 @@ models:
 # - type: anthropic -> vision (reference analysis / validation) via /messages.
 #   It does NOT support image generation. Credentials are referenced by
 #   environment-variable name and never stored here.
+# - type: dashscope -> image generation/editing through the native synchronous
+#   multimodal-generation API. A compatible-mode base URL is normalized to its
+#   matching /api/v1 root. It does NOT support reasoning or vision roles.
 providers:
   openai:
     type: openai

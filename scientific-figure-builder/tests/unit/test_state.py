@@ -55,6 +55,7 @@ def test_record_call_and_budget_enforcement() -> None:
     assert state.calls_remaining("reference_analysis") == 0
     with pytest.raises(BudgetExceeded):
         state.record_call("reference_analysis")  # over budget
+    assert state.calls_used("reference_analysis") == 1
 
 
 def test_transient_and_quality_retries_separate() -> None:

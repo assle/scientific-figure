@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible plots">
-  <img src="https://img.shields.io/badge/version-0.2.0--dev-orange" alt="Development version 0.2.0">
+  <img src="https://img.shields.io/badge/version-0.3.0--dev-orange" alt="Development version 0.3.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -30,7 +30,7 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The current `0.2.0` development line ships a **Native Codex plugin**, an OpenCode
+The current `0.3.0` development line ships a **Native Codex plugin**, an OpenCode
 Agent integration, and an independently versioned Core runtime. The Native plugin
 owns Codex discovery, enablement, upgrade, and removal of its Workflow Skill and
 MCP declaration; the separate Core runtime keeps deterministic execution and the
@@ -128,6 +128,8 @@ opening or saving configuration.
 </table>
 
 - **Providers** handles endpoint CRUD, wire dialects, and optional capabilities.
+  Supported types are OpenAI Compatible, Anthropic Compatible, and image-only
+  DashScope Native.
 - **Provider capabilities** explicitly declare reference images, multiple
   references, mask editing, structure control, native alpha, seeds, and
   candidate batches; unsupported controls fail instead of being ignored.
@@ -136,6 +138,10 @@ opening or saving configuration.
 - **Model routes** bind optional `phase_reasoning`, `vision_analyze`,
   `image_generate`, optional `image_edit`, and `vision_validate` to a Provider
   and fixed model identifier.
+- **Structured output expansion** starts OpenAI-compatible structured responses
+  with a modest allowance and doubles it only after an explicit
+  `incomplete/max_output_tokens` result. Every repeat consumes the Model role's
+  call budget and is recorded in Run State audit data.
 - With no Provider configured, route selectors stay disabled and lead directly to
   the Provider creation flow.
 
@@ -236,13 +242,13 @@ providers:
     base_url: https://api.example.com/v1
     key_env: VISION_API_KEY
   image_provider:
-    type: openai
-    base_url: https://images.example.com/v1
-    key_env: IMAGE_API_KEY
+    type: dashscope
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    key_env: DASHSCOPE_API_KEY
     supports_image_edit: true
     supports_reference_image: true
     supports_multi_reference: true
-    supports_mask_edit: true
+    supports_mask_edit: false
     supports_structure_control: false
     supports_native_alpha: false
     supports_seed: true
@@ -257,6 +263,10 @@ models:
 Omit `image_edit` to inherit `image_generate`. A Keyring-backed credential takes
 precedence over its environment fallback. Declare only capabilities the Provider
 actually supports; they are compatibility contracts, not hints.
+DashScope Native normalizes the shown `compatible-mode/v1` URL to the matching
+regional `/api/v1` native root and immediately downloads results from the
+synchronous multimodal-generation API. It cannot serve `phase_reasoning`,
+`vision_analyze`, or `vision_validate`.
 
 ## Export targets
 
@@ -377,7 +387,7 @@ scientific-figure --version
 ```
 
 The project is currently pre-1.0, so `0.y.z` releases may still refine public
-interfaces. `0.2.0` is the current development version; `v0.1.0` remains the
+interfaces. `0.3.0` is the current development version; `v0.1.0` remains the
 latest fixed release. A release exists only when the repository has an immutable
 `vX.Y.Z` Git tag and a matching GitHub Release. Schema, prompt, and recipe
 versions are compatibility contracts of their own and do not follow the Product
@@ -425,6 +435,7 @@ Useful references:
 - [Domain vocabulary](./CONTEXT.md)
 - [Security policy](./SECURITY.md)
 - [GUI platform verification](./docs/verification/gui-platforms.md)
+- [Real Provider regression verification](./docs/verification/provider-regression.md)
 - [OpenAI plugin architecture](https://developers.openai.com/plugins/concepts/plugins)
 - [OpenAI plugin packaging](https://developers.openai.com/plugins/build/plugins)
 

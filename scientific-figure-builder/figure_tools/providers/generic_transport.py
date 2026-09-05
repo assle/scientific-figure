@@ -17,6 +17,7 @@ from figure_tools.providers.auth import (
     provider_key_env,
 )
 from figure_tools.provider_configuration import (
+    normalize_dashscope_base_url,
     normalize_provider_base_url,
     normalize_providers,
 )
@@ -26,6 +27,7 @@ from figure_tools.providers.contracts import (
     vision_prompt,
 )
 from figure_tools.providers.transport import (
+    IncompleteStructuredResponseError,
     ProviderError,
     ProviderTransport,
     RateLimitError,
@@ -34,6 +36,9 @@ from figure_tools.providers.transport import (
 )
 
 HTTP_OPENER = Callable[..., Any]
+INITIAL_STRUCTURED_OUTPUT_TOKENS = 4_096
+
+
 def _data_url(path: str | Path) -> str:
     path = Path(path)
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -77,6 +82,178 @@ def _request_json(
     except (urllib.error.URLError, TimeoutError) as exc:
         detail = redactor.redact_text(str(exc)) if redactor else str(exc)
         raise RateLimitError(f"transient provider error: {detail}") from exc
+
+
+def _request_bytes(
+    url: str,
+    *,
+    opener: HTTP_OPENER,
+    redactor: SecretRedactor | None = None,
+    timeout: float = 30.0,
+) -> bytes:
+    request = urllib.request.Request(url, headers={"Accept": "image/*"}, method="GET")
+    try:
+        try:
+            response_context = opener(request, timeout=timeout)
+        except TypeError as exc:
+            if "timeout" not in str(exc):
+                raise
+            response_context = opener(request)
+        with response_context as response:
+            return response.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        if redactor is not None:
+            detail = redactor.redact_text(detail)
+        if exc.code == 429 or exc.code >= 500:
+            raise RateLimitError(f"provider HTTP {exc.code}: {detail}") from exc
+        raise ProviderError(f"provider HTTP {exc.code}: {detail}") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        detail = redactor.redact_text(str(exc)) if redactor else str(exc)
+        raise RateLimitError(f"transient provider error: {detail}") from exc
+
+
+class DashScopeNativeTransport(ProviderTransport):
+    """DashScope native multimodal image generation and editing transport."""
+
+    _GENERATION_PATH = "/services/aigc/multimodal-generation/generation"
+
+    def __init__(self, name: str, config: dict[str, Any], *,
+                 credential: str | ResolvedCredential | None = None,
+                 credential_resolver: CredentialResolver | None = None,
+                 redactor: SecretRedactor | None = None,
+                 timeout: float = 30.0,
+                 opener: HTTP_OPENER = urllib.request.urlopen) -> None:
+        self.name = name
+        self.base_url = normalize_dashscope_base_url(config.get("base_url"))
+        self.key_env = provider_key_env(name, config)
+        if credential is None:
+            resolver = credential_resolver or CredentialResolver()
+            credential = resolver.resolve(name, config)
+        api_key = credential.value if isinstance(credential, ResolvedCredential) else credential
+        self.supports_image_edit = bool(config.get("supports_image_edit", False))
+        self.supports_reference_image = bool(
+            config.get("supports_reference_image", False)
+        )
+        self.supports_multi_reference = bool(
+            config.get("supports_multi_reference", False)
+        )
+        self.supports_seed = bool(config.get("supports_seed", False))
+        self.supports_candidate_batch = bool(
+            config.get("supports_candidate_batch", False)
+        )
+        if not self.base_url:
+            raise ProviderError(f"provider {name!r} requires base_url")
+        if not api_key:
+            raise ProviderError(f"{self.key_env} is not set for provider {name!r}")
+        self.api_key = api_key
+        self.redactor = redactor or SecretRedactor([api_key] if api_key else [])
+        self.timeout = float(timeout)
+        self._opener = opener
+
+    def capabilities(self) -> dict[str, bool]:
+        return {
+            "supports_image_edit": self.supports_image_edit,
+            "supports_reference_image": self.supports_reference_image,
+            "supports_multi_reference": self.supports_multi_reference,
+            "supports_mask_edit": False,
+            "supports_structure_control": False,
+            "supports_native_alpha": False,
+            "supports_seed": self.supports_seed,
+            "supports_candidate_batch": False,
+        }
+
+    def post(
+        self,
+        role: str,
+        model: str,
+        payload: dict,
+        image_paths: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if role not in ("generation", "edits"):
+            raise ProviderError(
+                "DashScope Native providers support image generation and editing only"
+            )
+        paths = list(image_paths or [])
+        if role == "edits":
+            if not self.supports_image_edit:
+                raise ProviderError(
+                    f"provider {self.name!r} does not support reference-image "
+                    "editing; configure an image-edit provider or regenerate "
+                    "the raster asset"
+                )
+            if not paths:
+                raise ProviderError("image editing requires a parent image")
+            if len(paths) > 1:
+                raise ProviderError("DashScope Native does not support mask editing")
+        elif paths:
+            if not self.supports_reference_image:
+                raise ProviderError(
+                    f"provider {self.name!r} must declare "
+                    "supports_reference_image to use generation references"
+                )
+            if len(paths) > 1 and not self.supports_multi_reference:
+                raise ProviderError(
+                    f"provider {self.name!r} must declare "
+                    "supports_multi_reference for multiple generation references"
+                )
+            if len(paths) > 3:
+                raise ProviderError("DashScope Native accepts at most three references")
+        params = dict(payload.get("parameters") or {})
+        candidate_count = int(params.get("n", params.get("candidate_count", 1)))
+        if candidate_count > 1:
+            raise ProviderError(
+                "DashScope Native batch candidates are not consumed by the Core runtime"
+            )
+        native_params: dict[str, Any] = {}
+        for name in (
+            "prompt_extend", "prompt_extend_mode", "enable_thinking", "n",
+            "negative_prompt", "seed", "watermark",
+        ):
+            if name in params:
+                native_params[name] = params[name]
+        if "candidate_count" in params and "n" not in native_params:
+            native_params["n"] = candidate_count
+        if params.get("size"):
+            native_params["size"] = str(params["size"]).replace("x", "*")
+        body = {
+            "model": model,
+            "input": {"messages": [{
+                "role": "user",
+                "content": [
+                    *({"image": _data_url(path)} for path in paths),
+                    {"text": str(payload["prompt"])},
+                ],
+            }]},
+            "parameters": native_params,
+        }
+        response = _request_json(
+            f"{self.base_url}{self._GENERATION_PATH}",
+            method="POST",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            body=body,
+            opener=self._opener,
+            redactor=self.redactor,
+            timeout=self.timeout,
+        )
+        if response.get("code"):
+            detail = self.redactor.redact_text(str(response.get("message") or response["code"]))
+            raise ProviderError(f"provider image error: {detail}")
+        try:
+            image_url = response["output"]["choices"][0]["message"]["content"][0]["image"]
+        except (KeyError, IndexError, TypeError):
+            raise ProviderError("provider returned no image URL") from None
+        image_bytes = _request_bytes(
+            str(image_url), opener=self._opener, redactor=self.redactor,
+            timeout=self.timeout,
+        )
+        if not image_bytes:
+            raise ProviderError("provider returned an empty image")
+        return {
+            "image_bytes": image_bytes,
+            "model": model,
+            "seed": native_params.get("seed"),
+        }
 
 
 class OpenAICompatibleTransport(ProviderTransport):
@@ -154,14 +331,18 @@ class OpenAICompatibleTransport(ProviderTransport):
             "Return ONLY one JSON object matching this output shape:\n"
             f"{json.dumps(payload.get('fallback_artifact', {}), ensure_ascii=False)}"
         )
+        max_output_tokens = int(
+            payload.get("max_output_tokens", INITIAL_STRUCTURED_OUTPUT_TOKENS)
+        )
         response = self._post("/responses", {
             "model": model,
             "input": [{"role": "user", "content": [
                 {"type": "input_text", "text": prompt},
             ]}],
-            "max_output_tokens": 8192,
+            "max_output_tokens": max_output_tokens,
             "text": {"format": {"type": "json_object"}},
         })
+        _require_complete_response(response, max_output_tokens)
         return extract_json(_responses_text(response), redactor=self.redactor)
 
     def _image(
@@ -256,13 +437,30 @@ class OpenAICompatibleTransport(ProviderTransport):
             {"type": "input_image", "image_url": _data_url(path)}
             for path in image_paths
         )
+        max_output_tokens = int(
+            payload.get("max_output_tokens", INITIAL_STRUCTURED_OUTPUT_TOKENS)
+        )
         response = self._post("/responses", {
             "model": model,
             "input": [{"role": "user", "content": content}],
-            "max_output_tokens": 4096,
+            "max_output_tokens": max_output_tokens,
             "text": {"format": {"type": "json_object"}},
         })
+        _require_complete_response(response, max_output_tokens)
         return extract_json(_responses_text(response), redactor=self.redactor)
+
+
+def _require_complete_response(
+    response: dict[str, Any], attempted_max_output_tokens: int,
+) -> None:
+    if response.get("status") != "incomplete":
+        return
+    details = response.get("incomplete_details")
+    reason = details.get("reason") if isinstance(details, dict) else None
+    raise IncompleteStructuredResponseError(
+        reason=str(reason or "unknown"),
+        attempted_max_output_tokens=attempted_max_output_tokens,
+    )
 
 
 def _responses_text(response: dict[str, Any]) -> str:
@@ -462,6 +660,12 @@ class ProviderRouter(ProviderTransport):
         provider_type = provider["type"]
         if provider_type == "openai":
             transport = OpenAICompatibleTransport(
+                provider_name, provider, credential=credential,
+                redactor=self._redactor, opener=self._opener,
+                timeout=self._timeout,
+            )
+        elif provider_type == "dashscope":
+            transport = DashScopeNativeTransport(
                 provider_name, provider, credential=credential,
                 redactor=self._redactor, opener=self._opener,
                 timeout=self._timeout,

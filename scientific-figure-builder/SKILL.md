@@ -3,7 +3,7 @@ name: scientific-figure-builder
 description: Workflow Skill for the Scientific Figure Builder product. Use it to turn a scientific-figure request into a governed lifecycle, route work to deterministic plots, SVG, and configured image or multimodal providers, validate results, and export publication-ready PNG/SVG/PDF. Not a single-prompt image generator. Works with OpenCode and Codex.
 license: MIT
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
   provider: configurable
   scope: product-component
 ---

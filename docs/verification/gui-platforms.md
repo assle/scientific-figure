@@ -14,17 +14,23 @@ uv build --wheel
 
 The suite covers offscreen Qt creation, Provider CRUD, FakeSecretStore
 credential replacement/deletion, background connection testing with Fake
-Transport, launcher conflict protection, global/project install scope,
+Transport, OpenAI/Anthropic/DashScope Provider configuration, launcher conflict
+protection, global/project install scope,
 Keyring-cleanup failure retention, MCP tool verification, CLI help, and wheel
 resource import. Tests do not access a real model endpoint or system Keyring.
 
-The recorded local run on 2026-08-25 after the Qt Quick interaction fixes completed with **375
-passed, 3 skipped** (`uv run --extra gui pytest -q`). The two skipped acceptance
-tests require an explicitly configured real Provider and the optional
-PowerPoint desktop E2E test; neither is part of the no-network CI gate.
+The recorded local run on 2026-09-05 after adding the DashScope Native image
+dialect, budgeted dynamic structured-output expansion, installed-wheel resource
+verification, and edge-connected background removal completed with **572
+passed, 3 skipped** (`SCIENTIFIC_FIGURE_CONFIG=/dev/null .venv/bin/pytest -q`).
+The skipped acceptance tests require explicitly configured real Providers and
+the optional PowerPoint desktop E2E test; neither is part of the no-network CI
+gate.
 `uv build --wheel` also completed successfully and the wheel contained
 `figure_tools/resources/icon.svg`, the QML
 component bundle, and the delivery cleanup modules.
+The opt-in Microsoft PowerPoint desktop E2E test also passed on macOS after
+PowerPoint was activated, including SVG insertion, conversion, and ungrouping.
 
 ## Platform matrix
 

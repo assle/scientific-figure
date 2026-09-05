@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 
 # The MCP server's default per-run paid-call budget (plan section 12).
-BUDGET = {"reference_analysis": 1, "generation": 5, "edits": 2,
+BUDGET = {"reference_analysis": 4, "generation": 5, "edits": 2,
           "validations": 5, "final_validation": 1}
 
 

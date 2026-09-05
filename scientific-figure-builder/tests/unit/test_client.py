@@ -5,6 +5,7 @@ All tests use MockProviderTransport - no paid calls (plan section 15, Phase 4).
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from figure_tools.providers.auth import (
     redact,
 )
 from figure_tools.providers.client import ProviderClient
+from figure_tools.providers.generic_transport import OpenAICompatibleTransport
 from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.state import BudgetExceeded, Cache, RunState
 
@@ -237,6 +239,107 @@ def test_analyze_respects_budget(tmp_path: Path):
     client.analyze_reference_figure(ref, force=True)
     with pytest.raises(BudgetExceeded):
         client.analyze_reference_figure(ref, force=True)
+
+
+def test_reference_analysis_expands_output_budget_until_response_is_complete(tmp_path: Path):
+    output_limits = []
+
+    class Response:
+        def __init__(self, body):
+            self.body = io.BytesIO(json.dumps(body).encode("utf-8"))
+
+        def read(self):
+            return self.body.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def opener(request):
+        limit = int(json.loads(request.data)["max_output_tokens"])
+        output_limits.append(limit)
+        if limit < 16384:
+            return Response({
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "output_text": '{"panels":[',
+            })
+        return Response({
+            "status": "completed",
+            "output_text": json.dumps({
+                "panels": [], "objects": [], "text_candidates": [],
+                "confidence": 0.9, "uncertainties": [],
+            }),
+        })
+
+    transport = OpenAICompatibleTransport(
+        "vision",
+        {"type": "openai", "base_url": "https://models.example/v1"},
+        credential="test-key",
+        opener=opener,
+    )
+    state = RunState("run-1", budget={"reference_analysis": 3})
+    client, _, _ = _client(tmp_path, transport=transport, state=state)
+    reference = tmp_path / "reference.png"
+    _save_png(reference)
+
+    result = client.analyze_reference_figure(reference, force=True)
+
+    assert result["confidence"] == 0.9
+    assert output_limits == [4096, 8192, 16384]
+    assert state.calls_used("reference_analysis") == 3
+    expansions = [
+        event for event in state.to_dict()["audit_log"]
+        if event["event"] == "structured_output_expanded"
+    ]
+    assert [event["details"]["next_max_output_tokens"] for event in expansions] == [
+        8192, 16384,
+    ]
+
+
+def test_reference_analysis_expansion_stops_before_exceeding_call_budget(tmp_path: Path):
+    requests = []
+
+    class Response:
+        def __init__(self):
+            self.body = io.BytesIO(json.dumps({
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "output_text": '{"panels":[',
+            }).encode("utf-8"))
+
+        def read(self):
+            return self.body.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def opener(request):
+        requests.append(request)
+        return Response()
+
+    transport = OpenAICompatibleTransport(
+        "vision",
+        {"type": "openai", "base_url": "https://models.example/v1"},
+        credential="test-key",
+        opener=opener,
+    )
+    state = RunState("run-1", budget={"reference_analysis": 1})
+    client, _, _ = _client(tmp_path, transport=transport, state=state)
+    reference = tmp_path / "reference.png"
+    _save_png(reference)
+
+    with pytest.raises(BudgetExceeded, match="reference_analysis"):
+        client.analyze_reference_figure(reference, force=True)
+
+    assert len(requests) == 1
+    assert state.calls_used("reference_analysis") == 1
+    assert state.to_dict()["audit_log"] == []
 
 
 # --- rate limit ----------------------------------------------------------

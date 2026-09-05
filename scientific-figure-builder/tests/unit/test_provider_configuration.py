@@ -33,7 +33,7 @@ def test_provider_configuration_is_headless_and_catalog_is_canonical():
         check=False,
     )
     assert result.returncode == 0
-    assert PROVIDER_TYPES == ("openai", "anthropic")
+    assert PROVIDER_TYPES == ("openai", "anthropic", "dashscope")
     assert tuple(item.role for item in MODEL_ROLE_CATALOG) == MODEL_ROLES
     edit = next(item for item in MODEL_ROLE_CATALOG if item.role == "image_edit")
     assert edit.inherits_from == "image_generate"
@@ -111,6 +111,50 @@ def test_route_compatibility_uses_provider_type_and_declared_capabilities():
     edit = route_compatibility("image_edit", models, providers)
     assert not edit.compatible
     assert "supports_image_edit" in edit.reason
+
+
+def test_dashscope_native_routes_only_image_generation_and_editing():
+    providers = normalize_providers({
+        "images": {
+            "type": "dashscope",
+            "base_url": "https://dashscope.aliyuncs.com/api/v1",
+            "supports_image_edit": True,
+        },
+    })
+    models = {
+        "image_generate": {"provider": "images", "model": "qwen-image-3.0"},
+        "vision_analyze": {"provider": "images", "model": "qwen-image-3.0"},
+    }
+
+    assert route_compatibility("image_generate", models, providers).compatible
+    assert route_compatibility("image_edit", models, providers).compatible
+    vision = route_compatibility("vision_analyze", models, providers)
+    assert not vision.compatible
+    assert "openai or anthropic" in vision.reason
+
+
+def test_dashscope_compatible_base_url_is_normalized_to_native_api_root():
+    provider = normalize_provider("images", {
+        "type": "dashscope",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/",
+    })
+
+    assert provider["base_url"] == "https://dashscope.aliyuncs.com/api/v1"
+
+
+def test_dashscope_normalization_disables_controls_missing_from_native_adapter():
+    provider = normalize_provider("images", {
+        "type": "dashscope",
+        "supports_mask_edit": True,
+        "supports_structure_control": True,
+        "supports_native_alpha": True,
+        "supports_candidate_batch": True,
+    })
+
+    assert provider["supports_mask_edit"] is False
+    assert provider["supports_structure_control"] is False
+    assert provider["supports_native_alpha"] is False
+    assert provider["supports_candidate_batch"] is False
 
 
 def test_openai_provider_normalizes_generation_capabilities():

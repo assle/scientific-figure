@@ -30,7 +30,7 @@ from figure_tools.state import Cache, RunState
 
 DEFAULT_BUDGET = {
     "phase_reasoning": 10,
-    "reference_analysis": 1,
+    "reference_analysis": 4,
     "generation": 5,
     "edits": 2,
     "validations": 5,

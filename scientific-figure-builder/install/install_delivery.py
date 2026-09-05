@@ -677,7 +677,19 @@ def verify_delivery(
         )
         checks["cli_help"] = help_result.returncode == 0
         resource_result = subprocess.run(
-            [str(runtime_command), "-c", "from importlib.resources import files; from figure_tools.resources_loader import read_gui_resource; read_gui_resource('icon.svg'); files('figure_tools.resources').joinpath('qml/Main.qml').read_text(encoding='utf-8')"],
+            [
+                str(runtime_command),
+                "-c",
+                (
+                    "from importlib.resources import files; "
+                    "from figure_tools.config import load_skill_defaults; "
+                    "from figure_tools.resources_loader import read_gui_resource; "
+                    "read_gui_resource('icon.svg'); "
+                    "files('figure_tools.resources').joinpath('qml/Main.qml')"
+                    ".read_text(encoding='utf-8'); "
+                    "assert load_skill_defaults().get('schema_version') == '1.0'"
+                ),
+            ],
             cwd=paths.runtime_dir, capture_output=True, text=True, timeout=15, check=False,
         )
         checks["gui_resource_import"] = resource_result.returncode == 0

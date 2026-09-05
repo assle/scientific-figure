@@ -20,6 +20,7 @@ from PIL import Image
 from figure_tools.providers.auth import SecretRedactor, sanitize_error
 from figure_tools.provenance import hash_bytes, hash_file
 from figure_tools.providers.transport import (
+    IncompleteStructuredResponseError,
     ProviderError,
     ProviderTransport,
     RateLimitError,
@@ -105,9 +106,30 @@ class ProviderClient:
     def _post(self, role: str, payload: dict, image_paths: list[str] | None = None,
               max_transient: int = 5) -> dict:
         attempt = 0
+        request_payload = dict(payload)
         while True:
             try:
-                return self.transport.post(role, self._role_model(role), payload, image_paths)
+                return self.transport.post(
+                    role, self._role_model(role), request_payload, image_paths
+                )
+            except IncompleteStructuredResponseError as exc:
+                if (
+                    exc.reason != "max_output_tokens"
+                    or self.state is None
+                    or role not in self.state.budget
+                ):
+                    raise
+                next_limit = max(
+                    exc.attempted_max_output_tokens * 2,
+                    exc.attempted_max_output_tokens + 1,
+                )
+                self._record_call(role)
+                self.state.record_audit("structured_output_expanded", {
+                    "role": role,
+                    "previous_max_output_tokens": exc.attempted_max_output_tokens,
+                    "next_max_output_tokens": next_limit,
+                })
+                request_payload["max_output_tokens"] = next_limit
             except RateLimitError:
                 attempt += 1
                 if self.state is not None:

@@ -42,11 +42,16 @@ MCP_ENTRY = {
 }
 
 
-def _stage_test_python(runtime_dir: Path, _with_gui: bool = False) -> Path:
+def _stage_test_python(runtime_dir: Path, with_gui: bool = False) -> Path:
     python = runtime_dir / ".venv" / "bin" / "python"
     python.parent.mkdir(parents=True, exist_ok=True)
+    gui_probe_status = 0 if with_gui else 1
     python.write_text(
-        "#!/bin/sh\n" f"exec {str(Path(sys.executable))!r} \"$@\"\n",
+        "#!/bin/sh\n"
+        "case \"$*\" in\n"
+        f"  *\"find_spec('PySide6')\"*) exit {gui_probe_status};;\n"
+        "esac\n"
+        f"exec {str(Path(sys.executable))!r} \"$@\"\n",
         encoding="utf-8",
     )
     python.chmod(0o755)
@@ -262,7 +267,7 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
     assert global_paths.config_file == config_home / "opencode" / "opencode.json"
     assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
     assert global_paths.runtime_dir == (
-        tmp_path / "install" / "global" / "runtimes" / "0.2.0"
+        tmp_path / "install" / "global" / "runtimes" / "0.3.0"
     )
 
     project = tmp_path / "project"
@@ -353,7 +358,7 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
     assert not (paths.skill_dir / "references").exists()
     assert paths.command_file.is_file()
     assert result.mcp_tools == 2
-    assert result.active_runtime["version"] == "0.2.0"
+    assert result.active_runtime["version"] == "0.3.0"
     assert result.launcher.is_file()
     assert LAUNCHER_MARKER in result.launcher.read_text(encoding="utf-8")
 

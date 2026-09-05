@@ -79,11 +79,12 @@ class RunState:
 
     # --- calls / budget --------------------------------------------------
     def record_call(self, role: str, count: int = 1) -> None:
-        self._calls[role] = self._calls.get(role, 0) + count
-        if role in self.budget and self._calls[role] > self.budget[role]:
+        next_count = self._calls.get(role, 0) + count
+        if role in self.budget and next_count > self.budget[role]:
             raise BudgetExceeded(
-                f"budget for {role!r} exceeded: {self._calls[role]} > {self.budget[role]}"
+                f"budget for {role!r} exceeded: {next_count} > {self.budget[role]}"
             )
+        self._calls[role] = next_count
 
     def calls_used(self, role: str) -> int:
         return self._calls.get(role, 0)

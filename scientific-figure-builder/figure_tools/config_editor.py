@@ -202,7 +202,9 @@ class GlobalConfigEditor:
             provider_type is not None
             and provider_type not in PROVIDER_TYPE_FIELD_DEFAULTS
         ):
-            raise ConfigEditorError("Provider type must be openai or anthropic")
+            raise ConfigEditorError(
+                "Provider type must be openai, anthropic, or dashscope"
+            )
         self._assert_non_secret(values)
         provider = _merge(draft.providers.get(provider_id), values)
         try:

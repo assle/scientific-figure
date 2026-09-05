@@ -3,7 +3,8 @@
 The transport layer is injectable so the client can be tested without paid
 calls. A real HTTP transport is implemented by the provider adapters in
 ``generic_transport``, which speak the OpenAI-compatible (``/responses`` +
-``/images/generations``) and Anthropic-compatible (``/messages``) dialects.
+``/images/generations``), Anthropic-compatible (``/messages``), and scoped
+DashScope Native image dialects.
 """
 
 from __future__ import annotations
@@ -45,6 +46,15 @@ class ProviderError(Exception):
 
 class RateLimitError(ProviderError):
     pass
+
+
+class IncompleteStructuredResponseError(ProviderError):
+    """A structured response stopped because its current output budget was too small."""
+
+    def __init__(self, *, reason: str, attempted_max_output_tokens: int) -> None:
+        self.reason = str(reason)
+        self.attempted_max_output_tokens = int(attempted_max_output_tokens)
+        super().__init__(f"incomplete structured response: {self.reason}")
 
 
 class ProviderTransport:

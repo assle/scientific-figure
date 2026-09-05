@@ -44,6 +44,16 @@ def test_validation_instruction_remains_concise():
     assert len(DEFAULT_VALIDATION_INSTRUCTION) < 800
 
 
+def test_reference_analysis_contract_bounds_list_sizes_for_complete_json():
+    prompt = vision_prompt("reference_analysis", {})
+
+    assert "at most 16 panels" in prompt
+    assert "at most 64 objects" in prompt
+    assert "at most 64 text candidates" in prompt
+    assert "at most 16 uncertainties" in prompt
+    assert "Keep every string concise" in prompt
+
+
 def test_validation_prompt_includes_requested_candidate_axes():
     prompt = vision_prompt("validations", {
         "checks": [

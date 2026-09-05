@@ -377,7 +377,7 @@ ApplicationWindow {
                             AppComboBox {
                                 objectName: "providerTypeSelector"
                                 Layout.fillWidth: true
-                                model: ["openai", "anthropic"]
+                                model: ["openai", "anthropic", "dashscope"]
                                 currentIndex: model.indexOf(appController.selectedProvider.type || "openai")
                                 onActivated: appController.updateProvider("type", currentText)
                             }
@@ -462,7 +462,15 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 spacing: 10
                                 visible: appController.selectedProvider.type === "openai"
-                                Text { text: "OpenAI Compatible Provider 能力"; color: theme.text; font.pixelSize: 14; font.bold: true }
+                                         || appController.selectedProvider.type === "dashscope"
+                                Text {
+                                    text: appController.selectedProvider.type === "dashscope"
+                                          ? "DashScope Native 图像能力"
+                                          : "OpenAI Compatible Provider 能力"
+                                    color: theme.text
+                                    font.pixelSize: 14
+                                    font.bold: true
+                                }
                                 Switch {
                                     text: "支持参考图编辑"
                                     checked: appController.selectedProvider.supports_image_edit || false
@@ -480,16 +488,19 @@ ApplicationWindow {
                                 }
                                 Switch {
                                     text: "支持遮罩编辑"
+                                    visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_mask_edit || false
                                     onToggled: appController.updateProviderBool("supports_mask_edit", checked)
                                 }
                                 Switch {
                                     text: "支持结构控制"
+                                    visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_structure_control || false
                                     onToggled: appController.updateProviderBool("supports_structure_control", checked)
                                 }
                                 Switch {
                                     text: "支持原生透明通道"
+                                    visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_native_alpha || false
                                     onToggled: appController.updateProviderBool("supports_native_alpha", checked)
                                 }
@@ -505,7 +516,9 @@ ApplicationWindow {
                                 }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: "仅在 Provider 明确支持基于参考图编辑图片时开启。"
+                                    text: appController.selectedProvider.type === "dashscope"
+                                          ? "Qwen Image 3.0 支持一至三张参考图；遮罩、结构控制与原生透明通道不在当前原生协议契约内。"
+                                          : "仅在 Provider 明确支持基于参考图编辑图片时开启。"
                                     color: theme.textMuted
                                     font.pixelSize: 11
                                     wrapMode: Text.Wrap

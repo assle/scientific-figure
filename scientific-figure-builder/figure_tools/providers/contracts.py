@@ -13,7 +13,9 @@ REFERENCE_ANALYSIS_INSTRUCTION = (
     '"panels" (list of {panel_id, bbox=[x,y,width,height] normalized 0-1}), '
     '"objects" (list of {label, confidence}), "text_candidates" '
     '(list of {text, confidence}), "confidence" (0-1), "uncertainties" '
-    "(list of strings)."
+    "(list of strings). Return at most 16 panels, at most 64 objects, at most "
+    "64 text candidates, and at most 16 uncertainties. Keep every string concise "
+    "and include only the highest-confidence evidence needed for reconstruction."
 )
 
 DEFAULT_VALIDATION_INSTRUCTION = (

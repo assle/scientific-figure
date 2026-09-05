@@ -23,6 +23,7 @@ from figure_tools.providers.auth import (
 )
 from figure_tools.providers.generic_transport import (
     AnthropicTransport,
+    DashScopeNativeTransport,
     OpenAICompatibleTransport,
 )
 from figure_tools.providers.transport import ProviderTransport
@@ -54,19 +55,21 @@ class ConnectionTestService:
         resolver: CredentialResolver | None = None,
         transport_factory: Callable[..., ProviderTransport] | None = None,
         timeout: float = 20.0,
+        opener: Callable[..., Any] | None = None,
     ) -> None:
         self.resolver = resolver or CredentialResolver()
         self.transport_factory = transport_factory
         self.timeout = float(timeout)
+        self.opener = opener
 
     @staticmethod
     def select_role(
         models: Mapping[str, Mapping[str, Any]], provider_id: str,
     ) -> tuple[str, str] | None:
         for route_key, internal_role in (
-            ("phase_reasoning", "phase_reasoning"),
             ("vision_analyze", "reference_analysis"),
             ("vision_validate", "validations"),
+            ("phase_reasoning", "phase_reasoning"),
             ("image_generate", "generation"),
         ):
             route = models.get(route_key)
@@ -88,16 +91,22 @@ class ConnectionTestService:
                 provider_id, provider, credential=credential,
             )
         provider_type = str(provider.get("type", ""))
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "credential": credential,
             "redactor": redactor,
             "timeout": self.timeout,
         }
+        if self.opener is not None:
+            kwargs["opener"] = self.opener
         if provider_type == "openai":
             return OpenAICompatibleTransport(provider_id, dict(provider), **kwargs)
+        if provider_type == "dashscope":
+            return DashScopeNativeTransport(provider_id, dict(provider), **kwargs)
         if provider_type == "anthropic":
             return AnthropicTransport(provider_id, dict(provider), **kwargs)
-        raise ConnectionTestError("Provider type 必须是 openai 或 anthropic")
+        raise ConnectionTestError(
+            "Provider type 必须是 openai、anthropic 或 dashscope"
+        )
 
     def run(
         self,
@@ -135,10 +144,13 @@ class ConnectionTestService:
                 image_path = Path(temp_dir) / "minimum.png"
                 image_path.write_bytes(_MINIMAL_PNG)
                 if role == "generation":
+                    parameters = {
+                        "size": "1024x1024" if provider.get("type") == "dashscope" else "1x1"
+                    }
                     response = transport.post(
                         role, model,
-                        {"prompt": "connection test; return one minimal asset", "parameters": {"size": "1x1"}},
-                        [str(image_path)],
+                        {"prompt": "connection test; return one minimal asset", "parameters": parameters},
+                        [] if provider.get("type") == "dashscope" else [str(image_path)],
                     )
                 elif role == "phase_reasoning":
                     response = transport.post(

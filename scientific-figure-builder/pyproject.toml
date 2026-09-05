@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "scientific-figure-builder"
-version = "0.2.0"
+version = "0.3.0"
 description = "Open-source scientific-figure workflow toolkit with a Skill, local MCP server, CLI, and configuration app."
 readme = "SKILL.md"
 requires-python = ">=3.11"
@@ -41,8 +41,8 @@ dev = [
 packages = ["figure_tools"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"schemas" = "scientific_figure_builder_data/schemas"
-"templates" = "scientific_figure_builder_data/templates"
+"schemas" = "figure_tools/scientific_figure_builder_data/schemas"
+"templates" = "figure_tools/scientific_figure_builder_data/templates"
 "SKILL.md" = "scientific_figure_builder_skill/SKILL.md"
 "commands" = "scientific_figure_builder_skill/commands"
 "install.sh" = "scientific_figure_builder_skill/install.sh"

@@ -158,8 +158,12 @@ The stable configuration identity used by Model routes to reference a Provider; 
 _Avoid_: Provider name, vendor name, credential ID
 
 **Provider type**:
-The wire dialect a Provider speaks: OpenAI Compatible or Anthropic Compatible.
+The wire dialect a Provider speaks: OpenAI Compatible, Anthropic Compatible, or DashScope Native. DashScope Native is limited to image-generation Model roles.
 _Avoid_: vendor, SDK, model family
+
+**DashScope Native**:
+The Provider type for DashScope's synchronous multimodal image-generation wire contract, including immediate download of its temporary result URL.
+_Avoid_: Alibaba default, OpenAI Compatible, generic DashScope SDK
 
 **Provider capability**:
 An explicitly declared optional behavior of a Provider, such as reference-image editing, beyond the guarantees of its Provider type.
@@ -172,6 +176,10 @@ _Avoid_: edit fallback, duplicate route, automatic capability
 **Route compatibility**:
 Whether a Model route's Provider type and declared Provider capabilities can fulfil its Model role.
 _Avoid_: connection status, Provider health, model availability
+
+**Structured output expansion**:
+A budget-governed repeat of an incomplete structured Model invocation with a larger output allowance, triggered only when the Provider reports that the previous allowance was exhausted.
+_Avoid_: parsing recovery, free retry, unlimited output
 
 **Provider Configuration Module**:
 The headless source of truth for Provider types, legacy migration, type-specific

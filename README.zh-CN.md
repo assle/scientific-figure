@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
   <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
-  <img src="https://img.shields.io/badge/版本-0.2.0--dev-orange" alt="开发版本 0.2.0">
+  <img src="https://img.shields.io/badge/版本-0.3.0--dev-orange" alt="开发版本 0.3.0">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -28,7 +28,7 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-当前 `0.2.0` 开发版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
+当前 `0.3.0` 开发版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
 核心运行时。原生插件负责 Codex 中 Workflow Skill 与 MCP 声明的发现、启停、升级和
 移除；独立核心运行时让确定性执行与可选配置应用不进入宿主插件缓存。
 
@@ -119,12 +119,16 @@ Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配�
   </tr>
 </table>
 
-- **Providers**：负责端点增删改、接口方言和可选能力。
+- **Providers**：负责端点增删改、接口方言和可选能力；当前支持 OpenAI Compatible、
+  Anthropic Compatible，以及仅用于图像生成/编辑的 DashScope Native。
 - **Provider capabilities**：显式声明参考图、多参考图、遮罩编辑、结构控制、
   原生透明、Seed 和批量候选；不支持的控制会明确失败，不会被静默忽略。
 - **凭据与连接**：把 API Key 保存到操作系统 Keyring；只有用户点击时才测试当前未保存草稿。
 - **模型路由**：把可选 `phase_reasoning`、`vision_analyze`、`image_generate`、
   可选 `image_edit` 和 `vision_validate` 绑定到 Provider 与固定模型 ID。
+- **结构化输出扩容**：OpenAI Compatible 结构化响应从较小额度开始；只有 Provider
+  明确返回 `incomplete/max_output_tokens` 时才翻倍重试，每次重试都计入角色调用预算
+  和 Run State 审计，预算耗尽立即停止。
 - 没有 Provider 时，路由选择器会禁用并直接引导到新增流程。
 
 ## 快速开始
@@ -214,13 +218,13 @@ providers:
     base_url: https://api.example.com/v1
     key_env: VISION_API_KEY
   image_provider:
-    type: openai
-    base_url: https://images.example.com/v1
-    key_env: IMAGE_API_KEY
+    type: dashscope
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    key_env: DASHSCOPE_API_KEY
     supports_image_edit: true
     supports_reference_image: true
     supports_multi_reference: true
-    supports_mask_edit: true
+    supports_mask_edit: false
     supports_structure_control: false
     supports_native_alpha: false
     supports_seed: true
@@ -234,6 +238,9 @@ models:
 
 省略 `image_edit` 即表示继承 `image_generate`。Keyring 凭据优先于环境变量回退。
 只声明 Provider 实际支持的 capability；它们是兼容性契约，不是提示信息。
+DashScope Native 会把上述 `compatible-mode/v1` 地址规范化为同地域的 `/api/v1`
+原生根地址，并通过同步 multimodal-generation 接口立即下载结果图。它不能用于
+`phase_reasoning`、`vision_analyze` 或 `vision_validate`。
 
 ## 导出目标
 
@@ -334,7 +341,7 @@ Scientific Figure Builder 遵循[语义化版本](https://semver.org/lang/zh-CN/
 scientific-figure --version
 ```
 
-项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`0.2.0` 是当前开发版本，
+项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`0.3.0` 是当前开发版本，
 `v0.1.0` 仍是最新固定发布。只有仓库同时存在不可变的 `vX.Y.Z` Git tag 和对应
 GitHub Release 时，才构成一次正式发布。Schema、Phase prompt 和绘图 recipe 各自
 拥有独立兼容性版本，不随 Product version 自动变化。
@@ -380,6 +387,7 @@ uvx pyright --pythonpath .venv/bin/python figure_tools install
 - [领域术语](./CONTEXT.md)
 - [安全策略](./SECURITY.md)
 - [GUI 跨平台验证](./docs/verification/gui-platforms.md)
+- [真实 Provider 回归验证](./docs/verification/provider-regression.md)
 - [OpenAI 插件架构](https://developers.openai.com/plugins/concepts/plugins)
 - [OpenAI 插件打包](https://developers.openai.com/plugins/build/plugins)
 

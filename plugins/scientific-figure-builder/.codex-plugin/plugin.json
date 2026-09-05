@@ -1,6 +1,6 @@
 {
   "name": "scientific-figure-builder",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reproducible scientific-figure workflows backed by a local lifecycle MCP server.",
   "author": {
     "name": "assle",
