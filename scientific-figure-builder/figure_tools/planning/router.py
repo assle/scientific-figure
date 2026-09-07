@@ -17,6 +17,9 @@ _ELEMENT_ROUTING = {
 
 def route_element(element: dict[str, Any]) -> str:
     etype = element["type"]
+    if etype == "vector_element":
+        from figure_tools.vector.source import svg_source
+        svg_source(element)
     if etype not in _ELEMENT_ROUTING:
         raise ValueError(f"no routing for element type {etype!r}")
     return _ELEMENT_ROUTING[etype]

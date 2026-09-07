@@ -142,6 +142,7 @@ def test_layout_solver_reports_when_every_connector_route_hits_an_obstacle():
         "elements": [{
             "element_id": "obstacle",
             "type": "vector_element",
+            "content": '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
             "bbox": [0, 0, 1, 1],
         }],
     })

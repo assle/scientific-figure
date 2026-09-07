@@ -825,32 +825,17 @@ def test_connector_patch_rebuilds_port_bound_edge_without_regeneration(tmp_path:
     assert connector["metadata"]["semantic_type"] == "feedback"
 
 
-def test_force_export_publishes_existing_blocked_execution_without_regeneration(tmp_path: Path):
+def test_force_export_cannot_publish_missing_required_assets(tmp_path: Path):
     request = _request()
-    request["panels"][0]["elements"][0]["plot_spec"] = str(
-        FIXTURES / "does_not_exist.json"
-    )
-    worker = RecordingWorker()
-    orchestrator, run_dir, client = _orchestrator(tmp_path, request, worker)
-    paused = orchestrator.advance()
-    assert paused["next_action"] == "repair_required"
-    calls_after_review = list(client.transport.calls)
-
-    forced = orchestrator.advance({
-        "action": "force_export",
-        "reason": "Reviewed the missing optional comparison panel",
-    })
-
-    assert forced["status"] == "completed"
-    assert (run_dir / "exports" / "figure.png").is_file()
-    assert client.transport.calls == calls_after_review
-    assert [inv.phase for inv in worker.invocations] == [
-        "intake", "planning", "review_and_repair",
-    ]
-    report = (run_dir / "generation_report.md").read_text(encoding="utf-8")
-    assert "Reviewed the missing optional comparison panel" in report
-    state = json.loads((run_dir / "run_state.json").read_text())
-    assert state["audit_log"][-1]["event"] == "force_export"
+    request["panels"][0]["elements"][0]["plot_spec"] = str(FIXTURES / "does_not_exist.json")
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
+    assert orchestrator.advance()["next_action"] == "repair_required"
+    calls = list(client.transport.calls)
+    forced = orchestrator.advance({"action": "force_export", "reason": "Reviewed missing panel"})
+    assert forced["next_action"] == "repair_required"
+    assert not (run_dir / "assembly" / "figure.png").exists()
+    assert not (run_dir / "exports" / "figure.png").exists()
+    assert client.transport.calls == calls
 
 
 def test_incomplete_figure_brief_is_schema_valid_draft(tmp_path: Path):
@@ -961,3 +946,80 @@ def test_unknown_transition_is_rejected(tmp_path: Path, action):
     orchestrator, _, _ = _orchestrator(tmp_path, _request())
     with pytest.raises(ValueError, match="unknown orchestrator action"):
         orchestrator.advance(action)
+
+
+@pytest.mark.parametrize("content", ["Offline training: samples -> FEM -> CNN", "<svg>"])
+def test_vector_description_is_rejected_before_provider_work(tmp_path, content):
+    request = _request(panels=[{
+        "panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [180, 112.5],
+        "elements": [{"element_id": "offline_flow", "type": "vector_element",
+                      "content": content}],
+    }], labels=[])
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
+    with pytest.raises(ValueError, match="offline_flow.*SVG"):
+        orchestrator.advance()
+    assert client.transport.calls == []
+    assert not (run_dir / "assembly" / "figure.png").exists()
+
+
+def test_vector_source_is_rendered_and_recorded(tmp_path):
+    request = _request(panels=[{
+        "panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [180, 112.5],
+        "elements": [{"element_id": "offline_flow", "type": "vector_element",
+                      "content": '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="blue"/></svg>'}],
+    }], labels=[])
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
+    orchestrator.advance()
+    manifest = json.loads((run_dir / "asset_manifest.json").read_text())
+    assert [a["asset_id"] for a in manifest["assets"]] == ["offline_flow"]
+    assert (run_dir / "vectors" / "offline_flow.svg").is_file()
+    image = Image.open(run_dir / "assembly" / "figure.png").convert("RGB")
+    assert image.getpixel((image.width // 2, image.height // 2)) == (0, 0, 255)
+    assert client.state.calls_used("generation") == 0
+
+
+def test_invalid_repair_artifact_pauses_without_export(tmp_path):
+    class InvalidRepairWorker(RecordingWorker):
+        def run(self, invocation):
+            result = super().run(invocation)
+            if invocation.phase == "review_and_repair":
+                result = {"kind": "repair_plan", "artifact": {}}
+            return result
+
+    worker = InvalidRepairWorker()
+    orchestrator, run_dir, _ = _orchestrator(tmp_path, _request(), worker)
+    result = orchestrator.advance()
+    assert result["status"] == "paused"
+    assert result["next_action"] == "review_failed"
+    assert "repairs" in result["error"] and "status" in result["error"]
+    assert not (run_dir / "plans" / "repair_plan.json").exists()
+    assert not (run_dir / "exports" / "figure.png").exists()
+
+
+@pytest.mark.parametrize("survivors", [0, 2])
+def test_missing_assets_block_assembly_with_specific_ids(tmp_path, monkeypatch, survivors):
+    from figure_tools.execution import FigureExecution
+    request = _request(panels=[{
+        "panel_id": "a", "bbox": [0, 0, 1, 1], "physical_size": [180, 112.5],
+        "elements": [{"element_id": f"flow-{i}", "type": "vector_element",
+                      "content": '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'}
+                     for i in range(3)],
+    }], labels=[])
+    render = FigureExecution._render_assets
+
+    def omit_assets(self, *args, **kwargs):
+        manifest, reports, placements, texts = render(self, *args, **kwargs)
+        return manifest[:survivors], reports, placements[:survivors], texts
+
+    monkeypatch.setattr(FigureExecution, "_render_assets", omit_assets)
+    orchestrator, run_dir, client = _orchestrator(tmp_path, request)
+    result = orchestrator.advance()
+    assert result["next_action"] == "repair_required"
+    report = json.loads((run_dir / "validation" / "final.json").read_text())
+    for i in range(survivors, 3):
+        assert any(f"flow-{i}" in c["detail"] for c in report["checks"])
+    assert not (run_dir / "assembly" / "figure.png").exists()
+    assert not (run_dir / "exports" / "figure.png").exists()
+    assert client.state.calls_used("final_validation") == 0
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    assert execution["status"] == "failed"

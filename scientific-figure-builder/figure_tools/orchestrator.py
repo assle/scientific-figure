@@ -92,6 +92,8 @@ class FigureOrchestrator:
         if self.request is None:
             raise ValueError("request is required to start a figure run")
         assert self.request is not None
+        from figure_tools.vector.source import validate_vector_inputs
+        validate_vector_inputs(self.request)
         if action_name == "apply_repair":
             accepted_edits = self._apply_repair(action_data)
             result = self.advance("resume")
@@ -246,42 +248,53 @@ class FigureOrchestrator:
             })
             self._record_artifact("execution_result", "plans/execution_result.json")
         validation_reports = execution.get("validation_reports", [])
-        if self.state.step_status("review_and_repair") == "completed":
-            pending_repair = self.store.load_optional_json("plans/repair_plan.json")
-            if pending_repair is not None:
-                review_kind = "repair_plan"
-                review_artifact: Mapping[str, Any] | None = pending_repair
+        review_kind = None
+        try:
+            if self.state.step_status("review_and_repair") == "completed":
+                pending_repair = self.store.load_optional_json("plans/repair_plan.json")
+                if pending_repair is not None:
+                    review_kind = "repair_plan"
+                    review_artifact: Mapping[str, Any] | None = pending_repair
+                else:
+                    review_kind = "validation_report"
+                    review_artifact = self.store.load_optional_json("validation/final.json")
             else:
-                review_kind = "validation_report"
-                review_artifact = self.store.load_optional_json("validation/final.json")
-        else:
-            review_result = dict(self._invoke_worker(
-                "review_and_repair",
-                {
-                    "figure_brief": brief,
-                    "figure_plan": plan,
-                    "execution_result": execution_result,
-                    "validation_reports": validation_reports,
-                    "run_id": self.state.run_id,
-                },
-                ("validate_image_asset", "validate_plot_data", "validate_assembled_figure"),
-            ))
-            review_kind = review_result.get("kind")
-            raw_review_artifact = review_result.get("artifact")
-            review_artifact = (
-                raw_review_artifact if isinstance(raw_review_artifact, Mapping) else None
-            )
-        if not isinstance(review_artifact, Mapping):
-            raise ValueError("Phase worker returned no Review and repair artifact")
-        if review_kind == "validation_report":
-            self.store.validate(review_artifact, "validation-report.schema.json")
-            self.store.commit_json("validation/final.json", review_artifact)
-            self.store.commit_json("validation/validation_report.json", review_artifact)
-        elif review_kind == "repair_plan":
-            self.store.validate(review_artifact, "repair-plan.schema.json")
-            self.store.commit_json("plans/repair_plan.json", review_artifact)
-        else:
-            raise ValueError(f"unknown Review and repair artifact kind: {review_kind}")
+                review_result = dict(self._invoke_worker(
+                    "review_and_repair",
+                    {
+                        "figure_brief": brief,
+                        "figure_plan": plan,
+                        "execution_result": execution_result,
+                        "validation_reports": validation_reports,
+                        "run_id": self.state.run_id,
+                    },
+                    ("validate_image_asset", "validate_plot_data", "validate_assembled_figure"),
+                ))
+                review_kind = review_result.get("kind")
+                raw_review_artifact = review_result.get("artifact")
+                review_artifact = (
+                    raw_review_artifact if isinstance(raw_review_artifact, Mapping) else None
+                )
+            if not isinstance(review_artifact, Mapping):
+                raise ValueError("Phase worker returned no Review and repair artifact")
+            if review_kind == "validation_report":
+                self.store.validate(review_artifact, "validation-report.schema.json")
+                self.store.commit_json("validation/final.json", review_artifact)
+                self.store.commit_json("validation/validation_report.json", review_artifact)
+            elif review_kind == "repair_plan":
+                self.store.validate(review_artifact, "repair-plan.schema.json")
+                self.store.commit_json("plans/repair_plan.json", review_artifact)
+            else:
+                raise ValueError(f"unknown Review and repair artifact kind: {review_kind}")
+        except ValueError as exc:
+            error = self.provider.clean_error(exc)
+            self.store.commit_json("validation/review_error.json", {
+                "error": error, "kind": review_kind,
+            })
+            self.state.mark_step("review_and_repair", "failed")
+            return self._paused("review_and_repair", "review_failed", error=error,
+                                recovery="Correct the phase worker output, then explicitly resume.")
+        self.store.delete("validation/review_error.json")
         self.state.mark_step("review_and_repair", "completed", {
             "validation_report": self.store.hash_json(validation_reports[-1])
             if validation_reports else "",
@@ -466,7 +479,7 @@ class FigureOrchestrator:
                 "artifact": "plans/figure_plan.json",
                 "content_hash": self.store.hash_json(plan),
             },
-            "status": "completed",
+            "status": "failed" if result.get("failed") else "completed",
             "asset_manifest": self.store.reference("asset_manifest.json"),
             "plots": self.store.reference("plots"),
             "vectors": self.store.reference("vectors"),
@@ -493,6 +506,9 @@ class FigureOrchestrator:
         assert self.request is not None
         manifest = self.store.load_optional_json("asset_manifest.json")
         final = self.store.load_optional_json("validation/final.json")
+        if manifest is not None and final is not None and not (self.run_dir / "assembly" / "figure.png").is_file():
+            return self._paused("execution", "repair_required",
+                                error="Required assets must be repaired before assembly and export.")
         if manifest is None or final is None or not (self.run_dir / "assembly").exists():
             raise ValueError("cannot force export without an existing execution result")
         from figure_tools.execution import FigureExecution

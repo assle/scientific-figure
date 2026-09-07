@@ -9,11 +9,13 @@ resolves to a real provider whose credential(s) are present in the environment.
 
 To point an acceptance run at your own providers (e.g. DeepSeek multimodal for
 reference analysis / validation and Seedream for image generation), just edit the
-user config and export the matching ``key_env`` credentials; no test code changes.
+user config and export the matching ``key_env`` credentials, then explicitly set
+``SCIENTIFIC_FIGURE_RUN_PAID_TESTS=1``; no test code changes.
 """
 
 from __future__ import annotations
 
+import os
 import filecmp
 import json
 from pathlib import Path
@@ -29,6 +31,11 @@ from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.runtime_context import RuntimeContextFactory
 from figure_tools.state import RunDirectory
 from figure_tools.validation.plot_checks import validate_plot_data
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("SCIENTIFIC_FIGURE_RUN_PAID_TESTS") != "1",
+    reason="paid acceptance requires SCIENTIFIC_FIGURE_RUN_PAID_TESTS=1",
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"

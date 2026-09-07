@@ -240,6 +240,8 @@ WORKFLOW_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "clarifications": {"type": "array", "items": {"type": "object"}},
         "export_blocked_reason": {"type": ["string", "null"]},
+        "error": {"type": "string"},
+        "recovery": {"type": "string"},
     },
 }
 

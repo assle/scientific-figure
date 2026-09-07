@@ -240,6 +240,7 @@ def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation
             }},
         },
     )
+    assert all("result" in item for item in responses), responses
     payloads = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
     assert payloads[0]["next_action"] == "approve_style_anchor"
     assert payloads[1]["status"] == "completed"
@@ -279,15 +280,14 @@ def test_json_rpc_covers_repair_and_force_export(monkeypatch, tmp_path):
             }},
         })
     responses = _rpc(monkeypatch, *messages)
+    assert all("result" in item for item in responses), responses
     payloads = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
     assert payloads[0]["next_action"] == "repair_required"
     assert payloads[1]["status"] == "completed"
     assert payloads[2]["next_action"] == "repair_required"
-    assert payloads[3]["status"] == "completed"
-    export_result = json.loads(
-        (force_run / "plans" / "export_result.json").read_text()
-    )
-    assert export_result["forced"] is True
+    assert payloads[3]["next_action"] == "repair_required"
+    assert not (force_run / "assembly" / "figure.png").exists()
+    assert not (force_run / "plans" / "export_result.json").exists()
 
 
 def test_runtime_errors_are_redacted_before_protocol_output(monkeypatch, tmp_path):
@@ -353,3 +353,35 @@ def test_runtime_context_construction_errors_use_the_safe_protocol_path(
 
     assert "context-secret" not in response["error"]["message"]
     assert "***REDACTED***" in response["error"]["message"]
+
+
+def test_invalid_repair_response_is_schema_valid_pause_and_can_resume(monkeypatch, tmp_path):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    _use_offline_runtime(monkeypatch, tmp_path)
+    original = StructuredPhaseWorker.run
+    reviews = []
+
+    def review_once_invalid(self, invocation):
+        if invocation.phase == "review_and_repair":
+            reviews.append(invocation)
+            if len(reviews) == 1:
+                return {"kind": "repair_plan", "artifact": {}}
+        return original(self, invocation)
+
+    monkeypatch.setattr(StructuredPhaseWorker, "run", review_once_invalid)
+    run_dir = tmp_path / "review-run"
+    responses = _rpc(monkeypatch, *[{
+        "jsonrpc": "2.0", "id": i, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "project_dir": str(tmp_path), "base_dir": str(ROOT),
+            "run_dir": str(run_dir), **args,
+        }},
+    } for i, args in enumerate([{"request": _request()}, {"action": "resume"}], 1)])
+    assert all("result" in item for item in responses), responses
+    paused, resumed = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
+    assert paused["next_action"] == "review_failed"
+    assert "repairs" in paused["error"] and "status" in paused["error"]
+    assert resumed["status"] == "completed"
+    assert len(reviews) == 2
+    assert not (run_dir / "validation" / "review_error.json").exists()

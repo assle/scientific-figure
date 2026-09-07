@@ -23,6 +23,7 @@ from figure_tools.validation.engine import FigureQAEngine
 from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
+from figure_tools.vector.source import svg_source, validate_vector_inputs
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
 
 
@@ -62,6 +63,7 @@ class FigureExecution:
         planned_request = self._request_from_plan(plan)
         if planned_request is not None:
             self.request = planned_request
+        validate_vector_inputs(self.request)
         export_target = export_target or self._export_target()
         ai_elements = [
             (panel, el)
@@ -138,6 +140,29 @@ class FigureExecution:
                                 pre_rendered_assets=pre_rendered_assets)
         manifest = {"schema_version": "1.0", "assets": manifest_assets}
         self.store.commit_json("asset_manifest.json", manifest)
+
+        required = {a["asset_id"] for a in plan.get("assets", [])}
+        rendered = {a["asset_id"] for a in manifest_assets if Path(a["path"]).is_file()}
+        placed = {p["asset_id"] for p in placements if Path(p["path"]).is_file()} | {t["element_id"] for t in text_placements}
+        missing = sorted(required - (rendered & placed))
+        if missing or not (placements or text_placements):
+            self.store.delete("assembly")
+            self.store.delete("exports")
+            self.store.delete("plans/export_result.json")
+            for asset_id in missing:
+                validation_reports.append(self._error_report(asset_id, f"missing required asset: {asset_id}"))
+            if not missing:
+                validation_reports.append(self._error_report("figure", "no drawable assets"))
+            from figure_tools.validation.summary import summarize_checks
+            checks = [c for report in validation_reports for c in report.get("checks", [])]
+            final = {"schema_version": "1.0", "run_id": self.state.run_id,
+                     "checks": checks, "summary": summarize_checks(checks)}
+            validation_reports.append(final)
+            self.store.commit_json("validation/final.json", final)
+            self.store.commit_json("validation/validation_report.json", final)
+            return {"paused": False, "failed": True, "manifest": manifest,
+                    "validation_reports": validation_reports, "assembly_result": {},
+                    "placements": placements, "text_placements": text_placements}
 
         assembly_dir = self.run_dir / "assembly"
         solved_layout = self.store.load_optional_json("plans/solved_layout.json") or {}
@@ -219,7 +244,7 @@ class FigureExecution:
         labels: list[dict[str, Any]] = []
         for asset in source_assets:
             source = copy.deepcopy(asset["source"])
-            if asset.get("type") in {"text", "equation"}:
+            if asset.get("type") in {"text", "equation"} and not asset.get("panel_id"):
                 labels.append(source)
                 continue
             panel_id = asset.get("panel_id")
@@ -261,6 +286,11 @@ class FigureExecution:
         """Apply the Export gate and write the generation report."""
         assembly_dir = self.run_dir / "assembly"
         validation_reports = execution["validation_reports"]
+        if not (assembly_dir / "figure.png").is_file():
+            return {"exported": False, "files": {},
+                    "export_blocked_reason": "Required assets must be repaired before assembly and export.",
+                    "report_path": None}
+
         export_result = export_figure(
             validation_reports,
             source_dir=assembly_dir,
@@ -370,6 +400,40 @@ class FigureExecution:
                                        "layout_manifest": str(out / "layout_manifest.json")})
                 except Exception as e:  # noqa: BLE001
                     validation_reports.append(self._error_report(asset_id, str(e)))
+
+        # Panel vectors: retain SVG sources and render local assembly previews.
+        from resvg_py import svg_to_bytes
+        from figure_tools.vector.latex import latex_to_svg
+
+        for panel in self.request["panels"]:
+            for el in panel.get("elements", []):
+                if el["type"] not in {"vector_element", "text", "label", "annotation", "equation"}:
+                    continue
+                asset_id = el["element_id"]
+                try:
+                    if el["type"] == "vector_element":
+                        source = svg_source(el)
+                    elif el["type"] == "equation":
+                        source = latex_to_svg(el["content"], export_target=export_target)
+                    else:
+                        canvas = SvgCanvas(width=200, height=40)
+                        canvas.text(2, 16, el["content"], font_size=9, fill="#000000")
+                        source = canvas.to_string()
+                    svg = normalize_svg_bytes(source.encode("utf-8"), export_target=export_target)
+                    bbox = self._placement_bbox(asset_id, plan, panel)
+                    width = max(1, round(self._canvas_mm()[0] * bbox[2] / 25.4 * self.compose_dpi))
+                    png = svg_to_bytes(svg_string=svg.decode("utf-8"), width=width)
+                    svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
+                    png_path = svg_path.with_suffix(".png")
+                    self.store.commit_text(f"vectors/{asset_id}.svg", svg.decode("utf-8"))
+                    png_path.write_bytes(png)
+                    atype = next(a["type"] for a in plan["assets"] if a["asset_id"] == asset_id)
+                    manifest_assets.append(self._vector_meta(asset_id, atype, svg_path, plan))
+                    placements.append({"asset_id": asset_id, "path": str(png_path),
+                                       "bbox": bbox, "panel_id": panel["panel_id"],
+                                       "z_order": self._zorder(asset_id, plan)})
+                except Exception as exc:  # local render failures are reviewable
+                    validation_reports.append(self._error_report(asset_id, str(exc)))
 
         # AI assets: independent, concurrency 2 (plan section 12).
         ai_results: dict[str, tuple] = {}

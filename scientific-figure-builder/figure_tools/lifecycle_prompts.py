@@ -15,11 +15,19 @@ PHASE_PROMPTS = {
     ),
     "planning": (
         "Turn the completed Figure brief into a reproducible Figure plan. "
+        "Preserve explicit image-generation intent as image_asset. "
+        "vector_element.content must be complete SVG source, never prose. "
         "Do not generate assets or change the brief."
     ),
     "review_and_repair": (
         "Review the execution result against the approved Figure brief and plan. "
-        "Return validation enrichment or a targeted Repair plan only."
+        "Return one JSON object with kind and artifact. kind must be "
+        "validation_report or repair_plan; artifact must satisfy the matching schema. "
+        "For repair_plan preserve schema_version, artifact_type, run_id, plan_ref, "
+        "execution_ref, validation_ref, repairs, and status from the supplied "
+        "fallback artifact. Include repairs even when empty, and use unresolved "
+        "when no executable repair is available. Never claim repair success or "
+        "downgrade deterministic failures."
     ),
 }
 

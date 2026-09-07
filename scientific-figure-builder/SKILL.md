@@ -32,6 +32,17 @@ between phases.
   Wait for approval unless the user explicitly selected `auto_execute`.
 - Data plots, axes, exact numbers, equations, labels, and final composition
   come from deterministic Python/SVG/local assembly.
+- `vector_element.content` must contain complete SVG source (`<svg>...</svg>`),
+  not a natural-language description. Convert the intended diagram to SVG before
+  submitting structured panel elements. The runtime renders it locally, saves
+  the SVG under `vectors/`, and uses a PNG preview for composition; assembled
+  SVG/PDF currently embed that preview rather than editable vector geometry.
+  Panel text and equations also use local rendering. These are not image-model calls.
+- A missing required asset blocks composition and export, including force export.
+  Repair the reported asset IDs before continuing. An empty asset list is not a figure.
+- If `next_action` is `review_failed`, inspect the returned error and retained
+  validation evidence. Correct the phase worker output before explicitly resuming;
+  do not automatically loop retries or treat failed review as export approval.
 - Image-generation models produce only isolated, non-quantitative raster
   assets; image editing is allowed only for eligible raster repairs.
 - Provider features such as references, masks, structure control, native alpha,
