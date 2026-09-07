@@ -156,6 +156,34 @@ DeepSeek Responses 使用同一 SSE 连接持续接收状态。心跳只表示�
 同时发送进度通知。宿主自身的任务时限仍可能提前终止调用，不承诺凭响应 ID 取回旧结果。
 只有完整且通过校验的结果才能成为 Phase artifact。
 
+阶段推理的需求解析、规划、审核与修复分别从 **8,192 个输出 token** 开始。
+同一次运行中，恢复相同阶段、Provider 和模型时，沿用已实际发出过的最高额度；
+阶段或模型切换时独立起步，生图与图片编辑不继承文字输出额度。配置应用可分别设置各阶段，
+对应模型路由配置如下：
+
+```yaml
+models:
+  phase_reasoning:
+    provider: deepseek
+    model: deepseek-v4-flash-vision-exp
+    output_tokens:
+      initial_tokens: 8192
+      phase_initial_tokens:
+        intake: 8192
+        planning: 8192
+        review_and_repair: 8192
+      # max_tokens: 65536  # 可选的单次输出上限，包含推理 token。
+```
+
+Provider 下也可设置 `output_tokens`，模型路由对相同字段的配置优先，其余继承。
+官方 DeepSeek V4 接口依据[官方 384K 上限](https://api-docs.deepseek.com/quick_start/pricing/)
+保守限制为 384,000；其他模型应显式填写支持的上限，不猜测未知模型容量。
+较小的配置上限也会限制恢复时的历史额度。扩容继续受调用次数预算和当前调用总时限约束；
+未发送的扩容不记为已用额度，服务端拒绝请求时不盲目重试。
+Run state 的 `output_token_limits` 保存已发出的阶段额度，尝试记录的 `output_usage`
+保存服务端实际返回的输入、输出、推理 token 数；缺失用量保持未知，不记录推理正文。
+旧运行文件没有明确额度历史时，从配置的初始值开始。
+
 ## 快速开始
 
 ### 1. 安装核心运行时与 Codex 插件

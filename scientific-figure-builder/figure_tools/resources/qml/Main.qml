@@ -252,6 +252,11 @@ ApplicationWindow {
                                     policy: modelData.request_policy || ({})
                                     enabled: !modelData.inherit
                                 }
+                                OutputTokenEditor {
+                                    visible: modelData.role === "phase_reasoning"
+                                    role: modelData.role
+                                    policy: modelData.output_tokens || ({})
+                                }
                             }
                         }
                     }
@@ -532,6 +537,10 @@ ApplicationWindow {
                             }
                             RequestPolicyEditor {
                                 policy: appController.selectedProvider.request_policy || ({})
+                            }
+                            OutputTokenEditor {
+                                visible: appController.selectedProvider.type !== "dashscope"
+                                policy: appController.selectedProvider.output_tokens || ({})
                             }
                             Item { Layout.preferredHeight: 12 }
                         }

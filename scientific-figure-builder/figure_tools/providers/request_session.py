@@ -7,7 +7,7 @@ import random
 from email.utils import parsedate_to_datetime
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from figure_tools.providers.request_policy import RequestPolicy
@@ -22,6 +22,19 @@ class RequestSession:
     cancelled: threading.Event = field(default_factory=threading.Event)
     started: float = field(default_factory=time.monotonic)
     status: dict[str, Any] = field(default_factory=dict)
+    output_usage: dict[str, int] | None = None
+
+    def record_usage(self, response: Mapping[str, Any]) -> None:
+        usage = response.get("usage")
+        if not isinstance(usage, Mapping):
+            return
+        counts = {key: value for key in ("input_tokens", "output_tokens", "total_tokens")
+                  if type(value := usage.get(key)) is int and value >= 0}
+        details = usage.get("output_tokens_details")
+        reasoning = details.get("reasoning_tokens") if isinstance(details, Mapping) else usage.get("reasoning_tokens")
+        if type(reasoning) is int and reasoning >= 0:
+            counts["reasoning_tokens"] = reasoning
+        self.output_usage = counts or None
 
     @property
     def remaining(self) -> float:

@@ -34,6 +34,7 @@ class RunState:
         self._calls: dict[str, int] = {}
         self.budget: dict[str, int] = dict(budget or {})
         self._retries: dict[str, dict[str, int]] = {}
+        self._output_token_limits: dict[tuple[str, str, str], int] = {}
         self.provider_status: dict[str, dict[str, Any]] = {}
         self.cache_hits = 0
         self._artifacts: dict[str, dict[str, Any]] = {}
@@ -95,6 +96,17 @@ class RunState:
             return 0
         return max(0, self.budget[role] - self._calls.get(role, 0))
 
+    def output_tokens_for(self, phase: str, provider: str, model: str) -> int:
+        return self._output_token_limits.get((phase, provider, model), 0)
+
+    def record_output_tokens(self, phase: str, provider: str, model: str, tokens: int) -> None:
+        from figure_tools.providers.output_tokens import positive_tokens
+
+        key = (phase, provider, model)
+        self._output_token_limits[key] = max(
+            self._output_token_limits.get(key, 0), positive_tokens(tokens, "max_output_tokens")
+        )
+
     # --- retries ---------------------------------------------------------
     def record_retry(self, role: str, kind: str) -> None:
         if kind not in ("transient", "quality"):
@@ -137,6 +149,10 @@ class RunState:
             },
             "cache_hits": self.cache_hits,
             "provider_status": copy.deepcopy(self.provider_status),
+            "output_token_limits": [
+                {"phase": phase, "provider": provider, "model": model, "max_output_tokens": tokens}
+                for (phase, provider, model), tokens in self._output_token_limits.items()
+            ],
             "artifacts": copy.deepcopy(self._artifacts),
             "audit_log": copy.deepcopy(self._audit_log),
             "approval_checkpoints": [
@@ -167,6 +183,8 @@ class RunState:
         for kind in ("transient", "quality"):
             for role, n in retries.get(kind, {}).items():
                 state._retries.setdefault(role, {"transient": 0, "quality": 0})[kind] = n
+        for entry in data.get("output_token_limits", []):
+            state.record_output_tokens(entry["phase"], entry["provider"], entry["model"], entry["max_output_tokens"])
         state.provider_status = copy.deepcopy(data.get("provider_status", {}))
         for status in state.provider_status.values():
             if status.get("state") not in ("completed", "failed", "remote_outcome_unknown"):

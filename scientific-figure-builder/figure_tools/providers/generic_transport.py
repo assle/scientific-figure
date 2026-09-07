@@ -39,6 +39,7 @@ from figure_tools.providers.transport import (
 
 from figure_tools.providers.http_request import request as managed_request, http_failure
 from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.output_tokens import OutputTokenPolicy, model_output_limit, DEFAULT_PHASE_OUTPUT_TOKENS
 from figure_tools.providers.request_session import CURRENT_REQUEST
 
 HTTP_OPENER = Callable[..., Any]
@@ -50,6 +51,13 @@ def _data_url(path: str | Path) -> str:
     mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
+
+
+def _observed_response(response: dict[str, Any]) -> dict[str, Any]:
+    session = CURRENT_REQUEST.get()
+    if session is not None:
+        session.record_usage(response)
+    return response
 
 
 def _request_json(
@@ -66,12 +74,12 @@ def _request_json(
         result = managed_request(url, method=method, headers={"Content-Type": "application/json", **headers},
                                  body=body, stream=bool(body.get("stream")), timeout=timeout)
         if isinstance(result, dict):
-            return result
+            return _observed_response(result)
         try:
             parsed = json.loads(result)
             if not isinstance(parsed, dict):
                 raise ValueError("response must be an object")
-            return parsed
+            return _observed_response(parsed)
         except (ValueError, UnicodeError) as exc:
             raise RequestError("invalid JSON response", category="invalid_response") from exc
     session = CURRENT_REQUEST.get()
@@ -92,7 +100,7 @@ def _request_json(
                 raise
             response_context = opener(request)
         with response_context as response:
-            return json.loads(response.read().decode("utf-8"))
+            return _observed_response(json.loads(response.read().decode("utf-8")))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:500]
         if redactor is not None:
@@ -361,7 +369,7 @@ class OpenAICompatibleTransport(ProviderTransport):
             f"{json.dumps(payload.get('fallback_artifact', {}), ensure_ascii=False)}"
         )
         max_output_tokens = int(
-            payload.get("max_output_tokens", INITIAL_STRUCTURED_OUTPUT_TOKENS)
+            payload.get("max_output_tokens", DEFAULT_PHASE_OUTPUT_TOKENS)
         )
         response = self._post("/responses", {
             "model": model,
@@ -612,7 +620,7 @@ class AnthropicTransport(ProviderTransport):
             headers=headers,
             body={
                 "model": model,
-                "max_tokens": 8192,
+                "max_tokens": int(payload.get("max_output_tokens", DEFAULT_PHASE_OUTPUT_TOKENS)),
                 "messages": [{"role": "user", "content": [
                     {"type": "text", "text": prompt},
                 ]}],
@@ -621,6 +629,9 @@ class AnthropicTransport(ProviderTransport):
             redactor=self.redactor,
             timeout=self.timeout,
         )
+        if response.get("stop_reason") == "max_tokens":
+            raise IncompleteStructuredResponseError(reason="max_output_tokens",
+                attempted_max_output_tokens=int(payload.get("max_output_tokens", DEFAULT_PHASE_OUTPUT_TOKENS)))
         text = "".join(
             block.get("text", "")
             for block in response.get("content", [])
@@ -667,12 +678,21 @@ class ProviderRouter(ProviderTransport):
                 )
             self._routes[role] = provider_name
             self.request_policy(role)
+            if role == "phase_reasoning":
+                self.output_token_policy(role)
 
     def request_policy(self, role: str) -> RequestPolicy:
         resolved = model_config_for_role(self._models, role)
         model_config = resolved[1] if resolved else {}
         provider = self._providers.get(str(model_config.get("provider")), {})
         return RequestPolicy.resolve(role, provider.get("request_policy"), model_config.get("request_policy"))
+
+    def output_token_policy(self, role: str) -> OutputTokenPolicy:
+        resolved = model_config_for_role(self._models, role)
+        model_config = resolved[1] if resolved else {}
+        provider = self._providers.get(str(model_config.get("provider")), {})
+        return OutputTokenPolicy.resolve(provider.get("output_tokens"), model_config.get("output_tokens"),
+                                         known_limit=model_output_limit(provider, str(model_config.get("model", ""))))
 
     accounts_at_dispatch = True
 

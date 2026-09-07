@@ -347,3 +347,20 @@ def test_role_backoff_validation_uses_provider_cap(tmp_path: Path, app):
     controller.updateRequestPolicy('phase_reasoning', 'backoff_base', '45')
     assert controller.save()
     assert editor.load().models['phase_reasoning']['request_policy']['backoff_base'] == 45
+
+
+def test_phase_output_tokens_roundtrip_and_clear_override(tmp_path: Path, app):
+    controller, editor, _ = _controller(tmp_path)
+    assert controller.addProvider('slow')
+    controller.updateRole('phase_reasoning', 'provider', 'slow')
+    controller.updateRole('phase_reasoning', 'model', 'test')
+    controller.updateOutputTokens('', 'planning', '16384')
+    controller.updateOutputTokens('phase_reasoning', 'planning', '32768')
+    controller.updateOutputTokens('phase_reasoning', 'max_tokens', '65536')
+    assert controller.save()
+    draft = editor.load()
+    assert draft.providers['slow']['output_tokens']['phase_initial_tokens']['planning'] == 16384
+    assert draft.models['phase_reasoning']['output_tokens']['phase_initial_tokens']['planning'] == 32768
+    controller.updateOutputTokens('phase_reasoning', 'planning', '')
+    assert controller.save()
+    assert 'planning' not in editor.load().models['phase_reasoning']['output_tokens']['phase_initial_tokens']

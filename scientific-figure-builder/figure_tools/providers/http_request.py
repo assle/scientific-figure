@@ -81,6 +81,7 @@ class EventReader:
             response = event.get('response')
             if not isinstance(response, dict):
                 raise RequestError('terminal event missing response', category='invalid_response')
+            self.session.record_usage(response)
             expected = str(kind).split('.')[-1]
             if response.get('status') != expected:
                 raise RequestError('terminal response status mismatch', category='invalid_response')

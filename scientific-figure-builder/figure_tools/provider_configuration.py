@@ -6,6 +6,7 @@ import copy
 import re
 import warnings
 from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.output_tokens import OutputTokenPolicy
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -131,6 +132,7 @@ def normalize_provider(
     warn_legacy: bool = True,
 ) -> dict[str, Any]:
     RequestPolicy.resolve("phase_reasoning", provider.get("request_policy"))
+    OutputTokenPolicy.resolve(provider.get("output_tokens"))
     normalized = migrate_legacy_provider(
         provider_id, provider, warn_legacy=warn_legacy
     )

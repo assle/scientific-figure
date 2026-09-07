@@ -22,6 +22,7 @@ from typing import Any
 
 from figure_tools.config import user_config_path
 from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.output_tokens import OutputTokenPolicy
 from figure_tools.provider_configuration import (
     PROVIDER_TYPE_FIELD_DEFAULTS,
     migrate_legacy_provider,
@@ -193,7 +194,11 @@ class GlobalConfigEditor:
         model = _merge(draft.models.get(role), values)
         if "request_policy" in values:
             model["request_policy"] = dict(values["request_policy"])
+        if "output_tokens" in values:
+            model["output_tokens"] = copy.deepcopy(values["output_tokens"])
         provider = draft.providers.get(model.get("provider"), {})
+        if role == "phase_reasoning":
+            OutputTokenPolicy.resolve(provider.get("output_tokens"), model.get("output_tokens"))
         RequestPolicy.resolve(role, provider.get("request_policy"), model.get("request_policy"))
         draft.models[role] = model
 
@@ -213,6 +218,8 @@ class GlobalConfigEditor:
             )
         self._assert_non_secret(values)
         provider = _merge(draft.providers.get(provider_id), values)
+        if "output_tokens" in values:
+            provider["output_tokens"] = copy.deepcopy(values["output_tokens"])
         if "request_policy" in values:
             provider["request_policy"] = dict(values["request_policy"])
         try:
@@ -226,6 +233,10 @@ class GlobalConfigEditor:
         def walk(value: Any, *, allow_reference: bool = False) -> None:
             if isinstance(value, Mapping):
                 for key, item in value.items():
+                    if key == "output_tokens":
+                        # Only this strictly validated numeric policy is non-secret.
+                        OutputTokenPolicy.resolve(item)
+                        continue
                     if looks_like_secret_field(str(key)):
                         raise ConfigEditorError(
                             "provider credentials must be stored in the secure system store"

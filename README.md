@@ -170,6 +170,36 @@ are sent when the host supplies a progress token. Host lifetime limits remain in
 and local cancellation does not confirm remote cancellation. Partial output never becomes
 a Phase artifact.
 
+Phase reasoning starts at **8,192 output tokens per phase**. Intake, Planning and Review
+and repair have independent starting allowances. Within the same run, resuming the same
+phase/Provider/model reuses the highest allowance actually sent; changing any of those
+identities starts independently. Generation/editing do not inherit text output allowances.
+The Configuration app exposes phase output settings; the equivalent Model route example is:
+
+```yaml
+models:
+  phase_reasoning:
+    provider: deepseek
+    model: deepseek-v4-flash-vision-exp
+    output_tokens:
+      initial_tokens: 8192
+      phase_initial_tokens:
+        intake: 8192
+        planning: 8192
+        review_and_repair: 8192
+      # max_tokens: 65536  # Optional limit for each request, including reasoning.
+```
+
+Provider-level `output_tokens` supplies defaults; matching Model route fields override them.
+Known official DeepSeek V4 endpoints use a conservative 384,000-token bound based on the
+[advertised 384K maximum](https://api-docs.deepseek.com/quick_start/pricing/); other models
+should have their supported maximum configured explicitly. Unknown model capacities are
+not guessed, and a Provider rejection is surfaced without blindly retrying it. An explicit
+smaller maximum also caps remembered allowances. Expansion still shares the invocation
+deadline and call budget. `output_token_limits` stores dispatched allowances in Run State;
+`output_usage` records reported numeric usage in attempt diagnostics. Missing counters are
+unknown, not zero. Older runs without explicit history start from configured defaults.
+
 ## Quick start
 
 ### 1. Install the Core runtime and Codex plugin

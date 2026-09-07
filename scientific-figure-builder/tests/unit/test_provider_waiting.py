@@ -278,7 +278,7 @@ def test_streamed_expansion_shares_budget_and_keeps_final_json(tmp_path):
     def respond(handler, body):
         handler.send_response(200)
         handler.end_headers()
-        if body['max_output_tokens'] < 8192:
+        if body['max_output_tokens'] < 16384:
             event(handler, 'response.incomplete', {'status': 'incomplete',
                     'incomplete_details': {'reason': 'max_output_tokens'}})
         else:
@@ -293,7 +293,7 @@ def test_streamed_expansion_shares_budget_and_keeps_final_json(tmp_path):
         client = orch.worker.provider_client
         result = client.run_phase_worker('intake', 'test', {}, [], {})
         assert result == {'label': '完成'}
-        assert [req['max_output_tokens'] for req in requests] == [4096, 8192]
+        assert [req['max_output_tokens'] for req in requests] == [8192, 16384]
         assert state.calls_used('phase_reasoning') == 2
         assert state.retries('phase_reasoning', 'transient') == 0
 

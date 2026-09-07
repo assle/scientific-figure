@@ -23,6 +23,7 @@ from figure_tools.config_editor import (
 )
 from figure_tools.connection_test import ConnectionTestResult, ConnectionTestService
 from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.output_tokens import OutputTokenPolicy, PHASES, DEFAULT_PHASE_OUTPUT_TOKENS
 from figure_tools.provider_configuration import (
     MODEL_ROLE_CATALOG,
     PROVIDER_TYPES,
@@ -112,6 +113,7 @@ class GuiController(QObject):
                 "provider": str(route.get("provider", "")) if isinstance(route, Mapping) else "",
                 "model": str(route.get("model", "")) if isinstance(route, Mapping) else "",
                 "request_policy": dict(route.get("request_policy", {})) if isinstance(route, Mapping) else {},
+                "output_tokens": copy.deepcopy(route.get("output_tokens", {})) if isinstance(route, Mapping) else {},
                 "inherit": role == "image_edit" and role not in self.draft.models,
             }
         return state
@@ -200,6 +202,7 @@ class GuiController(QObject):
         openai_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["openai"]
         view = {
             "request_policy": dict(canonical.get("request_policy", {})),
+            "output_tokens": copy.deepcopy(canonical.get("output_tokens", {})),
             "id": provider_id,
             "type": provider_type,
             "base_url": str(canonical.get("base_url", "")),
@@ -314,6 +317,38 @@ class GuiController(QObject):
         target["request_policy"] = policy
         self._mark_dirty()
 
+    @Property("QVariantList", constant=True)  # pyright: ignore[reportArgumentType]
+    def outputTokenFields(self) -> list[dict[str, Any]]:  # noqa: N802
+        labels = {"intake": "需求解析初始额度", "planning": "规划初始额度",
+                  "review_and_repair": "审核与修复初始额度"}
+        return [{"key": phase, "label": labels[phase], "hint": f"继承（默认 {DEFAULT_PHASE_OUTPUT_TOKENS}）"}
+                for phase in PHASES] + [{"key": "max_tokens", "label": "单次输出上限", "hint": "模型上限或自定义"}]
+
+    @Slot(str, str, str)
+    def updateOutputTokens(self, role: str, field: str, text: str) -> None:  # noqa: N802
+        if field not in (*PHASES, "max_tokens") or role not in ("", "phase_reasoning"):
+            return
+        if not role and not self._selected_provider:
+            return
+        target = self._role_state.get(role) if role else self._provider_drafts.setdefault(self._selected_provider, {})
+        if target is None:
+            return
+        fallback = self._provider_view(self._selected_provider).get("output_tokens", {}) if not role else {}
+        policy = copy.deepcopy(target.get("output_tokens", fallback))
+        values = policy if field == "max_tokens" else policy.setdefault("phase_initial_tokens", {})
+        try:
+            if text.strip():
+                values[field] = int(text)
+            else:
+                values.pop(field, None)
+            provider_policy = self._provider_view(str(target.get("provider", ""))).get("output_tokens") if role else None
+            OutputTokenPolicy.resolve(provider_policy, policy)
+        except ValueError as exc:
+            self._notify(str(exc), "error")
+            return
+        target["output_tokens"] = policy
+        self._mark_dirty()
+
     @Slot(str, str, str)
     def updateRole(self, role: str, field: str, value: str) -> None:  # noqa: N802
         if role in self._role_state and field in {"provider", "model"}:
@@ -417,6 +452,7 @@ class GuiController(QObject):
         candidate: dict[str, Any] = {
             "type": provider_type,
             "request_policy": dict(provider.get("request_policy", {})),
+            "output_tokens": copy.deepcopy(provider.get("output_tokens", {})),
             "base_url": base_url,
             "key_env": str(provider.get("key_env", "")).strip(),
         }
@@ -450,6 +486,7 @@ class GuiController(QObject):
                 self.editor.set_model(self.draft, role, {
                     "provider": state["provider"], "model": state["model"],
                     "request_policy": state["request_policy"],
+                    **({"output_tokens": state["output_tokens"]} if role == "phase_reasoning" else {}),
                 })
 
     @Slot(result=bool)

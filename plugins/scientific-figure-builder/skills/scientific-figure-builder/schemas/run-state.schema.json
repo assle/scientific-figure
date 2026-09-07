@@ -72,6 +72,19 @@
         }
       }
     },
+    "output_token_limits": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["phase", "provider", "model", "max_output_tokens"],
+        "properties": {
+          "phase": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "max_output_tokens": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
     "provider_status": { "type": "object", "additionalProperties": { "type": "object" } },
     "cache_hits": { "type": "integer", "minimum": 0 },
     "artifacts": { "type": "object", "additionalProperties": { "type": "object" } },

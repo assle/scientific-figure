@@ -31,6 +31,7 @@ from figure_tools.providers.transport import (
 )
 from figure_tools.state import BudgetExceeded, Cache, RunState
 from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.output_tokens import OutputTokenPolicy
 from figure_tools.providers.request_session import CURRENT_REQUEST, RequestSession, retry_delay
 from figure_tools.validation.image_checks import deterministic_image_checks
 from figure_tools.validation.summary import summarize_checks
@@ -129,12 +130,21 @@ class ProviderClient:
         retries = 0
         pending_retry = False
         request_payload = dict(payload)
+        output_policy = None
+        if role == "phase_reasoning":
+            output_factory = getattr(self.transport, "output_token_policy", None)
+            output_policy = output_factory(role) if output_factory else OutputTokenPolicy.resolve(
+                route[1].get("output_tokens") if route else None
+            )
+            with self._lock:
+                remembered = self.state.output_tokens_for(phase, provider, model) if self.state is not None else 0
+            request_payload["max_output_tokens"] = output_policy.initial(phase, remembered)
 
         def progress(details: dict) -> None:
             safe = self.redactor.redact_text(json.dumps({
                 "invocation_id": invocation_id,
                 "role": role, "phase": phase, "provider": provider, "model": model,
-                "attempt": attempts, "policy": policy.to_dict(), **details,
+                "attempt": attempts, "policy": policy.to_dict(), "output_usage": session.output_usage, **details,
             }, default=str))
             snapshot = json.loads(safe)
             with self._lock:
@@ -149,6 +159,8 @@ class ProviderClient:
             session.check()
             with self._lock:
                 self._record_call(role)
+                if output_policy is not None and self.state is not None:
+                    self.state.record_output_tokens(phase, provider, model, request_payload["max_output_tokens"])
                 attempts += 1
                 attempt_started = time.monotonic()
                 if self.state is not None:
@@ -157,9 +169,12 @@ class ProviderClient:
                     self.state.record_audit("provider_attempt_started", {
                         "invocation_id": invocation_id,
                         "role": role, "attempt": attempts, "phase": phase,
+                        "provider": provider, "model": model,
+                        **({"max_output_tokens": request_payload["max_output_tokens"]} if output_policy else {}),
                     })
                 pending_retry = False
-                session.report(state="awaiting_response", stop_reason=None)
+                session.report(state="awaiting_response", stop_reason=None,
+                               **({"max_output_tokens": request_payload["max_output_tokens"]} if output_policy else {}))
 
         def audit(event: str, details: dict) -> None:
             safe = json.loads(self.redactor.redact_text(json.dumps({
@@ -173,6 +188,7 @@ class ProviderClient:
         def send_attempt() -> dict:
             before = attempts
             error = None
+            session.output_usage = None
             try:
                 if not getattr(self.transport, "accounts_at_dispatch", False):
                     dispatch()
@@ -184,6 +200,7 @@ class ProviderClient:
                 if attempts > before:
                     audit("provider_attempt_finished", {
                         "elapsed_seconds": time.monotonic() - attempt_started,
+                        "output_usage": session.output_usage,
                         "http_status": getattr(error, "status", None) or session.status.get("http_status"),
                         "request_id": getattr(error, "request_id", None) or session.status.get("request_id"),
                         "stop_reason": getattr(error, "category", "incomplete" if isinstance(error, IncompleteStructuredResponseError) else "provider_error") if error else "completed",
@@ -206,10 +223,13 @@ class ProviderClient:
                         raise
                     if self.state.calls_remaining(role) == 0:
                         raise BudgetExceeded(f"budget for {role!r} exhausted after incomplete response") from exc
-                    next_limit = exc.attempted_max_output_tokens * 2
+                    next_limit = output_policy.expand(exc.attempted_max_output_tokens) if output_policy else exc.attempted_max_output_tokens * 2
+                    if next_limit <= exc.attempted_max_output_tokens:
+                        raise RequestError("structured output reached model/configured token ceiling", category="output_limit_exhausted") from exc
                     with self._lock:
                         self.state.record_audit("structured_output_expanded", {
-                            "role": role,
+                            "invocation_id": invocation_id, "phase": phase,
+                            "provider": provider, "model": model, "role": role,
                             "previous_max_output_tokens": exc.attempted_max_output_tokens,
                             "next_max_output_tokens": next_limit,
                         })
