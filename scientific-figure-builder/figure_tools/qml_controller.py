@@ -22,6 +22,7 @@ from figure_tools.config_editor import (
     validate_provider_id,
 )
 from figure_tools.connection_test import ConnectionTestResult, ConnectionTestService
+from figure_tools.providers.request_policy import RequestPolicy
 from figure_tools.provider_configuration import (
     MODEL_ROLE_CATALOG,
     PROVIDER_TYPES,
@@ -110,6 +111,7 @@ class GuiController(QObject):
                 "description": description,
                 "provider": str(route.get("provider", "")) if isinstance(route, Mapping) else "",
                 "model": str(route.get("model", "")) if isinstance(route, Mapping) else "",
+                "request_policy": dict(route.get("request_policy", {})) if isinstance(route, Mapping) else {},
                 "inherit": role == "image_edit" and role not in self.draft.models,
             }
         return state
@@ -197,6 +199,7 @@ class GuiController(QObject):
         anthropic_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["anthropic"]
         openai_defaults = PROVIDER_TYPE_FIELD_DEFAULTS["openai"]
         view = {
+            "request_policy": dict(canonical.get("request_policy", {})),
             "id": provider_id,
             "type": provider_type,
             "base_url": str(canonical.get("base_url", "")),
@@ -275,6 +278,41 @@ class GuiController(QObject):
                 return
             self._provider_drafts.setdefault(self._selected_provider, {})[field] = bool(value)
             self._mark_dirty()
+
+    @Property("QVariantList", constant=True)  # pyright: ignore[reportArgumentType]
+    def requestPolicyFields(self) -> list[dict[str, Any]]:  # noqa: N802
+        labels = {
+            "connect_timeout": "连接等待（秒）", "status_interval": "状态检查间隔（秒）",
+            "inactivity_timeout": "连续无消息上限（秒）", "total_timeout": "单次调用总上限（秒）",
+            "max_attempts": "瞬态错误最多尝试次数", "backoff_base": "退避基准（秒）",
+            "backoff_cap": "退避上限（秒）",
+        }
+        return [{"key": key, "label": labels[key], "defaultValue": value}
+                for key, value in RequestPolicy().to_dict().items()]
+
+    @Slot(str, str, str)
+    def updateRequestPolicy(self, role: str, field: str, text: str) -> None:  # noqa: N802
+        if field not in RequestPolicy().to_dict():
+            return
+        target = self._role_state.get(role) if role else self._provider_drafts.setdefault(self._selected_provider, {})
+        if target is None:
+            return
+        existing = target.get("request_policy", self._provider_view(self._selected_provider).get("request_policy", {}))
+        policy = dict(existing)
+        try:
+            if not text.strip():
+                policy.pop(field, None)
+            else:
+                policy[field] = int(text) if field == "max_attempts" else float(text)
+            provider_policy = None
+            if role:
+                provider_policy = self._provider_view(str(target.get("provider", ""))).get("request_policy")
+            RequestPolicy.resolve(role or "phase_reasoning", provider_policy, policy)
+        except ValueError as exc:
+            self._notify(str(exc), "error")
+            return
+        target["request_policy"] = policy
+        self._mark_dirty()
 
     @Slot(str, str, str)
     def updateRole(self, role: str, field: str, value: str) -> None:  # noqa: N802
@@ -378,6 +416,7 @@ class GuiController(QObject):
         provider_type = str(provider.get("type", PROVIDER_TYPES[0]))
         candidate: dict[str, Any] = {
             "type": provider_type,
+            "request_policy": dict(provider.get("request_policy", {})),
             "base_url": base_url,
             "key_env": str(provider.get("key_env", "")).strip(),
         }
@@ -410,6 +449,7 @@ class GuiController(QObject):
             else:
                 self.editor.set_model(self.draft, role, {
                     "provider": state["provider"], "model": state["model"],
+                    "request_policy": state["request_policy"],
                 })
 
     @Slot(result=bool)
@@ -429,7 +469,7 @@ class GuiController(QObject):
 
     def _models_for_connection(self) -> dict[str, dict[str, Any]]:
         return {
-            role: {"provider": state["provider"], "model": state["model"]}
+            role: {"provider": state["provider"], "model": state["model"], "request_policy": state["request_policy"]}
             for role, state in self._role_state.items()
             if not (role == "image_edit" and state["inherit"])
         }

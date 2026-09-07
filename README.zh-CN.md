@@ -131,6 +131,31 @@ Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配�
   和 Run State 审计，预算耗尽立即停止。
 - 没有 Provider 时，路由选择器会禁用并直接引导到新增流程。
 
+Provider 和模型角色的“等待与重试设置”可调整等待策略，留空继承，角色优先于
+Provider，再使用默认值。阶段推理与视觉请求的 `request_policy` 默认值为：
+
+| 配置字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `connect_timeout` | 15 秒 | 建立连接的等待上限 |
+| `status_interval` | 120 秒 | 本地状态检查周期，不发送请求 |
+| `inactivity_timeout` | 600 秒 | 连续无数据上限，收到心跳或内容后重新计时 |
+| `total_timeout` | 1800 秒 | 单次模型调用总上限，包含重试和扩容，心跳不重置 |
+| `max_attempts` | 3 | 瞬态错误最多尝试次数，包含首次 |
+| `backoff_base` / `backoff_cap` | 2 / 30 秒 | 指数退避基准和本地上限，加入等幅区间抖动 |
+
+DeepSeek Responses 使用同一 SSE 连接持续接收状态。心跳只表示连接有活动，不证明
+推理已开始。图像生成/编辑保留 30 秒无消息默认值。其他 OpenAI Compatible 服务仅在
+明确声明 `supports_responses_streaming: true` 时使用 Responses SSE；官方
+`api.deepseek.com` 默认支持，不通过重新请求探测能力。
+
+429、500/502/503/504 与明确未提交的连接故障才自动退避重试；有效 Retry-After
+优先，超过剩余时限则停止。读取超时、断流和取消不自动重发；每次实际模型请求都扣除
+角色预算。停止本地等待不代表远端已取消，恢复会重新发送失败阶段请求并保留已用预算。
+
+最新脱敏状态保存在 Run state 的 `provider_status` 中；宿主提供 progress token 时
+同时发送进度通知。宿主自身的任务时限仍可能提前终止调用，不承诺凭响应 ID 取回旧结果。
+只有完整且通过校验的结果才能成为 Phase artifact。
+
 ## 快速开始
 
 ### 1. 安装核心运行时与 Codex 插件

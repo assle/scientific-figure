@@ -199,8 +199,9 @@ ApplicationWindow {
                         delegate: SectionCard {
                             required property var modelData
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 238
+                            Layout.preferredHeight: roleForm.implicitHeight + 32
                             ColumnLayout {
+                                id: roleForm
                                 anchors.fill: parent
                                 spacing: 12
                                 RowLayout {
@@ -245,6 +246,11 @@ ApplicationWindow {
                                     text: modelData.model
                                     placeholderText: "输入固定模型或 Endpoint ID"
                                     onEditingFinished: appController.updateRole(modelData.role, "model", text)
+                                }
+                                RequestPolicyEditor {
+                                    role: modelData.role
+                                    policy: modelData.request_policy || ({})
+                                    enabled: !modelData.inherit
                                 }
                             }
                         }
@@ -523,6 +529,9 @@ ApplicationWindow {
                                     font.pixelSize: 11
                                     wrapMode: Text.Wrap
                                 }
+                            }
+                            RequestPolicyEditor {
+                                policy: appController.selectedProvider.request_policy || ({})
                             }
                             Item { Layout.preferredHeight: 12 }
                         }

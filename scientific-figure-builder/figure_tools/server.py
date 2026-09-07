@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+import queue
+from contextvars import ContextVar
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -21,6 +24,8 @@ from figure_tools.lifecycle_contracts import (
 from figure_tools.orchestrator import FigureOrchestrator
 from figure_tools.runtime_context import RuntimeContextFactory
 
+
+_CALL_CONTROL: ContextVar[Any] = ContextVar("call_control", default=None)
 
 PUBLIC_TOOLS = ("initialize_figure_project", "advance_figure_workflow")
 
@@ -53,6 +58,9 @@ def _advance(arguments: dict[str, Any]) -> dict[str, Any]:
         context = RuntimeContextFactory().create(project_dir, run_dir)
     except Exception as exc:  # construction errors are already secret-safe
         raise PublicToolError(str(exc)) from exc
+    control = _CALL_CONTROL.get()
+    if control is not None:
+        context.client.cancelled, context.client.progress_callback = control
     orchestrator = FigureOrchestrator(
         request=arguments.get("request"),
         config=context.effective_config,
@@ -123,10 +131,32 @@ def _tool_list() -> list[dict[str, Any]]:
 
 
 def serve_stdio() -> int:
-    for line in sys.stdin:
-        if not line.strip():
-            continue
-        message = json.loads(line)
+    messages: queue.Queue = queue.Queue()
+    cancellations: dict[Any, threading.Event] = {}
+    lock = threading.Lock()
+
+    def read_messages() -> None:
+        try:
+            for line in sys.stdin:
+                if not line.strip():
+                    continue
+                message = json.loads(line)
+                if message.get("method") == "notifications/cancelled":
+                    with lock:
+                        event = cancellations.get((message.get("params") or {}).get("requestId"))
+                        if event is not None:
+                            event.set()
+                    continue
+                if message.get("method") == "tools/call":
+                    with lock:
+                        cancellations[message.get("id")] = threading.Event()
+                messages.put(message)
+        finally:
+            messages.put(None)
+
+    reader = threading.Thread(target=read_messages, daemon=True)
+    reader.start()
+    while (message := messages.get()) is not None:
         method = message.get("method")
         message_id = message.get("id")
         if method == "initialize":
@@ -140,6 +170,24 @@ def serve_stdio() -> int:
         elif method == "tools/call":
             params = message.get("params") or {}
             name = params.get("name")
+            progress_token = (params.get("_meta") or {}).get("progressToken")
+            progress_count = 0
+
+            def progress(snapshot: dict[str, Any]) -> None:
+                nonlocal progress_count
+                if progress_token is None:
+                    return
+                progress_count += 1
+                sys.stdout.write(json.dumps({
+                    "jsonrpc": "2.0", "method": "notifications/progress",
+                    "params": {"progressToken": progress_token, "progress": progress_count,
+                               "message": json.dumps(snapshot)},
+                }) + "\n")
+                sys.stdout.flush()
+
+            with lock:
+                cancelled = cancellations[message_id]
+            control_token = _CALL_CONTROL.set((cancelled, progress))
             try:
                 data = _call_tool(str(name), params.get("arguments") or {})
             except KeyError:
@@ -148,9 +196,15 @@ def serve_stdio() -> int:
             except Exception as exc:  # messages are redacted by _advance
                 _write_error(message_id, -32603, str(exc))
                 continue
+            finally:
+                _CALL_CONTROL.reset(control_token)
+                with lock:
+                    cancellations.pop(message_id, None)
             result = {
                 "content": [{"type": "text", "text": json.dumps(data, default=str)}]
             }
+        elif message_id is None:
+            continue
         else:
             _write_error(message_id, -32601, f"unknown method {method}")
             continue

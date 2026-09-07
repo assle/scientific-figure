@@ -7,6 +7,7 @@ import json
 import mimetypes
 import urllib.error
 import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,9 +32,14 @@ from figure_tools.providers.transport import (
     ProviderError,
     ProviderTransport,
     RateLimitError,
+    RequestError,
     ROLE_TO_MODEL_CONFIG,
     model_config_for_role,
 )
+
+from figure_tools.providers.http_request import request as managed_request, http_failure
+from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.request_session import CURRENT_REQUEST
 
 HTTP_OPENER = Callable[..., Any]
 INITIAL_STRUCTURED_OUTPUT_TOKENS = 4_096
@@ -56,6 +62,21 @@ def _request_json(
     redactor: SecretRedactor | None = None,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
+    if opener is urllib.request.urlopen:
+        result = managed_request(url, method=method, headers={"Content-Type": "application/json", **headers},
+                                 body=body, stream=bool(body.get("stream")), timeout=timeout)
+        if isinstance(result, dict):
+            return result
+        try:
+            parsed = json.loads(result)
+            if not isinstance(parsed, dict):
+                raise ValueError("response must be an object")
+            return parsed
+        except (ValueError, UnicodeError) as exc:
+            raise RequestError("invalid JSON response", category="invalid_response") from exc
+    session = CURRENT_REQUEST.get()
+    if session is not None:
+        session.dispatch()
     request = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
@@ -76,12 +97,10 @@ def _request_json(
         detail = exc.read().decode("utf-8", errors="replace")[:500]
         if redactor is not None:
             detail = redactor.redact_text(detail)
-        if exc.code == 429 or exc.code >= 500:
-            raise RateLimitError(f"provider HTTP {exc.code}: {detail}") from exc
-        raise ProviderError(f"provider HTTP {exc.code}: {detail}") from exc
+        raise http_failure(exc.code, detail, exc.headers or {}) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         detail = redactor.redact_text(str(exc)) if redactor else str(exc)
-        raise RateLimitError(f"transient provider error: {detail}") from exc
+        raise RequestError(f"provider network error: {detail}", category="inactivity_timeout" if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError) else "connection_error") from exc
 
 
 def _request_bytes(
@@ -91,6 +110,10 @@ def _request_bytes(
     redactor: SecretRedactor | None = None,
     timeout: float = 30.0,
 ) -> bytes:
+    if opener is urllib.request.urlopen:
+        result = managed_request(url, method="GET", headers={"Accept": "image/*"}, timeout=timeout)
+        assert isinstance(result, bytes)
+        return result
     request = urllib.request.Request(url, headers={"Accept": "image/*"}, method="GET")
     try:
         try:
@@ -105,18 +128,18 @@ def _request_bytes(
         detail = exc.read().decode("utf-8", errors="replace")[:500]
         if redactor is not None:
             detail = redactor.redact_text(detail)
-        if exc.code == 429 or exc.code >= 500:
-            raise RateLimitError(f"provider HTTP {exc.code}: {detail}") from exc
-        raise ProviderError(f"provider HTTP {exc.code}: {detail}") from exc
+        raise http_failure(exc.code, detail, exc.headers or {}) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         detail = redactor.redact_text(str(exc)) if redactor else str(exc)
-        raise RateLimitError(f"transient provider error: {detail}") from exc
+        raise RequestError(f"provider network error: {detail}", category="inactivity_timeout" if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError) else "connection_error") from exc
 
 
 class DashScopeNativeTransport(ProviderTransport):
     """DashScope native multimodal image generation and editing transport."""
 
     _GENERATION_PATH = "/services/aigc/multimodal-generation/generation"
+
+    accounts_at_dispatch = True
 
     def __init__(self, name: str, config: dict[str, Any], *,
                  credential: str | ResolvedCredential | None = None,
@@ -259,12 +282,16 @@ class DashScopeNativeTransport(ProviderTransport):
 class OpenAICompatibleTransport(ProviderTransport):
     """OpenAI-compatible Images generation and Responses vision transport."""
 
+    accounts_at_dispatch = True
+
     def __init__(self, name: str, config: dict[str, Any], *,
                  credential: str | ResolvedCredential | None = None,
                  credential_resolver: CredentialResolver | None = None,
                  redactor: SecretRedactor | None = None,
                  timeout: float = 30.0,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
+        self.supports_responses_streaming = bool(config.get("supports_responses_streaming",
+            urllib.parse.urlparse(str(config.get("base_url", ""))).hostname == "api.deepseek.com"))
         self.name = name
         self.base_url = normalize_provider_base_url(config.get("base_url"))
         self.key_env = provider_key_env(name, config)
@@ -290,6 +317,8 @@ class OpenAICompatibleTransport(ProviderTransport):
         self._opener = opener
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        if path == "/responses" and self.supports_responses_streaming:
+            body = {**body, "stream": True}
         return _request_json(
             f"{self.base_url}/{path.lstrip('/')}",
             method="POST",
@@ -477,6 +506,8 @@ def _responses_text(response: dict[str, Any]) -> str:
 class AnthropicTransport(ProviderTransport):
     """Anthropic Messages-compatible vision transport."""
 
+    accounts_at_dispatch = True
+
     def __init__(self, name: str, config: dict[str, Any], *,
                  credential: str | ResolvedCredential | None = None,
                  credential_resolver: CredentialResolver | None = None,
@@ -609,6 +640,7 @@ class ProviderRouter(ProviderTransport):
                  redactor: SecretRedactor | None = None,
                  timeout: float = 30.0,
                  opener: HTTP_OPENER = urllib.request.urlopen) -> None:
+        self._models = models
         self._routes: dict[str, str] = {}
         self._transports: dict[str, ProviderTransport] = {}
         self._providers = normalize_providers(providers)
@@ -634,6 +666,15 @@ class ProviderRouter(ProviderTransport):
                     f"model role {_internal_role!r} requires an explicit Provider ID"
                 )
             self._routes[role] = provider_name
+            self.request_policy(role)
+
+    def request_policy(self, role: str) -> RequestPolicy:
+        resolved = model_config_for_role(self._models, role)
+        model_config = resolved[1] if resolved else {}
+        provider = self._providers.get(str(model_config.get("provider")), {})
+        return RequestPolicy.resolve(role, provider.get("request_policy"), model_config.get("request_policy"))
+
+    accounts_at_dispatch = True
 
     def _transport_for(self, provider_name: str) -> ProviderTransport:
         provider = self._providers.get(provider_name)

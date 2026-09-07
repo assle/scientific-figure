@@ -339,7 +339,7 @@ def test_reference_analysis_expansion_stops_before_exceeding_call_budget(tmp_pat
 
     assert len(requests) == 1
     assert state.calls_used("reference_analysis") == 1
-    assert state.to_dict()["audit_log"] == []
+    assert not any(entry["event"] == "structured_output_expanded" for entry in state.to_dict()["audit_log"])
 
 
 # --- rate limit ----------------------------------------------------------

@@ -44,8 +44,25 @@ class ProviderError(Exception):
     pass
 
 
-class RateLimitError(ProviderError):
-    pass
+class RequestError(ProviderError):
+    """Safe request failure with explicit retry and submission semantics."""
+
+    def __init__(self, message: str, *, category: str = "provider_error",
+                 retryable: bool = False, status: int | None = None,
+                 retry_after: str | None = None, request_id: str | None = None,
+                 submission: str = "unknown") -> None:
+        super().__init__(message)
+        self.category = category
+        self.retryable = retryable
+        self.status = status
+        self.retry_after = retry_after
+        self.request_id = request_id
+        self.submission = submission
+
+
+class RateLimitError(RequestError):
+    def __init__(self, message: str, **kwargs: Any) -> None:
+        super().__init__(message, category="rate_limit", retryable=True, **kwargs)
 
 
 class IncompleteStructuredResponseError(ProviderError):

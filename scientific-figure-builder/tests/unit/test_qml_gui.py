@@ -319,3 +319,31 @@ def test_qml_reopens_with_fields_for_saved_provider_type(
     ) is openai_visible
     root.setProperty("visible", False)
     del engine
+
+
+def test_request_policy_roundtrip_and_inheritance(tmp_path: Path, app):
+    controller, editor, _ = _controller(tmp_path)
+    assert controller.addProvider('slow')
+    controller.updateRequestPolicy('', 'inactivity_timeout', '700')
+    controller.updateRole('phase_reasoning', 'provider', 'slow')
+    controller.updateRole('phase_reasoning', 'model', 'test')
+    controller.updateRequestPolicy('phase_reasoning', 'inactivity_timeout', '800')
+    assert controller.save()
+    draft = editor.load()
+    assert draft.providers['slow']['request_policy']['inactivity_timeout'] == 700
+    assert draft.models['phase_reasoning']['request_policy']['inactivity_timeout'] == 800
+    controller.updateRequestPolicy('phase_reasoning', 'inactivity_timeout', '')
+    assert controller.save()
+    assert editor.load().models['phase_reasoning']['request_policy'] == {}
+
+
+def test_role_backoff_validation_uses_provider_cap(tmp_path: Path, app):
+    controller, editor, _ = _controller(tmp_path)
+    assert controller.addProvider('slow')
+    controller.updateRequestPolicy('', 'backoff_cap', '60')
+    controller.updateRequestPolicy('', 'backoff_base', '40')
+    controller.updateRole('phase_reasoning', 'provider', 'slow')
+    controller.updateRole('phase_reasoning', 'model', 'test')
+    controller.updateRequestPolicy('phase_reasoning', 'backoff_base', '45')
+    assert controller.save()
+    assert editor.load().models['phase_reasoning']['request_policy']['backoff_base'] == 45

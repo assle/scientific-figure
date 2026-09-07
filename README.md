@@ -145,6 +145,31 @@ opening or saving configuration.
 - With no Provider configured, route selectors stay disabled and lead directly to
   the Provider creation flow.
 
+Provider waiting settings are available in the Provider and Model role forms. Blank
+fields inherit: role `request_policy` overrides Provider policy, then defaults.
+Reasoning/vision defaults are `connect_timeout: 15`, `status_interval: 120`,
+`inactivity_timeout: 600`, `total_timeout: 1800`, `max_attempts: 3`,
+`backoff_base: 2`, and `backoff_cap: 30` (durations in seconds).
+
+DeepSeek Responses requests stay on one SSE connection. Local status checks never resend;
+600 seconds of complete silence or a 30-minute logical invocation deadline stops local
+waiting. Heartbeats reset inactivity only and do not prove inference progress. Generation
+and editing retain their 30-second inactivity default. Other compatible Providers use
+Responses SSE only with `supports_responses_streaming: true`; the official DeepSeek host
+defaults to support. There is no remote background polling or reconnect-by-response-ID.
+
+HTTP 429/500/502/503/504 and known pre-submission connection failures allow three transient
+attempts including the first, with exponential backoff and equal jitter. Valid Retry-After
+takes precedence; a delay beyond the remaining deadline stops retries. Every dispatched
+model request consumes the existing role budget, including output expansions. Read
+inactivity, interrupted streams and cancellation never automatically resend. Explicit
+recovery resends the failed operation while preserving consumed budget.
+
+Sanitized latest status lives in Run state's `provider_status`; MCP progress notifications
+are sent when the host supplies a progress token. Host lifetime limits remain independent,
+and local cancellation does not confirm remote cancellation. Partial output never becomes
+a Phase artifact.
+
 ## Quick start
 
 ### 1. Install the Core runtime and Codex plugin

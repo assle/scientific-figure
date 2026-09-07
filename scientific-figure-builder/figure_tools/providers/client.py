@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import json
 import threading
+import uuid
 import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
@@ -24,10 +25,13 @@ from figure_tools.providers.transport import (
     ProviderError,
     ProviderTransport,
     RateLimitError,
+    RequestError,
     ROLE_TO_MODEL_CONFIG,
     model_config_for_role,
 )
-from figure_tools.state import Cache, RunState
+from figure_tools.state import BudgetExceeded, Cache, RunState
+from figure_tools.providers.request_policy import RequestPolicy
+from figure_tools.providers.request_session import CURRENT_REQUEST, RequestSession, retry_delay
 from figure_tools.validation.image_checks import deterministic_image_checks
 from figure_tools.validation.summary import summarize_checks
 
@@ -58,7 +62,9 @@ class ProviderClient:
         self.state = state
         self.cache = cache
         self.output_dir = Path(output_dir) if output_dir else None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self.cancelled = threading.Event()
+        self.progress_callback = None
 
     def _role_model(self, role: str) -> str:
         resolved = model_config_for_role(self.models, role)
@@ -103,40 +109,145 @@ class ProviderClient:
 
         return sanitize_error(error, self.redactor.secrets)
 
+    def _persist(self) -> None:
+        if self.state is not None and self.output_dir is not None:
+            self.state.save(self.output_dir / "run_state.json")
+
     def _post(self, role: str, payload: dict, image_paths: list[str] | None = None,
-              max_transient: int = 5) -> dict:
-        attempt = 0
+              max_transient: int | None = None) -> dict:
+        model = self._role_model(role)
+        policy_factory = getattr(self.transport, "request_policy", None)
+        policy = policy_factory(role) if policy_factory else RequestPolicy.resolve(role)
+        if max_transient is not None:
+            policy = RequestPolicy.resolve(role, policy.to_dict(), {"max_attempts": max_transient})
+        route = model_config_for_role(self.models, role)
+        provider = str(route[1].get("provider", "unknown")) if route else "unknown"
+        phase = str(payload.get("phase", role))
+        invocation_id = uuid.uuid4().hex
+        attempt_started = time.monotonic()
+        attempts = 0
+        retries = 0
+        pending_retry = False
         request_payload = dict(payload)
-        while True:
-            try:
-                return self.transport.post(
-                    role, self._role_model(role), request_payload, image_paths
-                )
-            except IncompleteStructuredResponseError as exc:
-                if (
-                    exc.reason != "max_output_tokens"
-                    or self.state is None
-                    or role not in self.state.budget
-                ):
-                    raise
-                next_limit = max(
-                    exc.attempted_max_output_tokens * 2,
-                    exc.attempted_max_output_tokens + 1,
-                )
-                self._record_call(role)
-                self.state.record_audit("structured_output_expanded", {
-                    "role": role,
-                    "previous_max_output_tokens": exc.attempted_max_output_tokens,
-                    "next_max_output_tokens": next_limit,
-                })
-                request_payload["max_output_tokens"] = next_limit
-            except RateLimitError:
-                attempt += 1
+
+        def progress(details: dict) -> None:
+            safe = self.redactor.redact_text(json.dumps({
+                "invocation_id": invocation_id,
+                "role": role, "phase": phase, "provider": provider, "model": model,
+                "attempt": attempts, "policy": policy.to_dict(), **details,
+            }, default=str))
+            snapshot = json.loads(safe)
+            with self._lock:
                 if self.state is not None:
-                    self.state.record_retry(role, "transient")
-                if attempt >= max_transient:
-                    raise
-                time.sleep(min(0.1 * (2 ** (attempt - 1)), 5.0))
+                    self.state.provider_status[role] = snapshot
+                    self._persist()
+            if self.progress_callback is not None:
+                self.progress_callback(snapshot)
+
+        def dispatch() -> None:
+            nonlocal attempts, pending_retry, attempt_started
+            session.check()
+            with self._lock:
+                self._record_call(role)
+                attempts += 1
+                attempt_started = time.monotonic()
+                if self.state is not None:
+                    if pending_retry:
+                        self.state.record_retry(role, "transient")
+                    self.state.record_audit("provider_attempt_started", {
+                        "invocation_id": invocation_id,
+                        "role": role, "attempt": attempts, "phase": phase,
+                    })
+                pending_retry = False
+                session.report(state="awaiting_response", stop_reason=None)
+
+        def audit(event: str, details: dict) -> None:
+            safe = json.loads(self.redactor.redact_text(json.dumps({
+                "invocation_id": invocation_id, "role": role, "attempt": attempts, **details,
+            }, default=str)))
+            with self._lock:
+                if self.state is not None:
+                    self.state.record_audit(event, safe)
+                    self._persist()
+
+        def send_attempt() -> dict:
+            before = attempts
+            error = None
+            try:
+                if not getattr(self.transport, "accounts_at_dispatch", False):
+                    dispatch()
+                return self.transport.post(role, model, request_payload, image_paths)
+            except BaseException as exc:
+                error = exc
+                raise
+            finally:
+                if attempts > before:
+                    audit("provider_attempt_finished", {
+                        "elapsed_seconds": time.monotonic() - attempt_started,
+                        "http_status": getattr(error, "status", None) or session.status.get("http_status"),
+                        "request_id": getattr(error, "request_id", None) or session.status.get("request_id"),
+                        "stop_reason": getattr(error, "category", "incomplete" if isinstance(error, IncompleteStructuredResponseError) else "provider_error") if error else "completed",
+                        "last_error": self.clean_error(error)[:2000] if error else None,
+                        "submission": getattr(error, "submission", "submitted"),
+                    })
+
+        session = RequestSession(policy, dispatch=dispatch, progress=progress, cancelled=self.cancelled)
+        token = CURRENT_REQUEST.set(session)
+        try:
+            while True:
+                session.check()
+                try:
+                    result = send_attempt()
+                    audit("provider_invocation_finished", {"stop_reason": "completed"})
+                    session.report(state="completed", stop_reason="completed")
+                    return result
+                except IncompleteStructuredResponseError as exc:
+                    if exc.reason != "max_output_tokens" or self.state is None or role not in self.state.budget:
+                        raise
+                    if self.state.calls_remaining(role) == 0:
+                        raise BudgetExceeded(f"budget for {role!r} exhausted after incomplete response") from exc
+                    next_limit = exc.attempted_max_output_tokens * 2
+                    with self._lock:
+                        self.state.record_audit("structured_output_expanded", {
+                            "role": role,
+                            "previous_max_output_tokens": exc.attempted_max_output_tokens,
+                            "next_max_output_tokens": next_limit,
+                        })
+                        self._persist()
+                    request_payload["max_output_tokens"] = next_limit
+                except RequestError as exc:
+                    session.report(state="failed", last_error=self.clean_error(exc),
+                                   category=exc.category, http_status=exc.status,
+                                   request_id=exc.request_id, submission=exc.submission)
+                    if not exc.retryable:
+                        raise
+                    if retries >= policy.max_attempts - 1:
+                        raise RequestError(f"attempt limit exhausted: {self.clean_error(exc)}",
+                                           category="attempts_exhausted", status=exc.status) from exc
+                    # Check before sleeping; the atomic dispatch check remains authoritative.
+                    budget_role = "generation" if role == "edits" and "image_edit" not in self.models else role
+                    if self.state is not None and budget_role in self.state.budget and self.state.calls_remaining(budget_role) == 0:
+                        raise BudgetExceeded(f"budget for {budget_role!r} exhausted after {self.clean_error(exc)}") from exc
+                    delay = retry_delay(policy, retries, exc.retry_after)
+                    if delay >= session.remaining:
+                        raise RequestError(f"retry delay exceeds invocation deadline: {self.clean_error(exc)}", category="deadline_exhausted") from exc
+                    audit("provider_retry_scheduled", {"selected_delay": delay, "reason": exc.category})
+                    session.report(state="backoff", selected_delay=delay)
+                    if session.cancelled.wait(delay):
+                        session.check()
+                    retries += 1
+                    pending_retry = True
+        except BaseException as exc:
+            category = getattr(exc, "category", "budget_exhausted" if isinstance(exc, BudgetExceeded) else "provider_error")
+            audit("provider_invocation_finished", {"stop_reason": category, "last_error": self.clean_error(exc)[:2000]})
+            session.report(state="remote_outcome_unknown" if category in (
+                "inactivity_timeout", "deadline_exhausted", "connection_error", "stream_interrupted", "cancelled"
+            ) else "failed", stop_reason=category, last_error=self.clean_error(exc))
+            if isinstance(exc, Exception):
+                exc.args = (self.clean_error(f"{phase}: provider={provider}, model={model}, attempts={attempts}, {category}: {exc}"),)
+            raise
+        finally:
+            CURRENT_REQUEST.reset(token)
 
     def run_phase_worker(
         self,
@@ -148,7 +259,6 @@ class ProviderClient:
     ) -> dict[str, Any]:
         """Run one isolated reasoning phase and return its JSON artifact."""
         role = "phase_reasoning"
-        self._record_call(role)
         self._log_prompt(f"phase_{phase}", prompt)
         result = self._post(role, {
             "phase": phase,
@@ -174,7 +284,6 @@ class ProviderClient:
             if cached is not None:
                 self._cache_hit()
                 return json.loads(cached)
-        self._record_call(role)
         resp = self._post(role, {"prompt": prompt, "image_hash": img_hash},
                           image_paths=[str(image_path)])
         if self.cache is not None:
@@ -234,7 +343,6 @@ class ProviderClient:
                 self._cache_hit()
                 return self._image_meta(cached, out, role, parameters, prompt_hash,
                                         ref_hashes, cached=True)
-        self._record_call(role)
         resp = self._post(role, {
             "prompt": prompt,
             "parameters": parameters,
@@ -269,7 +377,6 @@ class ProviderClient:
                 self._cache_hit()
                 return self._image_meta(cached, out, role, parameters, prompt_hash,
                                         ref_hashes, cached=True, parent_asset_id=parent_asset_id)
-        self._record_call(role)
         resp = self._post(role, {"prompt": prompt, "parameters": parameters,
                                  "parent_hash": parent_hash,
                                  "mask_hash": ref_hashes[1] if mask_path is not None else None},
@@ -302,7 +409,6 @@ class ProviderClient:
                 self._cache_hit()
                 multimodal = json.loads(cached)
         if multimodal is None:
-            self._record_call(role)
             multimodal = self._post(role, {"image_hash": img_hash,
                                            "checks": list(checks or [])},
                                     image_paths=[str(image_path)])
@@ -349,7 +455,6 @@ class ProviderClient:
                 self._cache_hit()
                 multimodal = json.loads(cached)
         if multimodal is None:
-            self._record_call(role)
             multimodal = self._post(role, {"image_hash": img_hash,
                                            "checks": list(checks or [])},
                                    image_paths=[str(image_path)])
@@ -382,7 +487,6 @@ class ProviderClient:
             if cached is not None:
                 self._cache_hit()
                 return json.loads(cached)
-        self._record_call(role)
         resp = self._post(role, payload, image_paths=[str(crop_path)])
         if self.cache is not None:
             self.cache.put_bytes(key, json.dumps(resp).encode("utf-8"))

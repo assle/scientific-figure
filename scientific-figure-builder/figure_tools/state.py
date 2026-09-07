@@ -34,6 +34,7 @@ class RunState:
         self._calls: dict[str, int] = {}
         self.budget: dict[str, int] = dict(budget or {})
         self._retries: dict[str, dict[str, int]] = {}
+        self.provider_status: dict[str, dict[str, Any]] = {}
         self.cache_hits = 0
         self._artifacts: dict[str, dict[str, Any]] = {}
         self._audit_log: list[dict[str, Any]] = []
@@ -135,6 +136,7 @@ class RunState:
                 "quality": {r: v["quality"] for r, v in self._retries.items()},
             },
             "cache_hits": self.cache_hits,
+            "provider_status": copy.deepcopy(self.provider_status),
             "artifacts": copy.deepcopy(self._artifacts),
             "audit_log": copy.deepcopy(self._audit_log),
             "approval_checkpoints": [
@@ -165,6 +167,10 @@ class RunState:
         for kind in ("transient", "quality"):
             for role, n in retries.get(kind, {}).items():
                 state._retries.setdefault(role, {"transient": 0, "quality": 0})[kind] = n
+        state.provider_status = copy.deepcopy(data.get("provider_status", {}))
+        for status in state.provider_status.values():
+            if status.get("state") not in ("completed", "failed", "remote_outcome_unknown"):
+                status.update(state="remote_outcome_unknown", stop_reason="interrupted")
         state.cache_hits = data.get("cache_hits", 0)
         state._artifacts = copy.deepcopy(data.get("artifacts", {}))
         state._audit_log = copy.deepcopy(data.get("audit_log", []))
@@ -177,7 +183,10 @@ class RunState:
         return state
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        from figure_tools.run_store import RunStore
+
+        target = Path(path)
+        RunStore(target.parent).commit_json(target.name, self.to_dict(), schema="run-state.schema.json")
 
     @classmethod
     def load(cls, path: str | Path) -> "RunState":
