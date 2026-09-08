@@ -55,7 +55,7 @@ Calling Agent
       ├─ Run Store + Run Invalidator → 原子持久化与精确复用
       └─ Figure Execution Module
          ├─ Python 数据图与 SVG/文字
-         ├─ Provider 路由的隔离 raster 素材
+         ├─ Provider 路由的生成单元
          └─ 确定性连接线/分组 → 组装
             → 分层验证 → 局部修复 → 导出
 ```
@@ -84,7 +84,7 @@ Run 复用依据内容而非“文件存在”。Schema 无效、hash 不匹配�
 |---|---|---|
 | 📊 | 确定性数据图 | 从 CSV 生成折线、散点、柱状、热图、误差棒和多面板图 |
 | 🧠 | 结构优先机制图 | 可寻址节点、命名端口、有类型有向边、分组、约束和可编辑 SVG 蓝图 |
-| 🎨 | Provider-neutral AI 素材 | 带来源记录和自动去背景的隔离非量化视觉素材 |
+| 🎨 | Provider-neutral AI 素材 | 带来源记录并按已确认背景策略处理的非量化生成单元 |
 | 🧩 | 精确组装与修复 | 资产级布局、端口绑定连接线、精确矢量标签/公式、遮罩编辑和回滚 |
 | ✅ | 分层验证 | 最终图结构恢复、源文本/OCR/公式精确检查、几何、Publication profile 和多模态复核 |
 | 📦 | 出版导出 | PNG、SVG、PDF，以及可选的 PowerPoint 友好 SVG/PPTX |
@@ -226,7 +226,7 @@ scientific-figure install-gui
 ```
 
 生命周期 Orchestrator 会先把导出目标、图宽、语言、风格和可选 Publication profile
-记录到 Figure brief。Planning 随后在任何付费工作前派生 Figure Graph、Solved layout、
+记录到 Figure brief。Planning 随后在生图前派生 Figure Graph、Solved layout、
 可编辑 SVG 蓝图、结构问题和 Generation Conditions。Calling Agent 根据 Orchestrator
 返回的下一动作继续，不再手动串联底层工具。每次响应都包含当前 Lifecycle phase、
 状态、下一动作和规范化 Artifact reference。
@@ -234,14 +234,43 @@ scientific-figure install-gui
 ## 核心规则
 
 ```text
-精确数据、坐标轴、公式、文字和几何结构  →  Python / SVG
-科学节点、阶段、端口和有向流向          →  Figure Graph + SVG
-隔离的非量化视觉素材                    →  配置的图像 Provider
+测量数据与定量图表                      →  Python / SVG
+科学节点与关系                          →  语义 Figure Graph
+非量化整图、子图或模块                  →  已选择的生图／矢量／混合方式
 最终组合与导出                          →  本地确定性流水线
 ```
 
-AI 图像模型不会绘制数据图或最终复合图。确定性检查保持权威；视觉模型可以补充
+生图模型可以整体绘制非量化流程图，包含归属于它的文字和箭头；数据图和外部组装保持确定性。
+确定性检查保持权威；视觉模型可以补充
 语义说明，但不能把几何检查的失败改成通过。
+
+通过现有工作流请求明确指定生成方式和范围，例如整张流程图由生图模型生成：
+
+```json
+"generation_intent": [
+  {"unit_id": "workflow", "method": "image_model", "scope": "figure", "background": "preserve"}
+]
+```
+
+方式支持 `auto`、`image_model`、`vector`、`hybrid`；范围支持 `figure`（整图）、
+`panel`（需 `panel_id`）、`module`（需 `panel_id` 和 `members`，即既有元素／图节点 ID）。
+不同选择不能重叠；未选内容沿用自动路由。混合方式通过 `ownership` 明确各成员由生图还是
+本地绘制。顶层标签如果归生图模型，需要提供 `panel_id` 和 `bbox`，或归入生图子图／模块。
+`parameters` 和 `candidate_count` 可控制完整生图单元的参数及候选数量。
+
+新计划先返回 `generation_summary`。调用方展示摘要后再按下一动作继续；自动执行时
+使用 `resume`，不重复询问许可，普通计划仍使用 `approve_plan`。摘要不代表图已完成。
+旧的已批准计划不会仅因为软件升级而重新规划。
+
+后续明确改变选择时，可提交 `revise_generation_intent` 动作，携带新 `generation_intent`
+和用户指令 `reason`。预算、阶段 token 历史及无关素材继续保留；矛盾选择会明确暂停，
+不会悄悄改成另一条路线。完整生图单元默认保留背景，允许其内部文字和箭头；内部科学关系
+单独保存用于审核，不会再叠加一遍矢量连接线。
+
+正常导出要求该生图单元具备内容、连接关系和视觉质量三项具体审核证据；缺失证据不会默认
+通过。`apply_repair` 可按 `image_model` 重新生成同一单元，或使用支持的 `image_edit`，
+不能擅自改为 SVG 或拆小范围。位图内容不可逐对象编辑；`require_editable_objects: true`
+可明确要求该能力，遇到位图路线时会报告冲突。既有等待、重试与阶段 token 策略不变。
 
 ## 机制图工作流
 
@@ -250,7 +279,7 @@ AI 图像模型不会绘制数据图或最终复合图。确定性检查保持�
   → Figure Graph（节点、端口、有类型边、分组、约束）
   → Solved layout + 可编辑 SVG 蓝图
   → Provider-neutral Generation Conditions
-  → 隔离 raster 素材 + 确定性文字/连接线
+  → 已确认的生成单元及其文字／连接线
   → 最终图结构/OCR/出版规范验证
   → 布局、连接线、矢量或遮罩 raster patch，并支持回滚
 ```

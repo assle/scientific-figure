@@ -72,6 +72,18 @@ def vision_prompt(role: str, payload: dict[str, Any]) -> str:
         else DEFAULT_VALIDATION_INSTRUCTION
     )
     requested_checks = [str(item) for item in payload.get("checks", []) if item]
+    if any(item.startswith("generation_unit_") for item in requested_checks):
+        instruction = instruction.replace(
+            "forbidden_text (text in AI-generated portions, must be text-free)",
+            "forbidden_text (only text outside the approved unit ownership is forbidden)"
+        )
+        instruction += (
+            " For checks beginning with generation_unit_, use the exact identifier before ' :: ' as check_id. "
+            "These units intentionally contain their required labels and arrows. Evaluate exact text, nodes, "
+            "directed relationships, readability and the approved background; do not demand transparency "
+            "when preservation is requested. Return evidence for every requested identifier; report unknown "
+            "rather than pass if the image cannot establish the answer."
+        )
     if requested_checks and role != "reference_analysis":
         instruction += (
             " Also evaluate these requested checks and return one result for every "

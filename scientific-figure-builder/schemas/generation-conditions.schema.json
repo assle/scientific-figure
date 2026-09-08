@@ -37,6 +37,7 @@
         "asset_id": {"type": "string", "minLength": 1},
         "model_role": {"type": "string", "enum": ["image_generate", "image_edit"]},
         "prompt": {"type": "string", "minLength": 1},
+        "generation_unit": {"type": "object"},
         "negative_constraints": {"type": "string"},
         "parameters": {"type": "object"},
         "references": {

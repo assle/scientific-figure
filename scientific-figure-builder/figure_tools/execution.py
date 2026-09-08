@@ -24,6 +24,7 @@ from figure_tools.validation.models import AssembledFigure
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.source import svg_source, validate_vector_inputs
+from figure_tools.generation_intent import validate_plan, image_review_requirements, GenerationIntentError
 from figure_tools.vector.svg_normalize import normalize_svg_bytes, resolve_export_target
 
 
@@ -60,6 +61,8 @@ class FigureExecution:
         pre_rendered_assets: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Render and validate an approved plan, without publishing exports."""
+        if "generation_units" in plan:
+            validate_plan(self.request, plan)
         planned_request = self._request_from_plan(plan)
         if planned_request is not None:
             self.request = planned_request
@@ -72,6 +75,13 @@ class FigureExecution:
             if el["type"] == "image_asset"
         ]
         conditions = self._generation_conditions()
+        for asset in plan.get("assets", []):
+            unit = (asset.get("source") or {}).get("generation_unit")
+            if unit:
+                condition = conditions.get(asset["asset_id"], {})
+                if (condition.get("generation_unit") != unit
+                        or condition.get("parameters", {}).get("preserve_background") != (unit["background"] == "preserve")):
+                    raise GenerationIntentError(f"{asset['asset_id']}: Generation Conditions contradict the approved unit")
         grouped_assets: dict[str, list[tuple[dict, dict]]] = {}
         for panel, element in ai_elements:
             grouped_assets.setdefault(
@@ -90,7 +100,7 @@ class FigureExecution:
                 or not anchor_path.is_file()
                 or anchor_meta.get("content_hash") != hash_file(anchor_path)
             ):
-                anchor_meta = self._generate_condition(
+                anchor_meta = self.generate_condition(
                     conditions[anchor_id], anchor_path,
                 )
                 reusable[anchor_id] = anchor_meta
@@ -340,7 +350,7 @@ class FigureExecution:
             for item in artifact.get("conditions", [])
         }
 
-    def _generate_condition(
+    def generate_condition(
         self,
         condition: dict[str, Any],
         output_path: str | Path,
@@ -358,6 +368,8 @@ class FigureExecution:
             ],
         )
         meta["condition_hash"] = condition["condition_hash"]
+        if condition.get("generation_unit"):
+            meta["generation_unit"] = condition["generation_unit"]
         return meta
 
     def _error_report(self, asset_id: str, detail: str) -> dict:
@@ -456,6 +468,9 @@ class FigureExecution:
                 validation_reports.append(self._error_report(asset_id, str(err)))
                 continue
             if report is not None:
+                if el.get("generation_unit"):
+                    for check in report.get("checks", []):
+                        check.setdefault("element_ids", [asset_id])
                 validation_reports.append(report)
             manifest_assets.append(self._ai_manifest_entry(asset_id, meta, plan, report))
             placements.append({"asset_id": asset_id, "path": meta["path"],
@@ -482,7 +497,8 @@ class FigureExecution:
                 and pre_rendered_meta.get("condition_hash") == condition["condition_hash"]
             ):
                 report = self.provider.validate_image_asset(
-                    path, physical_size_mm=tuple(panel["physical_size"])
+                    path, physical_size_mm=tuple(panel["physical_size"]),
+                    checks=self.unit_checks(condition),
                 )
                 return (el["element_id"], pre_rendered_meta, report, None)
             candidate_count = int(el.get("candidate_count", 1))
@@ -493,12 +509,20 @@ class FigureExecution:
                     el["element_id"], condition, panel, path, candidate_count,
                 )
                 return (el["element_id"], meta, report, None)
-            meta = self._generate_condition(condition, path)
+            meta = self.generate_condition(condition, path)
             report = self.provider.validate_image_asset(
-                path, physical_size_mm=tuple(panel["physical_size"]))
+                path, physical_size_mm=tuple(panel["physical_size"]), checks=self.unit_checks(condition))
             return (el["element_id"], meta, report, None)
         except Exception as e:  # noqa: BLE001
             return (el["element_id"], None, None, e)
+
+    @staticmethod
+    def unit_checks(condition: dict[str, Any]) -> list[str] | None:
+        unit = condition.get("generation_unit")
+        if not unit:
+            return None
+        return [f"{key} :: {question}" for key, (_ident, question) in
+                image_review_requirements({"generation_units": [unit]}).items()]
 
     def _select_candidate(
         self,
@@ -520,11 +544,11 @@ class FigureExecution:
                 **dict(candidate_condition.get("parameters") or {}),
                 "candidate_index": index,
             }
-            meta = self._generate_condition(candidate_condition, candidate_path)
+            meta = self.generate_condition(candidate_condition, candidate_path)
             report = self.provider.validate_image_asset(
                 candidate_path,
                 physical_size_mm=tuple(panel["physical_size"]),
-                checks=[
+                checks=self.unit_checks(condition) or [
                     f"component fidelity for {asset_id}",
                     "structural fidelity to the Generation Condition",
                     "no unexpected text or symbols",
@@ -691,6 +715,7 @@ class FigureExecution:
             "generation": {"model": meta["model"], "parameters": meta["parameters"]},
             "prompt_hash": meta["prompt_hash"],
             "condition_hash": meta.get("condition_hash"),
+            **({"generation_unit": meta["generation_unit"]} if meta.get("generation_unit") else {}),
             "reference_hashes": meta["reference_hashes"],
             "pixel_dimensions": meta["pixel_dimensions"],
             "transparent": meta["transparent"],

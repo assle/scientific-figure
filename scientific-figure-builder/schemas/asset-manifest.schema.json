@@ -28,6 +28,7 @@
         "validation_result"
       ],
       "properties": {
+        "generation_unit": { "type": "object" },
         "asset_id": { "type": "string", "minLength": 1 },
         "type": {
           "type": "string",

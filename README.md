@@ -59,7 +59,7 @@ Calling Agent
       ├─ Run Store + Run Invalidator → atomic persistence and precise reuse
       └─ Figure Execution Module
          ├─ Python plots and SVG/text
-         ├─ Provider-routed isolated raster assets
+         ├─ Provider-routed Generation units
          └─ deterministic connectors/groups → assembly
             → layered validation → localized repair → export
 ```
@@ -91,7 +91,7 @@ paid assets.
 |---|---|---|
 | 📊 | Deterministic plots | CSV-backed line, scatter, bar, heatmap, error-bar, and multipanel figures |
 | 🧠 | Structure-first mechanism figures | Addressable nodes, named ports, typed directed edges, groups, constraints, and editable SVG blueprints |
-| 🎨 | Provider-neutral AI assets | Isolated, non-quantitative raster assets with provenance and background removal |
+| 🎨 | Provider-neutral AI assets | Non-quantitative Generation units with provenance and declared background handling |
 | 🧩 | Precise assembly and repair | Asset-level placement, port-bound connectors, exact vector labels/equations, masked edits, and rollback |
 | ✅ | Layered validation | Rendered graph recovery, exact source/OCR text and formulas, geometry, Publication profiles, and multimodal review |
 | 📦 | Publication export | PNG, SVG, PDF, plus optional PowerPoint-friendly SVG/PPTX |
@@ -249,7 +249,7 @@ from data.csv. Export PNG, SVG, and PDF, and keep the SVG PowerPoint-friendly.
 The lifecycle Orchestrator first records export target, figure width, language,
 style, and optional Publication profile in a Figure brief. Planning then derives
 the Figure Graph, Solved layout, editable SVG blueprint, structure questions,
-and Generation Conditions before any paid work. Calling Agent commands resume
+and Generation Conditions before image generation. Calling Agent commands resume
 from the Orchestrator's next action instead of manually sequencing low-level
 tools. Each response contains the current Lifecycle phase, status, next action,
 and canonical Artifact references.
@@ -257,15 +257,51 @@ and canonical Artifact references.
 ## The core rule
 
 ```text
-Exact data, axes, equations, labels, and geometry  →  Python / SVG
-Scientific nodes, phases, ports, and directed flow →  Figure Graph + SVG
-Isolated non-quantitative visual assets            →  configured image Provider
+Measured data and quantitative plots              →  Python / SVG
+Scientific relationships                           →  semantic Figure Graph
+Non-quantitative figure/panel/module units           →  chosen image/vector/hybrid method
 Final composition and export                       →  deterministic local pipeline
 ```
 
-AI image models never draw data plots or the final compound figure. Deterministic
+An image model can draw a complete non-quantitative flowchart, including its owned
+labels and arrows. Data plots remain deterministic, as does outer assembly. Deterministic
 findings remain authoritative; a vision model may enrich them but cannot turn a
 failed geometry check into a pass.
+
+Explicit generation choices are submitted through the existing Lifecycle request:
+
+```json
+"generation_intent": [
+  {"unit_id": "workflow", "method": "image_model", "scope": "figure", "background": "preserve"}
+]
+```
+
+Methods are `auto`, `image_model`, `vector`, and `hybrid`. Scope is `figure`, `panel`
+(with `panel_id`), or `module` (with `panel_id` and `members`, the existing element/
+Figure Graph node IDs). Disjoint selections can produce a complete image flowchart
+in one panel alongside a deterministic data plot in another. Hybrid `ownership`
+maps members to `image_model` or `vector`. Image-owned top-level labels require
+`panel_id` and `bbox`, or grouping into an image panel/module; unselected content retains automatic
+routing. Optional `parameters` and `candidate_count` apply to the complete image unit.
+
+A new plan returns `generation_summary` before image generation. Display it, then
+continue with the returned action: `resume` requires no new human approval under
+`auto_execute`; `approve_plan` retains normal approval. The summary is not a final
+figure. Old approved plans without the new contract remain usable without a re-plan.
+
+A later explicit instruction can revise the selection with the existing tool's
+`revise_generation_intent` action (`generation_intent` plus `reason`). This revision
+preserves budgets, phase token history and reusable unrelated assets. Invalid or
+conflicting choices pause with actionable information rather than changing routes.
+
+Whole image units preserve their background by default, can contain their required
+text/arrows, and retain semantic topology separately from assembly geometry. Three
+unit-specific review results (content, connections, quality) are required; missing
+image review evidence blocks normal export. `apply_repair` can regenerate that same
+unit (`image_model`) or use supported `image_edit`, but cannot silently replace it
+with SVG or subdivide it. Raster units do not provide per-object editability;
+`require_editable_objects: true` makes that conflict explicit. Existing waiting,
+retry and phase output-token policies remain unchanged.
 
 ## Mechanism-figure workflow
 
@@ -274,7 +310,7 @@ Scientific intent
   → Figure Graph (nodes, ports, typed edges, groups, constraints)
   → Solved layout + editable SVG blueprint
   → Provider-neutral Generation Conditions
-  → isolated raster assets + deterministic text/connectors
+  → declared Generation units + their owned text/connectors
   → assembled-figure structure/OCR/publication validation
   → layout, connector, vector, or masked-raster patch with rollback
 ```

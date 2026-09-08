@@ -11,11 +11,16 @@ PHASE_PROMPT_VERSION = "1.0"
 PHASE_PROMPTS = {
     "intake": (
         "Resolve the scientific figure request and required clarifications. "
+        "Preserve generation_intent and all user-specified ownership/membership exactly in request. "
         "Return only a Figure brief suggestion; do not render or call a Provider."
     ),
     "planning": (
         "Turn the completed Figure brief into a reproducible Figure plan. "
-        "Preserve explicit image-generation intent as image_asset. "
+        "Preserve generation_units, generation_intent_hash and every generation_unit_id from the supplied shape. "
+        "An image_model unit is one complete image_asset with all requested text/arrows and background; "
+        "do not replace it with SVG, subdivide it, or add duplicate internal labels/connectors. "
+        "Every declared member must be represented. When consolidating vector members into one asset, "
+        "source.represented_members must list their original IDs exactly; retain their panel scope. "
         "vector_element.content must be complete SVG source, never prose. "
         "Do not generate assets or change the brief."
     ),
@@ -26,7 +31,8 @@ PHASE_PROMPTS = {
         "For repair_plan preserve schema_version, artifact_type, run_id, plan_ref, "
         "execution_ref, validation_ref, repairs, and status from the supplied "
         "fallback artifact. Include repairs even when empty, and use unresolved "
-        "when no executable repair is available. Never claim repair success or "
+        "when no executable repair is available. Image units must retain their complete scope; "
+        "use image_model regeneration or supported image_edit, never SVG fallback. Never claim repair success or "
         "downgrade deterministic failures."
     ),
 }

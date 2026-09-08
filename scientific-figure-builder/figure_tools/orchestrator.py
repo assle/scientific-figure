@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import copy
 from pathlib import Path
 import shutil
 from typing import Any, Mapping, Protocol, Sequence
 
 from figure_tools.state import RunState
+from figure_tools.generation_intent import (GenerationIntentError, production_request, resolve_units, validate_plan, generation_summary)
 from figure_tools.lifecycle_prompts import (
     PHASE_PROMPT_VERSION,
     prompt_for,
@@ -28,7 +30,7 @@ from figure_tools.run_store import RunStore
 
 PHASES = ("intake", "planning", "execution", "review_and_repair", "export")
 STRING_ACTIONS = frozenset({"start", "resume", "approve_plan", "approve_style_anchor"})
-OBJECT_ACTIONS = frozenset({"submit_clarifications", "apply_repair", "force_export"})
+OBJECT_ACTIONS = frozenset({"submit_clarifications", "apply_repair", "force_export", "revise_generation_intent"})
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,14 @@ class FigureOrchestrator:
         self._next_plan_revision = 1
 
     def advance(self, action: str | Mapping[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            return self._advance(action)
+        except GenerationIntentError as exc:
+            self.state.mark_step("generation_intent", "failed")
+            return self._paused("planning", "revise_generation_intent", error=str(exc),
+                                recovery="Correct the generation choice or conflicting phase output, then resume.")
+
+    def _advance(self, action: str | Mapping[str, Any] | None = None) -> dict[str, Any]:
         """Advance one run until the next user decision or completion.
 
         ``action`` is intentionally small: ``approve_plan`` and
@@ -92,8 +102,12 @@ class FigureOrchestrator:
         if self.request is None:
             raise ValueError("request is required to start a figure run")
         assert self.request is not None
+        if action_name == "revise_generation_intent":
+            self._revise_generation_intent(action_data)
+            action_name = "resume"
         from figure_tools.vector.source import validate_vector_inputs
-        validate_vector_inputs(self.request)
+        resolve_units(self.request)
+        validate_vector_inputs(production_request(self.request))
         if action_name == "apply_repair":
             accepted_edits = self._apply_repair(action_data)
             result = self.advance("resume")
@@ -128,8 +142,15 @@ class FigureOrchestrator:
             actual_brief_hash = (plan.get("brief_ref") or {}).get("content_hash")
             if actual_brief_hash and actual_brief_hash != expected_brief_hash:
                 self._next_plan_revision = int(plan.get("revision", 1)) + 1
-                self.invalidator.after_figure_brief_change()
+                previous_plan = plan
+                reusable = self._reusable_raster_assets(self.store.load_optional_json("asset_manifest.json"))
                 plan = self._planning(brief)
+                self.invalidator.after_figure_plan_change(previous_plan, plan)
+                FigurePlanningArtifacts(self.request, self.config, self.run_dir, self.provider,
+                                        base_dir=self.base_dir).prepare(plan)
+                self.store.commit_json(f"plans/figure_plan.v{plan['revision']}.json", plan)
+                if reusable:
+                    self.store.commit_json("plans/pre_rendered_assets.json", reusable)
             else:
                 recorded_plan_hash = self.state.output_hashes("planning").get(
                     "figure_plan"
@@ -166,6 +187,8 @@ class FigureOrchestrator:
                     self.store.commit_json(
                         f"plans/figure_plan.v{plan['revision']}.json", plan
                     )
+        if "generation_units" in plan or self.request.get("generation_intent"):
+            validate_plan(brief["request"], plan)
         self.state.mark_step("planning", "completed", {
             "figure_plan": self.store.hash_json(plan),
         })
@@ -193,6 +216,12 @@ class FigureOrchestrator:
                 and self.state.step_status("execution") == "completed"
                 and self.state.step_status("review_and_repair") == "completed"):
             return self._force_export_existing(plan, str(action_data["reason"]))
+
+        if "generation_units" in plan and self.state.output_hashes("plan_summary").get("figure_plan") != self.store.hash_json(plan):
+            self.state.mark_step("plan_summary", "completed", {"figure_plan": self.store.hash_json(plan)})
+            return self._paused("planning", "resume" if self.request.get("auto_execute") or plan_approved else "approve_plan",
+                                generation_summary=generation_summary(plan),
+                                artifacts={"figure_plan": self.store.reference("plans/figure_plan.json")})
 
         if not self.request.get("auto_execute") and not plan_approved:
             self.state.request_approval("plan_approval", "pending")
@@ -279,8 +308,15 @@ class FigureOrchestrator:
                 raise ValueError("Phase worker returned no Review and repair artifact")
             if review_kind == "validation_report":
                 self.store.validate(review_artifact, "validation-report.schema.json")
+                protected = [check for report in validation_reports for check in report.get("checks", []) if check.get("status") == "fail"]
+                proposed = list(review_artifact.get("checks", []))
+                protected_keys = {(c.get("check_id"), c.get("scope")) for c in protected}
+                merged_checks = [c for c in proposed if (c.get("check_id"), c.get("scope")) not in protected_keys] + protected
+                from figure_tools.validation.summary import summarize_checks
+                review_artifact = {**review_artifact, "checks": merged_checks, "summary": summarize_checks(merged_checks)}
                 self.store.commit_json("validation/final.json", review_artifact)
                 self.store.commit_json("validation/validation_report.json", review_artifact)
+                execution["validation_reports"] = [*validation_reports, dict(review_artifact)]
             elif review_kind == "repair_plan":
                 self.store.validate(review_artifact, "repair-plan.schema.json")
                 self.store.commit_json("plans/repair_plan.json", review_artifact)
@@ -296,8 +332,7 @@ class FigureOrchestrator:
                                 recovery="Correct the phase worker output, then explicitly resume.")
         self.store.delete("validation/review_error.json")
         self.state.mark_step("review_and_repair", "completed", {
-            "validation_report": self.store.hash_json(validation_reports[-1])
-            if validation_reports else "",
+            "validation_report": self.store.hash_json(self.store.load_json("validation/final.json")),
         })
         self._record_artifact("validation_report", "validation/final.json")
 
@@ -378,6 +413,28 @@ class FigureOrchestrator:
                 raise ValueError("force_export requires a non-empty reason")
         return name, action
 
+    def _revise_generation_intent(self, action: Mapping[str, Any]) -> None:
+        if not isinstance(action.get("reason"), str) or not str(action["reason"]).strip():
+            raise GenerationIntentError("A generation revision needs the user's explicit instruction as its reason")
+        revised = copy.deepcopy(self.request or {})
+        revised["generation_intent"] = action.get("generation_intent")
+        if revised["generation_intent"] is None:
+            raise GenerationIntentError("A generation revision requires generation_intent selections")
+        resolve_units(revised)
+        previous = self.request
+        self.request = revised
+        try:
+            self._intake()
+        except Exception:
+            self.request = previous
+            raise
+        self.state.clear_step("plan_summary")
+        self.state.record_audit("generation_intent_revised", {
+            "reason": self.provider.clean_error(action["reason"]),
+            "generation_intent": revised["generation_intent"],
+        })
+        self._save_state()
+
     def _apply_clarifications(self, action: Mapping[str, Any]) -> None:
         assert self.request is not None
         answers = action.get("answers")
@@ -406,6 +463,8 @@ class FigureOrchestrator:
         ))
         self.store.validate(brief, "figure-brief.schema.json")
         request_snapshot = dict(brief["request"])
+        if resolve_units(request_snapshot) != resolve_units(self.request):
+            raise GenerationIntentError("Intake changed or dropped the explicit generation choice")
         clarifications = list(brief["required_clarifications"])
         self.store.commit_json("plans/figure_brief.json", brief)
         self.store.commit_json("plans/request.json", request_snapshot)
@@ -433,6 +492,7 @@ class FigureOrchestrator:
             ),
         ))
         self.store.validate(plan, "figure-plan.schema.json")
+        validate_plan(brief["request"], plan)
         request = self.request
         request.update(brief.get("delivery") or {})
         request["language"] = brief.get("language")
@@ -629,7 +689,11 @@ class FigureOrchestrator:
                 return False
         reports = execution.get("validation_reports") or []
         if reports and self.store.hash_json(reports[-1]) != self.store.hash_json(final):
-            return False
+            reviewed_hash = self.state.output_hashes("review_and_repair").get("validation_report")
+            if (self.state.step_status("review_and_repair") != "completed"
+                    or reviewed_hash != self.store.hash_json(final)
+                    or not self.store.reference_matches(self.state.artifact("validation_report"), "validation/final.json")):
+                return False
         return self._manifest_assets_current(manifest)
 
     def _completed_artifacts_current(self, plan: Mapping[str, Any]) -> bool:
@@ -727,6 +791,21 @@ class FigureOrchestrator:
             for el in panel.get("elements", [])
         }
         plan_assets = {asset["asset_id"]: asset for asset in plan.get("assets", [])}
+        for asset_id, asset in plan_assets.items():
+            if asset.get("source"):
+                elements[asset_id] = asset["source"]
+        if "generation_units" in plan:
+            brief = self.store.load_json("plans/figure_brief.json")
+            validate_plan(brief["request"], plan)
+        for item in repairs:
+            if not isinstance(item, Mapping):
+                raise GenerationIntentError("Each repair must be an object")
+            asset = plan_assets.get(str(item.get("asset_id")), {})
+            unit = (asset.get("source") or {}).get("generation_unit")
+            effective_route = item.get("route") or ("image_edit" if item.get("operation") == "raster_edit" else None)
+            if unit and (effective_route not in ("image_model", "image_edit") or item.get("operation") in ("layout_patch", "connector_patch", "vector_patch")):
+                raise GenerationIntentError(f"{unit['unit_id']}: repair must retain the whole image unit; revise generation_intent to change its method or boundary")
+
         allowed = {item.get("asset_id") for item in repair_plan.get("repairs", [])}
         repaired_routes: dict[str, str] = {}
         edit_outcomes: list[tuple[str, dict[str, Any]]] = []
@@ -820,6 +899,17 @@ class FigureOrchestrator:
                         if text_element.get("element_id") == asset_id:
                             text_element["content"] = content
             elif element.get("type") == "image_asset":
+                if route == "image_model":
+                    unit = element.get("generation_unit")
+                    if not unit:
+                        raise GenerationIntentError("Whole-unit regeneration requires an approved Generation unit")
+                    repair_item = next(entry for entry in repair_plan["repairs"] if entry.get("asset_id") == asset_id)
+                    instruction = str(item.get("prompt") or repair_item.get("action") or "Repair the reported defect")
+                    regenerated = self._regenerate_unit(plan, asset_id, instruction, pre_rendered)
+                    if regenerated is not None:
+                        regenerated["baseline_validation"] = validation_report
+                        accepted_edits.append(regenerated)
+                    continue
                 if route != "image_edit":
                     raise ValueError(f"invalid raster repair route: {route}")
                 manifest_asset = next(
@@ -852,8 +942,8 @@ class FigureOrchestrator:
                 )
                 meta = self.provider.edit_image_asset(
                     parent_path,
-                    prompt,
-                    {},
+                    (str(element.get("prompt", "")) + "\nKeep this complete generation unit and repair: " + prompt) if element.get("generation_unit") else prompt,
+                    dict(element.get("parameters") or {}) if element.get("generation_unit") else {},
                     output_path=edit_path,
                     parent_asset_id=asset_id,
                     mask_path=mask_path,
@@ -876,8 +966,10 @@ class FigureOrchestrator:
                     if panel is not None
                     else None
                 )
+                from figure_tools.execution import FigureExecution
                 edited_validation = self.provider.validate_image_asset(
                     edit_path, physical_size_mm=physical_size,
+                    checks=FigureExecution.unit_checks({"generation_unit": element.get("generation_unit")}),
                 )
                 source_check = str(repair_item.get("source_check") or "")
 
@@ -920,6 +1012,8 @@ class FigureOrchestrator:
                     meta["condition_hash"] = (
                         manifest_asset or {}
                     ).get("condition_hash")
+                    if element.get("generation_unit"):
+                        meta["generation_unit"] = element["generation_unit"]
                     pre_rendered[asset_id] = meta
                     accepted_edits.append({
                         "asset_id": asset_id,
@@ -976,6 +1070,9 @@ class FigureOrchestrator:
             "figure_plan": self.store.hash_json(plan),
         })
         self._record_artifact("figure_plan", "plans/figure_plan.json")
+        if "generation_units" in plan:
+            # An authorized content repair retains the already displayed method/scope summary.
+            self.state.mark_step("plan_summary", "completed", {"figure_plan": self.store.hash_json(plan)})
         self.store.commit_json(
             "plans/request.json",
             json.loads(json.dumps(self.request, default=str)),
@@ -987,6 +1084,48 @@ class FigureOrchestrator:
                 f"validation/edit_outcomes/{asset_id}.json", outcome,
             )
         return accepted_edits
+
+    def _regenerate_unit(self, plan: dict[str, Any], asset_id: str, instruction: str,
+                         pre_rendered: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+        from figure_tools.execution import FigureExecution
+
+        original_asset = next(asset for asset in plan["assets"] if asset["asset_id"] == asset_id)
+        original_conditions = self.store.load_json("plans/generation_conditions.json")
+        original_condition = next(item for item in original_conditions["conditions"] if item["asset_id"] == asset_id)
+        candidate = copy.deepcopy(plan)
+        source = next(asset["source"] for asset in candidate["assets"] if asset["asset_id"] == asset_id)
+        source["prompt"] += "\nRepair this same complete unit without changing membership or ownership: " + instruction
+        planner = FigurePlanningArtifacts(self.request or {}, self.config, self.run_dir, self.provider, base_dir=self.base_dir)
+        conditions = planner.refresh_generation_conditions(candidate, persist=False)
+        condition = next(item for item in conditions["conditions"] if item["asset_id"] == asset_id)
+        destination = self.run_dir / "assets" / "edits" / f"{asset_id}-regenerated-{int(plan.get('revision', 1)) + 1}.png"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        executor = FigureExecution(self.request or {}, self.config, self.run_dir, self.provider, self.state,
+                                   base_dir=self.base_dir, compose_dpi=self.compose_dpi)
+        meta = executor.generate_condition(condition, destination)
+        report = self.provider.validate_image_asset(destination, checks=executor.unit_checks(condition),
+                                                    physical_size_mm=tuple(original_asset["physical_size"]))
+        if report.get("summary", {}).get("blocking"):
+            raise ValueError(f"Regenerated unit {asset_id} failed validation; retained the candidate without replacing the original")
+        parent = self.run_dir / "assets" / f"{asset_id}.png"
+        accepted = None
+        if parent.is_file() and pre_rendered.get(asset_id):
+            backup = destination.with_name(destination.stem + "-original.png")
+            shutil.copyfile(parent, backup)
+            accepted = {"asset_id": asset_id, "parent_path": str(parent), "backup_path": str(backup),
+                        "original_meta": copy.deepcopy(pre_rendered[asset_id]),
+                        "original_source": copy.deepcopy(original_asset["source"]),
+                        "original_condition": copy.deepcopy(original_condition)}
+        shutil.copyfile(destination, parent)
+        meta["path"] = str(parent)
+        meta["content_hash"] = hash_file(parent)
+        pre_rendered[asset_id] = meta
+        asset = next(item for item in plan["assets"] if item["asset_id"] == asset_id)
+        asset["source"] = source
+        reference = self.store.commit_json("plans/generation_conditions.json", conditions, schema="generation-conditions.schema.json")
+        plan["generation_conditions_ref"] = {"artifact": "plans/generation_conditions.json", "content_hash": reference["content_hash"]}
+        self.state.record_audit("generation_unit_regenerated", {"asset_id": asset_id, "unit_id": source["generation_unit"]["unit_id"]})
+        return accepted
 
     def _global_validation_regressed(self, edits: list[dict[str, Any]]) -> bool:
         current = self.store.load_optional_json("validation/final.json") or {}
@@ -1007,7 +1146,10 @@ class FigureOrchestrator:
         return False
 
     def _rollback_accepted_edits(self, edits: list[dict[str, Any]]) -> None:
-        reusable: dict[str, dict[str, Any]] = {}
+        reusable = self._reusable_raster_assets(self.store.load_optional_json("asset_manifest.json"))
+        plan = self.store.load_json("plans/figure_plan.json")
+        conditions = self.store.load_json("plans/generation_conditions.json")
+        restored_sources = False
         outcomes: list[tuple[str, dict[str, Any]]] = []
         for edit in edits:
             asset_id = str(edit["asset_id"])
@@ -1019,12 +1161,26 @@ class FigureOrchestrator:
             original_meta["path"] = str(parent_path)
             original_meta["content_hash"] = hash_file(parent_path)
             reusable[asset_id] = original_meta
+            if "original_source" in edit:
+                restored_sources = True
+                asset = next(item for item in plan["assets"] if item["asset_id"] == asset_id)
+                asset["source"] = edit["original_source"]
+                conditions["conditions"] = [edit["original_condition"] if item["asset_id"] == asset_id else item for item in conditions["conditions"]]
             outcome = self.store.load_optional_json(
                 f"validation/edit_outcomes/{asset_id}.json"
             ) or {"schema_version": "1.0", "asset_id": asset_id}
             outcome["status"] = "rolled_back"
             outcome["reason"] = "global validation regressed after raster edit"
             outcomes.append((asset_id, outcome))
+        if restored_sources:
+            ref = self.store.commit_json("plans/generation_conditions.json", conditions, schema="generation-conditions.schema.json")
+            plan["generation_conditions_ref"] = {"artifact": "plans/generation_conditions.json", "content_hash": ref["content_hash"]}
+            plan["revision"] = int(plan.get("revision", 1)) + 1
+            plan["plan_id"] = f"{plan['figure_id']}-plan-v{plan['revision']}"
+            self.store.commit_json("plans/figure_plan.json", plan, schema="figure-plan.schema.json")
+            self.store.commit_json(f"plans/figure_plan.v{plan['revision']}.json", plan)
+            self.state.mark_step("planning", "completed", {"figure_plan": self.store.hash_json(plan)})
+            self.state.mark_step("plan_summary", "completed", {"figure_plan": self.store.hash_json(plan)})
         if reusable:
             self.store.commit_json("plans/pre_rendered_assets.json", reusable)
             self.invalidator.after_repairs({
@@ -1058,6 +1214,7 @@ class FigureOrchestrator:
                 "parameters": dict(generation.get("parameters") or {}),
                 "prompt_hash": asset.get("prompt_hash"),
                 "condition_hash": asset.get("condition_hash"),
+                **({"generation_unit": asset["generation_unit"]} if asset.get("generation_unit") else {}),
                 "reference_hashes": list(asset.get("reference_hashes") or []),
                 "pixel_dimensions": list(asset.get("pixel_dimensions") or []),
                 "transparent": bool(asset.get("transparent")),

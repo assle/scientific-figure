@@ -24,6 +24,7 @@ from figure_tools.validation.publication import (
     publication_profile_checks,
 )
 from figure_tools.provenance import hash_json
+from figure_tools.generation_intent import image_review_requirements
 from figure_tools.validation.vlm_verify import VLMVerifier
 from figure_tools.validation.rules import (
     asset_bounds,
@@ -61,12 +62,13 @@ def _deterministic_final_checks(
     bad_alpha = [
         a["asset_id"] for a in plan_assets
         if a["type"] == "image_asset"
+        and ((a.get("source") or {}).get("generation_unit") or {}).get("background") != "preserve"
         and not manifest_by_id.get(a["asset_id"], {}).get("transparent", False)
     ]
     checks.append(make_check("alpha_for_ai_assets", "final", "error",
                          "fail" if bad_alpha else "pass",
                          "non-transparent AI assets: " + ",".join(bad_alpha) if bad_alpha
-                         else "AI assets transparent"))
+                         else "AI asset backgrounds meet their declared transparency policy"))
 
     zorders = [a["z_order"] for a in plan_assets]
     dup = sorted({z for z in zorders if zorders.count(z) > 1})
@@ -255,6 +257,9 @@ class FigureQAEngine:
         for a in asset_manifest.get("assets", []):
             if a.get("type") != "image_asset":
                 continue
+            if (a.get("generation_unit") or {}).get("method") == "image_model":
+                # Required raster labels are checked against the unit, not forbidden wholesale.
+                continue
             path = a.get("path")
             if not path or not Path(path).exists():
                 continue
@@ -376,12 +381,23 @@ class FigureQAEngine:
         # Local VLM review of suspicious regions (plan section 14).
         VLMVerifier(self.provider_client, self.config).review(checks)
 
-        checks.extend(_multimodal_final_checks(
-            self.provider_client,
-            figure.image_path,
-            figure.physical_size_mm,
-            structure_questions,
-        ))
+        required = image_review_requirements(figure.figure_plan)
+        requested_checks = [*structure_questions, *[
+            f"{key} :: {question}" for key, (_ident, question) in required.items()
+        ]]
+        multimodal = _multimodal_final_checks(
+            self.provider_client, figure.image_path, figure.physical_size_mm, requested_checks,
+        )
+        for key, (unit_id, question) in required.items():
+            matching = [item for item in multimodal if item.get("check_id") == key]
+            if not matching or any(item.get("status") not in ("pass", "fail") for item in matching):
+                checks.append(make_check(key, "final", "error", "fail",
+                    "Required image-unit review evidence unavailable: " + question,
+                    element_ids=[unit_id], method="image_semantic_review"))
+            for item in matching:
+                item["level"] = "error"
+                item["element_ids"] = [unit_id]
+        checks.extend(multimodal)
 
         return {
             "schema_version": "1.0",

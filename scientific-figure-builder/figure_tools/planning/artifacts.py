@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from figure_tools.figure_graph import build_figure_graph
+from figure_tools.generation_intent import projected_graphs, generation_summary
 from figure_tools.figure_layout import solve_figure_layout
 from figure_tools.generation_conditions import compile_generation_condition
 from figure_tools.planning.geometry import resolve_asset_bbox
@@ -66,7 +67,12 @@ class FigurePlanningArtifacts:
         self._commit_plan(plan)
 
     def refresh_graph(self, plan: dict[str, Any]) -> None:
-        graph = build_figure_graph(self.request, plan)
+        if any((asset.get("source") or {}).get("generation_unit") for asset in plan.get("assets", [])):
+            semantic, graph = projected_graphs(self.request, plan)
+            ref = self.store.commit_json("plans/semantic_graph.json", semantic, schema="figure-graph.schema.json")
+            plan["semantic_graph_ref"] = self._artifact_ref("plans/semantic_graph.json", ref)
+        else:
+            graph = build_figure_graph(self.request, plan)
         graph_reference = self.store.commit_json(
             "plans/figure_graph.json", graph, schema="figure-graph.schema.json"
         )
@@ -134,6 +140,7 @@ class FigurePlanningArtifacts:
         plan: dict[str, Any],
         *,
         style_anchors: Mapping[str, Mapping[str, Any]] | None = None,
+        persist: bool = True,
     ) -> dict[str, Any]:
         style_path = self.run_dir / "style_bible.json"
         style_bible = json.loads(style_path.read_text(encoding="utf-8"))
@@ -188,6 +195,7 @@ class FigurePlanningArtifacts:
                 "model_role": "image_generate",
                 "scientific_intent": self.request.get("intent", ""),
                 "prompt": source.get("prompt", ""),
+                "generation_unit": source.get("generation_unit"),
                 "style_bible": style_bible,
                 "style_bible_hash": hash_file(style_path),
                 "publication_profile": publication_profile,
@@ -197,6 +205,8 @@ class FigurePlanningArtifacts:
                 "provider_capabilities": capabilities,
             }))
         artifact = {"schema_version": "1.0", "conditions": conditions}
+        if not persist:
+            return artifact
         reference = self.store.commit_json(
             "plans/generation_conditions.json",
             artifact,
@@ -332,6 +342,8 @@ class FigurePlanningArtifacts:
         return {key: round(value / total, 2) for key, value in quadrants.items()}
 
     def _commit_plan(self, plan: dict[str, Any]) -> None:
+        if "generation_units" in plan:
+            plan["generation_summary"] = generation_summary(plan)
         self.store.commit_json(
             "plans/figure_plan.json", plan, schema="figure-plan.schema.json"
         )

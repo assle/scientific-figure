@@ -14,13 +14,26 @@ import pytest
 from jsonschema import Draft202012Validator
 from PIL import Image
 
-from figure_tools.orchestrator import FigureOrchestrator, PhaseInvocation
+from figure_tools.orchestrator import FigureOrchestrator as RawOrchestrator, PhaseInvocation
 from figure_tools.provenance import hash_json
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.phase_workers import StructuredPhaseWorker
 from figure_tools.state import BudgetExceeded, Cache, RunDirectory, RunState
 from figure_tools._resources import schema_path
+
+class FigureOrchestrator(RawOrchestrator):
+    """Simulate a Calling Agent displaying and continuing an automatic summary.
+
+    These pre-existing scenarios target later Lifecycle behavior; dedicated
+    generation-intent tests use RawOrchestrator to assert the summary boundary.
+    """
+    def advance(self, action=None):
+        result = super().advance(action)
+        if result.get("generation_summary") and result.get("next_action") == "resume":
+            return super().advance("resume")
+        return result
+
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -149,13 +162,15 @@ def _orchestrator(
     run_dir: Path | None = None,
     state: RunState | None = None,
     transport=None,
+    auto_continue_summary=True,
 ):
     run_dir = run_dir or RunDirectory(base_dir=tmp_path).create(request["figure_id"])
     transport = transport or MockProviderTransport()
     state = state or RunState(run_id=run_dir.name, budget=BUDGET)
     client = ProviderClient(MODELS, transport, state=state,
                             cache=Cache(run_dir / "cache"), output_dir=run_dir)
-    return FigureOrchestrator(
+    cls = FigureOrchestrator if auto_continue_summary else RawOrchestrator
+    return cls(
         request=request,
         config={},
         run_dir=run_dir,

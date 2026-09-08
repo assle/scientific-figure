@@ -107,10 +107,17 @@ def compile_generation_condition(request: Mapping[str, Any]) -> dict[str, Any]:
         for field in _STYLE_FIELDS
         if style.get(field) not in (None, "", {}, [])
     }
+    unit = dict(request.get("generation_unit") or {})
+    whole_diagram = unit.get("method") == "image_model"
+    if whole_diagram:
+        parameters.update(unit.get("parameters", {}))
+        style_contract["background"] = "preserve requested background (white if unspecified)" if unit.get("background") == "preserve" else "transparent"
+        parameters["preserve_background"] = unit.get("background") == "preserve"
     forbidden = [str(item) for item in style.get("forbidden_elements", [])]
+    if whole_diagram:
+        forbidden = [item for item in forbidden if item.lower().strip() not in {"text", "symbols", "labels", "no text", "no symbols", "no labels"}]
     negative_items = [
-        "no text",
-        "no symbols",
+        *([] if whole_diagram else ["no text", "no symbols"]),
         "no watermark",
         *forbidden,
     ]
@@ -124,7 +131,10 @@ def compile_generation_condition(request: Mapping[str, Any]) -> dict[str, Any]:
         "Publication profile: " + json.dumps(
             publication, sort_keys=True, ensure_ascii=False, separators=(",", ":")
         ),
-        "Generate one isolated non-quantitative asset on a transparent background.",
+        ("Generate this complete non-quantitative diagram together, including every requested label, symbol and internal arrow. "
+         "Preserve the approved background and do not draw content outside this unit. "
+         "This declared production method overrides older automatic SVG/assembly suggestions; preserve the scientific content."
+         if whole_diagram else "Generate one isolated non-quantitative asset on a transparent background."),
         "Negative constraints: " + negative_constraints,
     ]
     prompt = "\n".join(part for part in prompt_parts if part)
@@ -145,6 +155,8 @@ def compile_generation_condition(request: Mapping[str, Any]) -> dict[str, Any]:
             request.get("publication_profile_hash") or ""
         ),
     }
+    if unit:
+        condition["generation_unit"] = unit
     condition["condition_hash"] = hash_json(condition)
     return condition
 

@@ -321,7 +321,13 @@ class ProviderClient:
         # transparent. No-op for already-transparent images (e.g. mock).
         from figure_tools.imaging.background_removal import ensure_transparency
 
-        transparent = ensure_transparency(path)
+        if parameters.get("preserve_background"):
+            with Image.open(path) as original:
+                rgba = original.convert("RGBA")
+                transparent = rgba.getchannel("A").getextrema() != (255, 255)
+                rgba.save(path)
+        else:
+            transparent = ensure_transparency(path)
         img = Image.open(path)
         final_bytes = path.read_bytes()
         seed = parameters.get("seed") if isinstance(parameters, dict) else None

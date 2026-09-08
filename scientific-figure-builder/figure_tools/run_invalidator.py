@@ -40,6 +40,7 @@ _LAYOUT_DERIVED_PATHS = (
 
 _GRAPH_DERIVED_PATHS = (
     "plans/figure_graph.json",
+    "plans/semantic_graph.json",
     "plans/structure_questions.json",
     *_LAYOUT_DERIVED_PATHS,
 )
@@ -180,7 +181,7 @@ class RunInvalidator:
                 paths.extend(_LAYOUT_DERIVED_PATHS)
             elif route == "connector_patch":
                 paths.extend(_GRAPH_DERIVED_PATHS)
-            elif route != "image_edit":
+            elif route not in {"image_edit", "image_model"}:
                 raise ValueError(f"unknown repair route: {route}")
         return self.apply(InvalidationPlan(
             removed_paths=tuple(dict.fromkeys(paths)),

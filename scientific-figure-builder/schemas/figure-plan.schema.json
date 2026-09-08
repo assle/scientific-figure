@@ -44,6 +44,9 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/panel" }
     },
+    "generation_units": { "type": "array", "items": { "type": "object" } },
+    "generation_intent_hash": { "type": "string" },
+    "generation_summary": { "type": "string" },
     "assets": {
       "type": "array",
       "items": { "$ref": "#/$defs/plannedAsset" }
@@ -89,6 +92,7 @@
         "content_hash": {"type": "string", "minLength": 1}
       }
     },
+    "semantic_graph_ref": {"$ref": "#/$defs/artifactRef"},
     "figure_graph_ref": {"$ref": "#/$defs/artifactRef"},
     "solved_layout_ref": {"$ref": "#/$defs/artifactRef"},
     "blueprint_ref": {"$ref": "#/$defs/artifactRef"},
@@ -144,6 +148,7 @@
       "additionalProperties": false,
       "required": ["asset_id", "type", "z_order", "dependencies", "routing"],
       "properties": {
+        "generation_unit_id": { "type": "string", "minLength": 1 },
         "asset_id": { "type": "string", "minLength": 1 },
         "type": {
           "type": "string",

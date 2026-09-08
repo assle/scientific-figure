@@ -111,6 +111,18 @@ _Avoid_: conversation context, intermediate output, run file
 The Phase artifact produced by Intake that records the resolved scientific intent, source inputs, output constraints, and remaining Required clarifications.
 _Avoid_: user request, Figure plan, prompt
 
+**Generation intent**:
+The user's choice of production method and scope, distinguished from automatically inferred routing.
+_Avoid_: element type, Provider route
+
+**Generation unit**:
+Content intended to be produced together, with a defined membership and ownership of text, connectors, and background. A complete figure, panel, or module can be one unit.
+_Avoid_: local picture, small asset
+
+**Generation summary**:
+The user-readable description of a Figure plan's production methods, scopes, and content ownership before generation begins.
+_Avoid_: generation result, approval
+
 **Generation route**:
 The production path for a planned figure element within Execution, such as Python, SVG, image generation, image editing, or assembly.
 _Avoid_: Lifecycle phase, Model route, workflow stage
@@ -134,7 +146,7 @@ A model that reads images for reference analysis or validation but does not gene
 _Avoid_: vision model, image-understanding model
 
 **Image-generation model**:
-A model that produces or revises non-quantitative raster assets; plots, labels, equations, and other reproducible graphics are not image-generation work.
+A model that produces or revises non-quantitative raster Generation units, including their owned labels and arrows. Measured-data plots remain deterministic.
 _Avoid_: drawing model, image model
 
 **Model role**:

@@ -15,12 +15,22 @@ ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
-def _rpc(monkeypatch, *messages):
+def _rpc(monkeypatch, *messages, continue_summaries=True):
     incoming = io.StringIO("".join(json.dumps(message) + "\n" for message in messages))
     outgoing = io.StringIO()
     monkeypatch.setattr(server.sys, "stdin", incoming)
     monkeypatch.setattr(server.sys, "stdout", outgoing)
-    assert server.serve_stdio() == 0
+    original = server._call_tool
+    def continue_plan(name, arguments):
+        data = original(name, arguments)
+        if data.get("generation_summary") and data.get("next_action") == "resume":
+            continuation = {key: value for key, value in arguments.items() if key != "request"}
+            data = original(name, {**continuation, "action": "resume"})
+        return data
+    with monkeypatch.context() as scoped:
+        if continue_summaries:
+            scoped.setattr(server, "_call_tool", continue_plan)
+        assert server.serve_stdio() == 0
     return [json.loads(line) for line in outgoing.getvalue().splitlines()]
 
 

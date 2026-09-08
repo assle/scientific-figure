@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from figure_tools.planning.router import route_element
+from figure_tools.generation_intent import production_request
 
 _ELEMENT_TYPE_TO_ASSET_TYPE = {
     "data_plot": "data_plot",
@@ -81,6 +82,7 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
                 "bbox": list(el.get("bbox", panel["bbox"])),
                 "physical_size": list(panel["physical_size"]),
                 "source": dict(el),
+                **({"generation_unit_id": el["generation_unit_id"]} if "generation_unit_id" in el else {}),
             }
             if el.get("bbox") is not None:
                 asset["bbox_space"] = "panel"
@@ -94,6 +96,7 @@ def _planned_assets(request: dict[str, Any]) -> list[dict[str, Any]]:
             "dependencies": [],
             "routing": "svg",
             "source": dict(label),
+            **({"generation_unit_id": label["generation_unit_id"]} if "generation_unit_id" in label else {}),
         })
         z += 1
     return assets
@@ -195,6 +198,7 @@ def create_figure_plan(
     request: dict[str, Any],
     style_bible_ref: str = "default",
 ) -> dict[str, Any]:
+    request = production_request(request)
     assets = _planned_assets(request)
     figure_id = request["figure_id"]
     run_id = request.get("run_id", figure_id)
@@ -213,6 +217,8 @@ def create_figure_plan(
             for p in request.get("panels", [])
         ],
         "assets": assets,
+        "generation_units": request["generation_units"],
+        "generation_intent_hash": request["generation_intent_hash"],
         "style_bible_ref": style_bible_ref,
         "text_elements": [
             {"element_id": l["element_id"], "kind": l.get("kind", "label"),

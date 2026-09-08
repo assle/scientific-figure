@@ -146,6 +146,8 @@ def test_case3_hybrid_multipanel(tmp_path: Path):
     # Use force_export because the vision model is non-deterministic and may
     # return per-asset checks that block the gate even for valid figures.
     result = orchestrator.advance()
+    if result.get("generation_summary") and result.get("next_action") == "resume":
+        result = orchestrator.advance("resume")
     if result["status"] == "paused" and result["next_action"] == "force_export":
         result = orchestrator.advance({
             "action": "force_export",

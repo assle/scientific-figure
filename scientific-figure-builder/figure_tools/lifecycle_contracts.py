@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from figure_tools.generation_intent import SELECTION_SCHEMA
 
 
 FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
@@ -10,6 +11,8 @@ FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
     "required": ["figure_id", "panels"],
     "properties": {
+        "generation_intent": SELECTION_SCHEMA,
+        "require_editable_objects": {"type": "boolean"},
         "figure_id": {"type": "string", "minLength": 1},
         "run_id": {"type": "string", "minLength": 1},
         "intent": {"type": "string"},
@@ -95,6 +98,8 @@ FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "element_id": {"type": "string", "minLength": 1},
                     "kind": {"type": "string", "enum": ["label", "annotation", "equation"]},
+                    "bbox": {"type": "array", "minItems": 4, "maxItems": 4,
+                             "items": {"type": "number", "minimum": 0, "maximum": 1}},
                     "content": {"type": "string", "minLength": 1},
                     "panel_id": {"type": "string", "minLength": 1},
                 },
@@ -138,6 +143,15 @@ WORKFLOW_INPUT_SCHEMA: dict[str, Any] = {
         "request": FIGURE_REQUEST_SCHEMA,
         "action": {
             "oneOf": [
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["action", "generation_intent", "reason"],
+                    "properties": {
+                        "action": {"const": "revise_generation_intent"},
+                        "generation_intent": SELECTION_SCHEMA,
+                        "reason": {"type": "string", "minLength": 1},
+                    },
+                },
                 {"type": "string", "enum": [
                     "start", "resume", "approve_plan", "approve_style_anchor",
                 ]},
@@ -174,7 +188,7 @@ WORKFLOW_INPUT_SCHEMA: dict[str, Any] = {
                                 ],
                                 "properties": {
                                     "asset_id": {"type": "string", "minLength": 1},
-                                    "route": {"type": "string", "enum": ["python", "svg", "image_edit"]},
+                                    "route": {"type": "string", "enum": ["python", "svg", "image_edit", "image_model"]},
                                     "plot_spec": {"type": "string", "minLength": 1},
                                     "content": {"type": "string", "minLength": 1},
                                     "prompt": {"type": "string", "minLength": 1},
@@ -240,6 +254,7 @@ WORKFLOW_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "clarifications": {"type": "array", "items": {"type": "object"}},
         "export_blocked_reason": {"type": ["string", "null"]},
+        "generation_summary": {"type": "string"},
         "error": {"type": "string"},
         "recovery": {"type": "string"},
     },

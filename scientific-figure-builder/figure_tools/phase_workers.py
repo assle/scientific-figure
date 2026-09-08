@@ -124,9 +124,9 @@ class StructuredPhaseWorker:
                     if asset is None:
                         continue
                     route = asset.get("routing")
-                    if route == "image_model":
+                    if route == "image_model" and not (asset.get("source") or {}).get("generation_unit"):
                         route = "image_edit"
-                    if route not in {"python", "svg", "image_edit"}:
+                    if route not in {"python", "svg", "image_edit", "image_model"}:
                         continue
                     repairs.append({
                         "asset_id": asset_id,
