@@ -18,7 +18,10 @@
     },
     "status": {
       "type": "string",
-      "enum": ["running", "completed", "failed", "remote_outcome_unknown", "consumed"]
+      "enum": [
+        "running", "cancellation_requested", "completed", "failed",
+        "cancelled", "remote_outcome_unknown", "consumed"
+      ]
     },
     "owner_pid": {"type": "integer", "minimum": 1},
     "created_at": {"type": "string", "minLength": 1},

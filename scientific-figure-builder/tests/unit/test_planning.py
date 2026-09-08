@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
+from figure_tools.run_store import schema_error_detail
 
 from figure_tools._resources import schema_path
 from figure_tools.planning.planner import (
@@ -65,7 +66,7 @@ def test_route_element():
 def test_create_figure_plan_conforms_to_schema():
     plan = create_figure_plan(_request())
     schema = json.loads(schema_path("figure-plan.schema.json").read_text(encoding="utf-8"))
-    assert not list(Draft202012Validator(schema).iter_errors(plan))
+    assert schema_error_detail(plan, schema) is None
 
 
 def test_plan_routes_data_plot_to_python_and_ai_to_image_model():

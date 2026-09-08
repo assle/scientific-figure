@@ -1,5 +1,6 @@
 """Generation choices enforced through the public Lifecycle boundary."""
 import json
+import pytest
 
 from figure_tools.orchestrator import FigureOrchestrator
 from tests.unit.test_lifecycle_orchestrator import _orchestrator as _scenario, _request
@@ -308,6 +309,41 @@ def test_vector_member_cannot_disappear_from_worker_plan(tmp_path):
     assert client.state.calls_used('generation') == 0
 
 
+@pytest.mark.parametrize("attempt", ["drop", "rewrite", "subdivide", "reroute"])
+def test_planning_advice_cannot_take_generation_authority(tmp_path, attempt):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class ConflictingAdvice(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase != "planning":
+                return result
+            if attempt == "drop":
+                result.pop("composition")
+            elif attempt == "rewrite":
+                result["generation_units"] = []
+            elif attempt == "subdivide":
+                result["assets"] = [{"asset_id": "start"}, {"asset_id": "finish"}]
+            else:
+                result["asset_hints"] = [{
+                    "asset_id": "diagram", "bbox": [0, 0, 1, 1],
+                    "routing": "svg",
+                }]
+            return result
+
+    orch, run, client = _orchestrator(
+        tmp_path, diagram_request(), worker=ConflictingAdvice(),
+    )
+
+    result = orch.advance("start")
+
+    assert result["status"] == "paused"
+    assert result["phase"] == "planning"
+    assert "invalid Planning Advice" in result["error"]
+    assert not (run / "plans/figure_plan.json").exists()
+    assert client.state.calls_used("generation") == 0
+
+
 def test_recorded_whole_figure_vector_shape_keeps_ten_members(tmp_path):
     elements = [
         {"element_id": f"member-{index}", "type": "text", "content": f"M{index}"}
@@ -416,8 +452,29 @@ def test_natural_language_style_compiles_without_default_fallback(tmp_path):
         "flat indigo orthographic AI conference poster; white background; "
         "forbid isometric perspective and glassmorphism"
     )
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class FlatStyleWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase == "planning":
+                result["style_bible"] = {
+                    "schema_version": "1.0",
+                    "palette": {"primary": "#2B176E", "background": "#FFFFFF"},
+                    "view": "flat 2D panoramic scientific graphic",
+                    "projection": "orthographic front view",
+                    "lighting": "none", "material": "flat matte surfaces",
+                    "stroke_widths": {"thin": 0.75},
+                    "fonts": {"family": "Arial", "sizes": {"label": 9}},
+                    "equation_style": "clean scientific typesetting",
+                    "background": "white", "shadow": "none",
+                    "forbidden_elements": ["isometric perspective", "glassmorphism"],
+                    "style_reference_hashes": [],
+                }
+            return result
+
     orch, run, _ = _orchestrator(
-        tmp_path, diagram_request(style=description),
+        tmp_path, diagram_request(style=description), worker=FlatStyleWorker(),
     )
 
     result = orch.advance("start")
@@ -430,6 +487,42 @@ def test_natural_language_style_compiles_without_default_fallback(tmp_path):
     assert resolved["view"] != "isometric"
     assert resolved["material"] != "matte with subtle specular highlights on glass"
     assert "isometric perspective" in resolved["forbidden_elements"]
+
+
+def test_natural_language_style_can_resolve_to_isometric_glass(tmp_path):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class IsometricStyleWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase == "planning":
+                result["style_bible"] = {
+                    "schema_version": "1.0",
+                    "palette": {"primary": "#111827", "accent": "#60A5FA"},
+                    "view": "isometric scientific illustration",
+                    "projection": "oblique isometric projection",
+                    "lighting": "soft studio light",
+                    "material": "translucent glass",
+                    "stroke_widths": {"thin": 0.75},
+                    "fonts": {"family": "Arial", "sizes": {"label": 9}},
+                    "equation_style": "clean scientific typesetting",
+                    "background": "black", "shadow": "soft",
+                    "forbidden_elements": ["watermarks"],
+                    "style_reference_hashes": [],
+                }
+            return result
+
+    description = "isometric glass scientific illustration on black"
+    orch, run, _ = _orchestrator(
+        tmp_path, diagram_request(style=description), worker=IsometricStyleWorker(),
+    )
+    result = orch.advance("start")
+
+    assert result["next_action"] == "resume"
+    resolved = json.loads((run / "style_bible.json").read_text())
+    assert resolved["projection"] == "oblique isometric projection"
+    assert resolved["material"] == "translucent glass"
+    assert resolved["background"] == "black"
 
 
 def test_missing_style_file_pauses_before_plan_acceptance(tmp_path):
@@ -493,6 +586,29 @@ def test_whole_figure_image_plan_exposes_asset_and_composition_blueprints(tmp_pa
     assert 'data-node-id="finish"' in composition_svg
     client_calls = json.loads((run / "run_state.json").read_text())["calls"]["counts"]
     assert client_calls.get("generation", 0) == 0
+
+
+def test_composition_blueprint_respects_forbidden_cards_and_box_arrows(tmp_path):
+    style = {
+        "schema_version": "1.0",
+        "palette": {"primary": "#2B176E"},
+        "view": "continuous panoramic field", "projection": "orthographic",
+        "lighting": "none", "material": "flat matte",
+        "stroke_widths": {"thin": 0.75},
+        "fonts": {"family": "Arial", "sizes": {"label": 9}},
+        "equation_style": "scientific", "background": "white", "shadow": "none",
+        "forbidden_elements": ["card grid", "box-and-arrow flowchart"],
+        "style_reference_hashes": [],
+    }
+    orch, run, _ = _orchestrator(tmp_path, diagram_request(style=style))
+    assert orch.advance("start")["next_action"] == "resume"
+
+    composition = (run / "plans/composition_blueprint.svg").read_text()
+    assert 'data-region-id="' in composition
+    assert '<rect' not in "\n".join(
+        line for line in composition.splitlines() if 'data-region-id="' in line
+    )
+    assert "marker-end=" not in composition
 
 
 def test_hybrid_top_level_label_can_be_image_owned_with_explicit_placement(tmp_path):

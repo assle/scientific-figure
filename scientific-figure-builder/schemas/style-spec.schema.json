@@ -31,7 +31,7 @@
       "required": ["kind", "style_bible"],
       "properties": {
         "kind": {"const": "inline"},
-        "style_bible": {"type": "object"}
+        "style_bible": {"$ref": "style-bible.schema.json"}
       }
     }
   ],
@@ -40,6 +40,6 @@
     "kind": {"enum": ["default", "description", "file", "inline"]},
     "description": {"type": "string"},
     "path": {"type": "string"},
-    "style_bible": {"type": "object"}
+    "style_bible": {"$ref": "style-bible.schema.json"}
   }
 }

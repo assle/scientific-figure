@@ -155,7 +155,8 @@ DeepSeek Responses 使用同一 SSE 连接持续接收状态。心跳只表示�
 最新脱敏状态保存在 Run state 的 `provider_status` 中；宿主提供 progress token 时
 同时发送进度通知。`advance_figure_workflow` 会短暂等待本地操作，超出后返回
 `status: in_progress` 和持久化操作引用。再次使用 `resume` 只观察或消费同一个操作，
-不会重新提交 Provider 请求；`wait_timeout` 可在 0～240 秒内调整首次本地等待。
+同时携带返回的 `operation_id`，不会重新提交 Provider 请求。显式 `cancel_operation`
+动作可按 operation ID 请求取消并记录结果，但不会声称远端已经取消；`wait_timeout` 可在 0～240 秒内调整首次本地等待。
 如果本地执行者消失，操作会变为 `remote_outcome_unknown`，必须先检查证据，不能自动重发。
 本地取消不代表远端已取消，只有完整且通过校验的结果才能成为 Phase artifact。
 
@@ -254,7 +255,8 @@ Phase worker 只返回关于构图与风格的窄化 Planning Advice。Generatio
 风格输入会在 Lifecycle seam 统一规范化。标准形式为 `{"kind":"default"}`、
 `{"kind":"description","description":"..."}`、`{"kind":"file","path":"...json"}`
 以及 `{"kind":"inline","style_bible":{...}}`；旧字符串和直接传入的 Style Bible 对象
-仍可使用。自然语言说明必须编译成通过校验的 Style Bible，不能静默退回默认模板；
+仍可使用。Phase reasoning 必须把自然语言说明编译成通过校验的 Style Bible；缺失或无效
+编译会暂停 Planning，不能静默退回默认模板；
 Generation summary 会显示最终视角、投影、背景、主色和关键禁止项。
 
 通过现有工作流请求明确指定生成方式和范围，例如整张流程图由生图模型生成：

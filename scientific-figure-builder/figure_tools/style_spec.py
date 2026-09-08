@@ -8,10 +8,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
-
 from figure_tools._resources import schema_path, template_path
 from figure_tools.provenance import hash_json
+from figure_tools.run_store import schema_error_detail
 
 
 class StyleResolutionError(ValueError):
@@ -35,12 +34,8 @@ STYLE_INPUT_SCHEMA = {
 
 
 def _validate(value: Mapping[str, Any], schema: Mapping[str, Any], label: str) -> None:
-    errors = sorted(
-        Draft202012Validator(schema).iter_errors(dict(value)),
-        key=lambda error: list(error.path),
-    )
-    if errors:
-        detail = "; ".join(error.message for error in errors)
+    detail = schema_error_detail(value, schema)
+    if detail:
         raise StyleResolutionError(f"invalid {label}: {detail}")
 
 
@@ -78,35 +73,6 @@ def normalize_request_style(request: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
-def compile_style_description(description: str) -> dict[str, Any]:
-    """Return a conservative, schema-valid baseline for model refinement."""
-
-    lowered = description.lower()
-    palette = {
-        "primary": "#2B176E" if "indigo" in lowered else "#263248",
-        "accent": "#38BDF8" if "blue" in lowered or "cyan" in lowered else "#0F9D8A",
-        "background": "#FFFFFF",
-    }
-    forbidden = ["isometric perspective", "glassmorphism", "heavy shadows"]
-    if "card" in lowered:
-        forbidden.append("card grid")
-    return {
-        "schema_version": "1.0",
-        "palette": palette,
-        "view": "flat 2D scientific editorial composition",
-        "projection": "orthographic front view",
-        "lighting": "none; hierarchy comes from color, scale, spacing and opacity",
-        "material": "flat matte vector-like surfaces",
-        "stroke_widths": {"thin": 0.75, "medium": 1.1, "thick": 1.6},
-        "fonts": {"family": "Arial", "sizes": {"label": 9, "title": 10}},
-        "equation_style": "clean scientific typesetting",
-        "background": "white",
-        "shadow": "none",
-        "forbidden_elements": forbidden,
-        "style_reference_hashes": [],
-    }
-
-
 def resolve_style_bible(
     value: Any,
     *,
@@ -133,24 +99,11 @@ def resolve_style_bible(
             raise StyleResolutionError("Style Bible file must contain one JSON object")
         bible = dict(raw)
     elif kind == "description":
-        baseline = compile_style_description(str(spec["description"]))
-        bible = copy.deepcopy(dict(advice_style_bible)) if advice_style_bible is not None else baseline
-        if advice_style_bible is not None:
-            _validate(bible, STYLE_BIBLE_SCHEMA, "Style Bible")
-            bible["forbidden_elements"] = list(dict.fromkeys([
-                *baseline["forbidden_elements"],
-                *list(bible.get("forbidden_elements", [])),
-            ]))
-            forbidden_text = " ".join(bible["forbidden_elements"]).lower()
-            described_fields = " ".join(
-                str(bible.get(key) or "")
-                for key in ("view", "projection", "material", "shadow")
-            ).lower()
-            for keyword in ("isometric", "glassmorphism", "heavy shadow"):
-                if keyword in forbidden_text and keyword in described_fields:
-                    raise StyleResolutionError(
-                        f"Style Bible contradicts explicit prohibition: {keyword}"
-                    )
+        if advice_style_bible is None:
+            raise StyleResolutionError(
+                "natural-language style needs a model-produced Style Bible"
+            )
+        bible = copy.deepcopy(dict(advice_style_bible))
     else:  # pragma: no cover - guarded by StyleSpec validation
         raise StyleResolutionError(f"unsupported style kind: {kind}")
     _validate(bible, STYLE_BIBLE_SCHEMA, "Style Bible")
@@ -178,7 +131,6 @@ __all__ = [
     "STYLE_INPUT_SCHEMA",
     "STYLE_SPEC_SCHEMA",
     "StyleResolutionError",
-    "compile_style_description",
     "normalize_request_style",
     "normalize_style_input",
     "resolve_style_bible",

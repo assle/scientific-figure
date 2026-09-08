@@ -169,7 +169,9 @@ Sanitized latest status lives in Run state's `provider_status`; MCP progress not
 are sent when the host supplies a progress token. `advance_figure_workflow` waits briefly
 for a local operation and otherwise returns `status: in_progress` plus a durable operation
 reference. Call it again with `resume` to observe or consume that same operation; polling
-never resubmits the Provider request. `wait_timeout` can tune the initial local wait from
+includes the returned `operation_id` and never resubmits the Provider request. An explicit
+`cancel_operation` action requests cancellation by operation ID and records the result
+without claiming remote cancellation. `wait_timeout` can tune the initial local wait from
 0 to 240 seconds. If the local owner disappears, the operation becomes
 `remote_outcome_unknown` and requires inspection rather than automatic resubmission.
 Local cancellation does not confirm remote cancellation, and partial output never becomes
@@ -282,8 +284,8 @@ Style input is normalized at the Lifecycle seam. The canonical forms are
 `{"kind":"default"}`, `{"kind":"description","description":"..."}`,
 `{"kind":"file","path":"...json"}`, and
 `{"kind":"inline","style_bible":{...}}`; legacy strings and inline Style Bible objects
-remain accepted. Descriptions compile to a validated Style Bible and never silently fall
-back to the default template. The Generation summary includes the resolved view,
+remain accepted. Phase reasoning compiles descriptions to a validated Style Bible; missing
+or invalid compilation pauses Planning instead of silently loading the default. The Generation summary includes the resolved view,
 projection, background, palette, and important forbidden elements.
 
 Explicit generation choices are submitted through the existing Lifecycle request:

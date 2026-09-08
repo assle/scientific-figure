@@ -10,6 +10,7 @@ from figure_tools.run_store import (
     ArtifactCorruptError,
     ArtifactMissingError,
     RunStore,
+    RunStoreError,
 )
 
 
@@ -90,3 +91,14 @@ def test_optional_load_and_directory_reference_are_observable(tmp_path):
 
     assert reference["exists"] is True
     assert reference["content_hash"].startswith("sha256:")
+
+
+def test_run_store_owns_atomic_operation_claims(tmp_path):
+    store = RunStore(tmp_path)
+    store.claim("plans/.operation.lock", "owner-a")
+
+    with pytest.raises(RunStoreError, match="claim already exists"):
+        store.claim("plans/.operation.lock", "owner-b")
+    assert store.release_claim("plans/.operation.lock", "owner-b") is False
+    assert store.release_claim("plans/.operation.lock", "owner-a") is True
+    assert not (tmp_path / "plans/.operation.lock").exists()

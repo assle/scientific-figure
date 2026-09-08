@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from figure_tools.style_spec import compile_style_description, normalize_style_input
 from figure_tools.generation_intent import resolve_units
 
 
@@ -45,12 +44,7 @@ def _composition(brief: Mapping[str, Any]) -> dict[str, Any]:
 def default_planning_advice(brief: Mapping[str, Any]) -> dict[str, Any]:
     """Return the smallest safe Planning Advice for deterministic planning."""
 
-    style = normalize_style_input(brief.get("style"))
-    style_bible = (
-        compile_style_description(str(style["description"]))
-        if style and style["kind"] == "description"
-        else None
-    )
+    style_bible = None
     composition = _composition(brief)
     if style_bible is not None:
         composition["forbidden_patterns"] = list(

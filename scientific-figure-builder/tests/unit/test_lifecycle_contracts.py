@@ -1,6 +1,8 @@
-from jsonschema import Draft202012Validator
+import json
 
 from figure_tools.lifecycle_contracts import FIGURE_REQUEST_SCHEMA, WORKFLOW_INPUT_SCHEMA
+from figure_tools.run_store import schema_error_detail
+from figure_tools._resources import template_path
 
 
 def test_public_request_contract_accepts_structure_and_generation_controls():
@@ -32,7 +34,7 @@ def test_public_request_contract_accepts_structure_and_generation_controls():
         },
     }
 
-    assert not list(Draft202012Validator(FIGURE_REQUEST_SCHEMA).iter_errors(request))
+    assert schema_error_detail(request, FIGURE_REQUEST_SCHEMA) is None
 
 
 def test_public_repair_contract_accepts_local_patch_operations():
@@ -49,7 +51,7 @@ def test_public_repair_contract_accepts_local_patch_operations():
         },
     }
 
-    assert not list(Draft202012Validator(WORKFLOW_INPUT_SCHEMA).iter_errors(action))
+    assert schema_error_detail(action, WORKFLOW_INPUT_SCHEMA) is None
 
 
 def test_public_style_contract_accepts_canonical_and_legacy_inputs():
@@ -57,13 +59,18 @@ def test_public_style_contract_accepts_canonical_and_legacy_inputs():
         "figure_id": "styles",
         "panels": [{"panel_id": "main"}],
     }
+    style_bible = json.loads(
+        template_path("default-style-bible.json").read_text(encoding="utf-8")
+    )
     values = [
         "default",
         "flat orthographic scientific graphic",
         {"kind": "default"},
         {"kind": "description", "description": "flat scientific graphic"},
         {"kind": "file", "path": "/tmp/style.json"},
+        style_bible,
+        {"kind": "inline", "style_bible": style_bible},
     ]
     for style in values:
         request = {**base, "style": style}
-        assert not list(Draft202012Validator(FIGURE_REQUEST_SCHEMA).iter_errors(request))
+        assert schema_error_detail(request, FIGURE_REQUEST_SCHEMA) is None

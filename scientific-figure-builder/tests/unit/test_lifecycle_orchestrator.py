@@ -21,6 +21,7 @@ from figure_tools.providers.transport import MockProviderTransport
 from figure_tools.phase_workers import StructuredPhaseWorker
 from figure_tools.state import BudgetExceeded, Cache, RunDirectory, RunState
 from figure_tools._resources import schema_path
+from figure_tools.run_store import schema_error_detail
 
 class FigureOrchestrator(RawOrchestrator):
     """Simulate a Calling Agent displaying and continuing an automatic summary.
@@ -259,7 +260,7 @@ def test_figure_brief_is_schema_valid_and_carries_resolved_delivery(tmp_path: Pa
     assert result["status"] == "completed"
     brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
     schema = json.loads(schema_path("figure-brief.schema.json").read_text())
-    assert not list(Draft202012Validator(schema).iter_errors(brief))
+    assert schema_error_detail(brief, schema) is None
     assert brief["status"] == "ready"
     assert brief["delivery"] == {"export_target": "general", "figure_width_cm": 14.0}
     assert brief["language"] == "en"
@@ -275,7 +276,7 @@ def test_figure_plan_is_schema_valid_and_references_the_brief(tmp_path: Path):
     assert result["status"] == "completed"
     plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
     schema = json.loads(schema_path("figure-plan.schema.json").read_text())
-    assert not list(Draft202012Validator(schema).iter_errors(plan))
+    assert schema_error_detail(plan, schema) is None
     brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
     assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
@@ -862,7 +863,7 @@ def test_incomplete_figure_brief_is_schema_valid_draft(tmp_path: Path):
 
     brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
     schema = json.loads(schema_path("figure-brief.schema.json").read_text())
-    assert not list(Draft202012Validator(schema).iter_errors(brief))
+    assert schema_error_detail(brief, schema) is None
     assert brief["status"] == "draft"
     assert len(brief["required_clarifications"]) == 4
 

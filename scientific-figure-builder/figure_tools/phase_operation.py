@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 import uuid
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,8 +14,15 @@ from typing import Any
 from figure_tools.run_store import RunStore
 
 
+@dataclass(frozen=True)
+class _ActiveOperation:
+    operation_id: str
+    thread: threading.Thread
+    cancelled: threading.Event
+
+
 _ACTIVE_LOCK = threading.RLock()
-_ACTIVE: dict[str, tuple[str, threading.Thread]] = {}
+_ACTIVE: dict[str, _ActiveOperation] = {}
 
 
 def _now() -> str:
@@ -41,6 +48,9 @@ class LocalPhaseOperationManager:
         wait_timeout: float,
         phase_hint: str,
         context: Any = None,
+        requested_operation_id: str | None = None,
+        allow_new_operation: bool = False,
+        cancelled: threading.Event | None = None,
     ) -> dict[str, Any]:
         store = RunStore(run_dir)
         store.ensure_structure()
@@ -49,11 +59,15 @@ class LocalPhaseOperationManager:
             existing = store.load_optional_json(
                 "plans/phase_operation.json", schema="phase-operation.schema.json",
             )
-            observed = self._observe_existing(store, key, existing)
+            observed = self._observe_existing(
+                store, key, existing,
+                requested_operation_id=requested_operation_id,
+                allow_new_operation=allow_new_operation,
+            )
             if observed is not None:
                 return observed
             operation_id = uuid.uuid4().hex
-            self._claim(store, operation_id)
+            store.claim("plans/.phase-operation.lock", operation_id)
             timestamp = _now()
             state = {
                 "schema_version": "1.0",
@@ -71,22 +85,31 @@ class LocalPhaseOperationManager:
                 "plans/phase_operation.json", state,
                 schema="phase-operation.schema.json",
             )
+            cancel_event = cancelled or threading.Event()
             thread = threading.Thread(
                 target=self._run,
-                args=(store, key, operation_id, operation, context),
+                args=(
+                    store, key, operation_id, operation, context,
+                    cancel_event,
+                ),
                 daemon=True,
                 name=f"scientific-figure-{operation_id[:8]}",
             )
-            _ACTIVE[key] = (operation_id, thread)
+            active = _ActiveOperation(operation_id, thread, cancel_event)
+            _ACTIVE[key] = active
             thread.start()
         thread.join(max(0.0, float(wait_timeout)))
         with _ACTIVE_LOCK:
             current = store.load_json(
                 "plans/phase_operation.json", schema="phase-operation.schema.json",
             )
-            if current.get("status") == "failed":
+            if current.get("status") in {"failed", "cancelled"}:
                 raise RuntimeError(str(current.get("error") or "Lifecycle operation failed"))
-            observed = self._observe_existing(store, key, current)
+            observed = self._observe_existing(
+                store, key, current,
+                requested_operation_id=operation_id,
+                allow_new_operation=False,
+            )
             if observed is not None:
                 return observed
             return self._in_progress(store, current)
@@ -96,27 +119,43 @@ class LocalPhaseOperationManager:
         store: RunStore,
         key: str,
         existing: Mapping[str, Any] | None,
+        *,
+        requested_operation_id: str | None,
+        allow_new_operation: bool,
     ) -> dict[str, Any] | None:
         if existing is None or existing.get("status") == "consumed":
             return None
         existing = self._with_runtime_evidence(store, existing)
+        if (
+            requested_operation_id is not None
+            and requested_operation_id != existing.get("operation_id")
+        ):
+            raise ValueError("operation_id does not match the active run operation")
         status = str(existing["status"])
         if status == "completed":
             result = existing.get("result")
             if not isinstance(result, Mapping):
                 return self._failed_result(store, existing, "completed operation has no result")
-            consumed = {**existing, "status": "consumed", "updated_at": _now()}
-            store.commit_json(
-                "plans/phase_operation.json", consumed,
-                schema="phase-operation.schema.json",
-            )
+            if allow_new_operation and requested_operation_id is None:
+                consumed = {**existing, "status": "consumed", "updated_at": _now()}
+                store.commit_json(
+                    "plans/phase_operation.json", consumed,
+                    schema="phase-operation.schema.json",
+                )
+                return None
             return dict(result)
         if status == "failed":
             return self._failed_result(store, existing, str(existing.get("error") or "operation failed"))
         if status == "remote_outcome_unknown":
             return self._unknown_result(store, existing)
+        if status == "cancelled":
+            return self._cancelled_result(store, existing)
         active = _ACTIVE.get(key)
-        if active is not None and active[0] == existing["operation_id"] and active[1].is_alive():
+        if (
+            active is not None
+            and active.operation_id == existing["operation_id"]
+            and active.thread.is_alive()
+        ):
             return self._in_progress(store, existing)
         if _process_exists(int(existing["owner_pid"])):
             return self._in_progress(store, existing)
@@ -133,24 +172,13 @@ class LocalPhaseOperationManager:
         return self._unknown_result(store, unknown)
 
     @staticmethod
-    def _claim(store: RunStore, operation_id: str) -> None:
-        lock_path = store.path("plans/.phase-operation.lock")
-        try:
-            descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError as exc:
-            raise RuntimeError("another Lifecycle operation already owns this run") from exc
-        try:
-            os.write(descriptor, operation_id.encode("ascii"))
-        finally:
-            os.close(descriptor)
-
-    @staticmethod
     def _run(
         store: RunStore,
         key: str,
         operation_id: str,
         operation: Callable[[], Mapping[str, Any]],
         context: Any,
+        cancelled: threading.Event,
     ) -> None:
         try:
             value = context.run(operation) if context is not None else operation()
@@ -175,9 +203,10 @@ class LocalPhaseOperationManager:
                 "created_at": _now(), "result": None,
                 "provider_invocation_id": None,
             }
+            was_cancelled = cancelled.is_set() or current.get("status") == "cancellation_requested"
             failed = {
                 **current,
-                "status": "failed",
+                "status": "cancelled" if was_cancelled else "failed",
                 "updated_at": _now(),
                 "result": None,
                 "error": str(exc),
@@ -187,10 +216,10 @@ class LocalPhaseOperationManager:
                 schema="phase-operation.schema.json",
             )
         finally:
-            store.path("plans/.phase-operation.lock").unlink(missing_ok=True)
+            store.release_claim("plans/.phase-operation.lock", operation_id)
             with _ACTIVE_LOCK:
                 active = _ACTIVE.get(key)
-                if active is not None and active[0] == operation_id:
+                if active is not None and active.operation_id == operation_id:
                     _ACTIVE.pop(key, None)
 
     @staticmethod
@@ -201,8 +230,48 @@ class LocalPhaseOperationManager:
             "next_action": "resume",
             "artifacts": {"operation": store.reference("plans/phase_operation.json")},
             "operation_id": str(operation["operation_id"]),
-            "operation_status": "running",
+            "operation_status": str(
+                operation["status"]
+                if operation.get("status") == "cancellation_requested"
+                else "running"
+            ),
         }
+
+    def cancel(
+        self, run_dir: str | Path, operation_id: str, reason: str,
+    ) -> dict[str, Any]:
+        store = RunStore(run_dir)
+        key = str(Path(run_dir).resolve())
+        with _ACTIVE_LOCK:
+            operation = store.load_json(
+                "plans/phase_operation.json", schema="phase-operation.schema.json",
+            )
+            if operation.get("operation_id") != operation_id:
+                raise ValueError("operation_id does not match the active run operation")
+            if operation.get("status") == "completed":
+                return dict(operation.get("result") or {})
+            active = _ACTIVE.get(key)
+            if active is None or active.operation_id != operation_id:
+                unknown = {
+                    **operation, "status": "remote_outcome_unknown",
+                    "updated_at": _now(),
+                    "error": "local operation cannot be signalled; remote outcome unknown",
+                }
+                store.commit_json(
+                    "plans/phase_operation.json", unknown,
+                    schema="phase-operation.schema.json",
+                )
+                return self._unknown_result(store, unknown)
+            active.cancelled.set()
+            requested = {
+                **operation, "status": "cancellation_requested",
+                "updated_at": _now(), "error": reason,
+            }
+            store.commit_json(
+                "plans/phase_operation.json", requested,
+                schema="phase-operation.schema.json",
+            )
+            return self._in_progress(store, requested)
 
     @staticmethod
     def _with_runtime_evidence(
@@ -212,7 +281,14 @@ class LocalPhaseOperationManager:
         statuses = run_state.get("provider_status") or {}
         provider_status = statuses.get("phase_reasoning") or {}
         invocation_id = provider_status.get("invocation_id")
-        phase = run_state.get("current_phase") or operation.get("phase")
+        candidate_phase = run_state.get("current_phase")
+        phase = (
+            candidate_phase
+            if candidate_phase in {
+                "intake", "planning", "execution", "review_and_repair", "export",
+            }
+            else operation.get("phase")
+        )
         if (
             invocation_id == operation.get("provider_invocation_id")
             and phase == operation.get("phase")
@@ -258,6 +334,19 @@ class LocalPhaseOperationManager:
             "operation_status": "remote_outcome_unknown",
             "error": str(operation.get("error") or "remote outcome unknown"),
             "recovery": "Do not resubmit automatically; inspect Provider and Run State evidence first.",
+        }
+
+    @staticmethod
+    def _cancelled_result(store: RunStore, operation: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "phase": str(operation["phase"]),
+            "status": "paused",
+            "next_action": None,
+            "artifacts": {"operation": store.reference("plans/phase_operation.json")},
+            "operation_id": str(operation["operation_id"]),
+            "operation_status": "cancelled",
+            "error": str(operation.get("error") or "operation cancelled"),
+            "recovery": "Start new work only after confirming cancellation consequences.",
         }
 
 

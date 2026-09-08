@@ -19,16 +19,31 @@ def render_composition_blueprint(
     svg.rect(0, 0, width, height, fill="#FFFFFF", stroke="#D7DCE8", stroke_width=0.6)
     anchors: dict[str, tuple[float, float]] = {}
     colors = ("#EEF2FF", "#ECFEFF", "#F0FDFA")
+    forbidden = " ".join(
+        str(item).lower() for item in composition.get("forbidden_patterns", [])
+    )
+    avoid_boxes = "card" in forbidden or "box" in forbidden
+    avoid_arrows = "arrow" in forbidden
     for index, region in enumerate(composition.get("regions", [])):
         x, y, region_width, region_height = [float(value) for value in region["bbox"]]
         rx, ry = x * width, y * height
         rw, rh = region_width * width, region_height * height
-        svg.rect(
-            rx, ry, rw, rh,
-            fill=colors[index % len(colors)], stroke="#64748B",
-            stroke_width=0.65, stroke_dasharray="4 3",
-            data_region_id=region["region_id"],
-        )
+        if avoid_boxes:
+            svg.path(
+                f"M {rx} {ry + rh * 0.2} C {rx + rw * 0.3} {ry}, "
+                f"{rx + rw * 0.7} {ry + rh * 0.08}, {rx + rw} {ry + rh * 0.2} "
+                f"L {rx + rw} {ry + rh * 0.8} C {rx + rw * 0.7} {ry + rh}, "
+                f"{rx + rw * 0.3} {ry + rh * 0.92}, {rx} {ry + rh * 0.8} Z",
+                fill=colors[index % len(colors)], stroke="#64748B",
+                stroke_width=0.45, data_region_id=region["region_id"],
+            )
+        else:
+            svg.rect(
+                rx, ry, rw, rh,
+                fill=colors[index % len(colors)], stroke="#64748B",
+                stroke_width=0.65, stroke_dasharray="4 3",
+                data_region_id=region["region_id"],
+            )
         svg.text(
             rx + 3, ry + 10, region["label"], font_size=7,
             fill="#334155", data_region_id=region["region_id"],
@@ -64,11 +79,18 @@ def render_composition_blueprint(
         )
     direction = str(composition.get("reading_direction") or "left_to_right")
     if direction == "left_to_right":
-        svg.arrow(
-            width * 0.08, height * 0.93, width * 0.92, height * 0.93,
-            stroke="#4F46E5", stroke_width=0.8,
-            data_reading_direction=direction,
-        )
+        if avoid_arrows:
+            svg.line(
+                width * 0.08, height * 0.93, width * 0.92, height * 0.93,
+                stroke="#4F46E5", stroke_width=0.8,
+                data_reading_direction=direction,
+            )
+        else:
+            svg.arrow(
+                width * 0.08, height * 0.93, width * 0.92, height * 0.93,
+                stroke="#4F46E5", stroke_width=0.8,
+                data_reading_direction=direction,
+            )
     svg.text(
         width * 0.08, height * 0.9,
         composition.get("density_flow", "semantic progression"),

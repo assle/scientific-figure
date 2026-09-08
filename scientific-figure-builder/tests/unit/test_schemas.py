@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 import yaml
 from jsonschema import Draft202012Validator
+from figure_tools.run_store import schema_error_detail
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas"
@@ -91,14 +92,10 @@ def test_every_schema_has_a_validating_document(schema_name: str) -> None:
     documents = SCHEMA_DOCUMENTS[schema_name]
     assert documents, f"{schema_name} has no example documents"
     schema = _load_json(SCHEMA_DIR / schema_name)
-    validator = Draft202012Validator(schema)
     for doc_name in documents:
         doc = _load_json(_doc_path(doc_name))
-        errors = sorted(validator.iter_errors(doc), key=lambda e: e.path)
-        assert not errors, (
-            f"{doc_name} failed {schema_name}: "
-            + "; ".join(e.message for e in errors)
-        )
+        detail = schema_error_detail(doc, schema)
+        assert detail is None, f"{doc_name} failed {schema_name}: {detail}"
 
 
 def test_default_project_yaml_is_valid_and_non_secret() -> None:
@@ -142,9 +139,22 @@ def test_publication_mplstyle_exists() -> None:
 def test_style_spec_schema_validates_the_canonical_example() -> None:
     schema = _load_json(SCHEMA_DIR / "style-spec.schema.json")
     Draft202012Validator.check_schema(schema)
-    assert not list(Draft202012Validator(schema).iter_errors(
-        _load_json(FIXTURE_DIR / "style_spec.json")
-    ))
+    assert schema_error_detail(
+        _load_json(FIXTURE_DIR / "style_spec.json"), schema,
+    ) is None
+
+
+def test_persisted_brief_and_plan_reject_noncanonical_style_objects() -> None:
+    brief_schema = _load_json(SCHEMA_DIR / "figure-brief.schema.json")
+    plan_schema = _load_json(SCHEMA_DIR / "figure-plan.schema.json")
+    brief = _load_json(FIXTURE_DIR / "figure_brief.json")
+    plan = _load_json(FIXTURE_DIR / "figure_plan.json")
+    brief["style"] = {"direction": "flat"}
+    brief["request"]["style"] = {"direction": "flat"}
+    plan["style"] = {"direction": "flat"}
+
+    assert schema_error_detail(brief, brief_schema) is not None
+    assert schema_error_detail(plan, plan_schema) is not None
 
 
 def test_network_only_via_transport_abstraction() -> None:

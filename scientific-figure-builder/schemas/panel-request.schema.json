@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/panel-request.schema.json",
+  "title": "Panel Request",
+  "description": "Public panel input before safe geometry normalization.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["panel_id"],
+  "properties": {
+    "panel_id": {"type": "string", "minLength": 1},
+    "bbox": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "physical_size": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "number", "exclusiveMinimum": 0}
+    },
+    "elements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["element_id", "type"],
+        "properties": {
+          "element_id": {"type": "string", "minLength": 1},
+          "type": {
+            "type": "string",
+            "enum": [
+              "data_plot", "image_asset", "label", "annotation",
+              "text", "equation", "vector_element"
+            ]
+          },
+          "plot_spec": {"type": "string", "minLength": 1},
+          "prompt": {"type": "string", "minLength": 1},
+          "content": {"type": "string", "minLength": 1},
+          "parameters": {"type": "object"},
+          "bbox": {
+            "type": "array", "minItems": 4, "maxItems": 4,
+            "items": {"type": "number", "minimum": 0, "maximum": 1}
+          },
+          "candidate_count": {"type": "integer", "minimum": 1, "maximum": 4},
+          "style_group": {"type": "string", "minLength": 1},
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "content_hash", "strength"],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": ["content", "style", "structure", "parent", "mask"]
+                },
+                "path": {"type": "string", "minLength": 1},
+                "content_hash": {"type": "string", "minLength": 1},
+                "strength": {"type": "number", "minimum": 0, "maximum": 1}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

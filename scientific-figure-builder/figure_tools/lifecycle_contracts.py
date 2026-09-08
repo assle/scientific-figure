@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
+from figure_tools._resources import schema_path
 from figure_tools.generation_intent import SELECTION_SCHEMA
 from figure_tools.style_spec import STYLE_INPUT_SCHEMA
+
+
+PANEL_REQUEST_SCHEMA = json.loads(
+    schema_path("panel-request.schema.json").read_text(encoding="utf-8")
+)
 
 
 FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
@@ -32,63 +39,7 @@ FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
         "panels": {
             "type": "array",
             "minItems": 1,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["panel_id"],
-                "properties": {
-                    "panel_id": {"type": "string", "minLength": 1},
-                    "bbox": {
-                        "type": "array", "minItems": 4, "maxItems": 4,
-                        "items": {"type": "number"},
-                    },
-                    "physical_size": {
-                        "type": "array", "minItems": 2, "maxItems": 2,
-                        "items": {"type": "number", "exclusiveMinimum": 0},
-                    },
-                    "elements": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "required": ["element_id", "type"],
-                            "properties": {
-                                "element_id": {"type": "string", "minLength": 1},
-                                "type": {"type": "string", "enum": [
-                                    "data_plot", "image_asset", "label", "annotation",
-                                    "text", "equation", "vector_element",
-                                ]},
-                                "plot_spec": {"type": "string", "minLength": 1},
-                                "prompt": {"type": "string", "minLength": 1},
-                                "content": {"type": "string", "minLength": 1},
-                                "parameters": {"type": "object"},
-                                "bbox": {
-                                    "type": "array", "minItems": 4, "maxItems": 4,
-                                    "items": {"type": "number", "minimum": 0, "maximum": 1},
-                                },
-                                "candidate_count": {"type": "integer", "minimum": 1, "maximum": 4},
-                                "style_group": {"type": "string", "minLength": 1},
-                                "references": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "additionalProperties": False,
-                                        "required": ["role", "path", "content_hash", "strength"],
-                                        "properties": {
-                                            "role": {"type": "string", "enum": [
-                                                "content", "style", "structure", "parent", "mask",
-                                            ]},
-                                            "path": {"type": "string", "minLength": 1},
-                                            "content_hash": {"type": "string", "minLength": 1},
-                                            "strength": {"type": "number", "minimum": 0, "maximum": 1},
-                                        },
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
+            "items": PANEL_REQUEST_SCHEMA,
         },
         "labels": {
             "type": "array",
@@ -142,9 +93,19 @@ WORKFLOW_INPUT_SCHEMA: dict[str, Any] = {
         "base_dir": {"type": "string", "minLength": 1},
         "dpi": {"type": "integer", "minimum": 1},
         "wait_timeout": {"type": "number", "minimum": 0, "maximum": 240},
+        "operation_id": {"type": "string", "minLength": 1},
         "request": FIGURE_REQUEST_SCHEMA,
         "action": {
             "oneOf": [
+                {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["action", "operation_id", "reason"],
+                    "properties": {
+                        "action": {"const": "cancel_operation"},
+                        "operation_id": {"type": "string", "minLength": 1},
+                        "reason": {"type": "string", "minLength": 1},
+                    },
+                },
                 {
                     "type": "object", "additionalProperties": False,
                     "required": ["action", "generation_intent", "reason"],
@@ -262,7 +223,10 @@ WORKFLOW_OUTPUT_SCHEMA: dict[str, Any] = {
         "operation_id": {"type": "string", "minLength": 1},
         "operation_status": {
             "type": "string",
-            "enum": ["running", "failed", "remote_outcome_unknown"],
+            "enum": [
+                "running", "cancellation_requested", "failed", "cancelled",
+                "remote_outcome_unknown",
+            ],
         },
     },
 }

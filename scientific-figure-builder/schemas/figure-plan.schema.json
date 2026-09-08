@@ -112,7 +112,12 @@
       }
     },
     "language": {"type": "string", "enum": ["zh", "en"]},
-    "style": {"type": ["string", "object"]},
+    "style": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"$ref": "style-spec.schema.json"}
+      ]
+    },
     "style_source": {
       "type": "object",
       "additionalProperties": false,

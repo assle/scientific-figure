@@ -18,9 +18,9 @@ single `advance_figure_workflow` orchestrator tool. Read its returned
 clarification or approval, then submit the corresponding action. Do not
 manually sequence the low-level MCP tools for a normal figure run.
 
-For `status: in_progress`, call the same tool with `resume` to observe the
-returned operation; never start a replacement. Inspect
-`remote_outcome_unknown` before any explicit new submission.
+For `status: in_progress`, poll with `resume` and the returned `operation_id`;
+never start a replacement. Use `cancel_operation` with that ID for explicit
+cancellation. Inspect `remote_outcome_unknown` before any new submission.
 
 The orchestrator owns the Lifecycle phases Intake, Planning, Execution, Review
 and repair, and Export. Each model-assisted phase uses its own Phase prompt and

@@ -7,10 +7,12 @@ import os
 import shutil
 import uuid
 from collections.abc import Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 
 from figure_tools._resources import schema_path
 from figure_tools.provenance import hash_file, hash_json
@@ -38,6 +40,33 @@ class ArtifactMissingError(RunStoreError):
 
 class ArtifactCorruptError(RunStoreError):
     """The requested run artifact cannot be decoded or validated."""
+
+
+@lru_cache(maxsize=1)
+def schema_registry() -> Registry:
+    registry = Registry()
+    for path in schema_path("run-state.schema.json").parent.glob("*.schema.json"):
+        contents = json.loads(path.read_text(encoding="utf-8"))
+        identifier = contents.get("$id")
+        if identifier:
+            registry = registry.with_resource(
+                str(identifier), Resource.from_contents(contents),
+            )
+    return registry
+
+
+def schema_error_detail(
+    value: Mapping[str, Any], contract: Mapping[str, Any],
+) -> str | None:
+    """Return one stable validation detail shared by artifact-owning modules."""
+
+    errors = sorted(
+        Draft202012Validator(
+            contract, registry=schema_registry(),
+        ).iter_errors(dict(value)),
+        key=lambda error: list(error.path),
+    )
+    return "; ".join(error.message for error in errors) if errors else None
 
 
 class RunStore:
@@ -101,6 +130,33 @@ class RunStore:
             shutil.rmtree(path)
         elif path.exists():
             path.unlink()
+
+    def claim(self, relative_path: str | Path, owner: str) -> None:
+        """Atomically claim one run-owned lock path for an operation owner."""
+
+        path = self.path(relative_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            raise RunStoreError(f"run claim already exists: {relative_path}") from exc
+        try:
+            os.write(descriptor, owner.encode("utf-8"))
+        finally:
+            os.close(descriptor)
+
+    def release_claim(self, relative_path: str | Path, owner: str) -> bool:
+        """Release a run-owned claim only when its owner still matches."""
+
+        path = self.path(relative_path)
+        try:
+            current = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return False
+        if current != owner:
+            return False
+        path.unlink(missing_ok=True)
+        return True
 
     def validate(self, value: Mapping[str, Any], schema: str) -> None:
         self._validate(value, schema)
@@ -195,12 +251,8 @@ class RunStore:
     @staticmethod
     def _validate(value: Mapping[str, Any], schema: str) -> None:
         contract = json.loads(schema_path(schema).read_text(encoding="utf-8"))
-        errors = sorted(
-            Draft202012Validator(contract).iter_errors(value),
-            key=lambda error: list(error.path),
-        )
-        if errors:
-            detail = "; ".join(error.message for error in errors)
+        detail = schema_error_detail(value, contract)
+        if detail:
             raise ValueError(f"invalid {schema}: {detail}")
 
 
@@ -210,4 +262,6 @@ __all__ = [
     "RUN_SUBDIRECTORIES",
     "RunStore",
     "RunStoreError",
+    "schema_error_detail",
+    "schema_registry",
 ]

@@ -217,6 +217,7 @@ def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(run_dir), "action": "resume",
+                "operation_id": first_payload["operation_id"],
                 "wait_timeout": 0.005,
             }},
         })[0]
@@ -227,7 +228,83 @@ def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
     assert calls.count("planning") == 1
     operation = json.loads((run_dir / "plans/phase_operation.json").read_text())
     assert operation["operation_id"] == first_payload["operation_id"]
-    assert operation["status"] == "consumed"
+    assert operation["status"] == "completed"
+
+    repeated = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "project_dir": str(tmp_path), "base_dir": str(ROOT),
+            "run_dir": str(run_dir), "action": "resume",
+            "operation_id": first_payload["operation_id"],
+        }},
+    })[0]
+    repeated_payload = json.loads(repeated["result"]["content"][0]["text"])
+    assert repeated_payload == second_payload
+    assert calls.count("intake") == 1
+    assert calls.count("planning") == 1
+
+
+def test_background_lifecycle_operation_can_be_cancelled_explicitly(
+    monkeypatch, tmp_path,
+):
+    class CancellableWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            if invocation.phase == "intake":
+                cancelled, _progress = server._CALL_CONTROL.get()
+                while not cancelled.wait(0.01):
+                    pass
+                raise RuntimeError("cancelled by user")
+            return super().run(invocation)
+
+    base_factory = RuntimeContextFactory(
+        config_loader=lambda _project: {"models": {}, "providers": {}},
+        environ={}, cache_dir=tmp_path / "cache",
+    )
+
+    class CancellableFactory:
+        def create(self, project_dir, run_dir):
+            return replace(
+                base_factory.create(project_dir, run_dir),
+                worker=CancellableWorker(),
+            )
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", CancellableFactory)
+    run_dir = tmp_path / "cancel-run"
+    request = _request()
+    request["auto_execute"] = False
+    first = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "project_dir": str(tmp_path), "run_dir": str(run_dir),
+            "base_dir": str(ROOT), "request": request, "wait_timeout": 0,
+        }},
+    })[0]
+    operation_id = json.loads(first["result"]["content"][0]["text"])["operation_id"]
+
+    cancelled = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "run_dir": str(run_dir),
+            "action": {"action": "cancel_operation", "operation_id": operation_id,
+                       "reason": "Stop this local test"},
+        }},
+    })[0]
+    cancelled_payload = json.loads(cancelled["result"]["content"][0]["text"])
+    assert cancelled_payload["operation_status"] == "cancellation_requested"
+
+    deadline = time.monotonic() + 2
+    final_payload = cancelled_payload
+    while final_payload["status"] == "in_progress" and time.monotonic() < deadline:
+        time.sleep(0.02)
+        response = _rpc(monkeypatch, {
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "run_dir": str(run_dir), "operation_id": operation_id,
+            }},
+        })[0]
+        final_payload = json.loads(response["result"]["content"][0]["text"])
+    assert final_payload["status"] == "paused"
+    assert final_payload["operation_status"] == "cancelled"
 
 
 def test_orphaned_phase_operation_is_not_resubmitted(monkeypatch, tmp_path):

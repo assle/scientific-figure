@@ -7,12 +7,11 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from jsonschema import Draft202012Validator
-
 from figure_tools._resources import schema_path
 from figure_tools.planning.planner import create_figure_plan, resolve_figure_canvas
 from figure_tools.planning.advice import default_planning_advice
 from figure_tools.provenance import hash_json
+from figure_tools.run_store import schema_error_detail
 from figure_tools.style_spec import StyleResolutionError, resolve_style_bible, style_digest
 
 
@@ -87,12 +86,8 @@ class FigurePlanningModule:
         contract = json.loads(
             schema_path("planning-advice.schema.json").read_text(encoding="utf-8")
         )
-        errors = sorted(
-            Draft202012Validator(contract).iter_errors(dict(advice)),
-            key=lambda error: list(error.path),
-        )
-        if errors:
-            detail = "; ".join(error.message for error in errors)
+        detail = schema_error_detail(advice, contract)
+        if detail:
             raise PlanningAdviceError(f"invalid Planning Advice: {detail}")
 
     @staticmethod
