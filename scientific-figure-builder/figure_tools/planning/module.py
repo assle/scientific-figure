@@ -70,10 +70,10 @@ class FigurePlanningModule:
             and not composition.get("regions")
         ):
             composition = default_planning_advice(brief)["composition"]
-        if not composition.get("forbidden_patterns"):
-            composition["forbidden_patterns"] = list(
-                style_bible.get("forbidden_elements", [])
-            )
+        composition["forbidden_patterns"] = list(dict.fromkeys([
+            *list(composition.get("forbidden_patterns", [])),
+            *list(style_bible.get("forbidden_elements", [])),
+        ]))
         self._validate_composition(request, composition)
         plan["composition"] = composition
         plan["style_source"] = style_source

@@ -525,6 +525,40 @@ def test_natural_language_style_can_resolve_to_isometric_glass(tmp_path):
     assert resolved["background"] == "black"
 
 
+def test_model_style_cannot_invert_explicit_flat_prohibitions(tmp_path):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class ContradictingStyleWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase == "planning":
+                result["style_bible"] = {
+                    "schema_version": "1.0", "palette": {"primary": "#111827"},
+                    "view": "isometric illustration", "projection": "oblique",
+                    "lighting": "studio", "material": "glassmorphism",
+                    "stroke_widths": {"thin": 0.75},
+                    "fonts": {"family": "Arial", "sizes": {"label": 9}},
+                    "equation_style": "scientific", "background": "white",
+                    "shadow": "none", "forbidden_elements": [],
+                    "style_reference_hashes": [],
+                }
+            return result
+
+    request = diagram_request(
+        style="flat orthographic poster; forbid isometric, oblique and glassmorphism",
+    )
+    orch, run, client = _orchestrator(
+        tmp_path, request, worker=ContradictingStyleWorker(),
+    )
+
+    result = orch.advance("start")
+
+    assert result["status"] == "paused"
+    assert "contradicts the style description" in result["error"]
+    assert not (run / "style_bible.json").exists()
+    assert client.state.calls_used("generation") == 0
+
+
 def test_missing_style_file_pauses_before_plan_acceptance(tmp_path):
     missing = tmp_path / "missing-style.json"
     orch, run, client = _orchestrator(
@@ -608,6 +642,38 @@ def test_composition_blueprint_respects_forbidden_cards_and_box_arrows(tmp_path)
     assert '<rect' not in "\n".join(
         line for line in composition.splitlines() if 'data-region-id="' in line
     )
+    assert "marker-end=" not in composition
+
+
+def test_model_composition_cannot_drop_style_bible_prohibitions(tmp_path):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class IncompleteCompositionWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase == "planning":
+                result["composition"]["forbidden_patterns"] = ["watermarks"]
+            return result
+
+    style = {
+        "schema_version": "1.0", "palette": {"primary": "#2B176E"},
+        "view": "continuous field", "projection": "orthographic",
+        "lighting": "none", "material": "flat", "stroke_widths": {"thin": 0.75},
+        "fonts": {"family": "Arial", "sizes": {"label": 9}},
+        "equation_style": "scientific", "background": "white", "shadow": "none",
+        "forbidden_elements": ["card grid", "box-and-arrow flowchart"],
+        "style_reference_hashes": [],
+    }
+    orch, run, _ = _orchestrator(
+        tmp_path, diagram_request(style=style), worker=IncompleteCompositionWorker(),
+    )
+    assert orch.advance("start")["next_action"] == "resume"
+
+    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    assert set(plan["composition"]["forbidden_patterns"]) >= {
+        "watermarks", "card grid", "box-and-arrow flowchart",
+    }
+    composition = (run / "plans/composition_blueprint.svg").read_text()
     assert "marker-end=" not in composition
 
 

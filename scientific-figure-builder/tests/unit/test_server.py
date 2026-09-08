@@ -97,6 +97,16 @@ def test_initialize_and_tools_list_expose_exactly_two_public_tools(monkeypatch):
     assert set(panel["properties"]) >= {
         "panel_id", "bbox", "physical_size", "elements",
     }
+    assert panel["properties"]["bbox"]["minItems"] == 4
+    assert panel["properties"]["bbox"]["maxItems"] == 4
+    assert panel["properties"]["physical_size"]["minItems"] == 2
+    assert panel["properties"]["physical_size"]["maxItems"] == 2
+    element = panel["properties"]["elements"]["items"]
+    assert element["required"] == ["element_id", "type"]
+    assert set(element["properties"]["type"]["enum"]) == {
+        "data_plot", "image_asset", "label", "annotation", "text",
+        "equation", "vector_element",
+    }
 
 
 def test_single_panel_geometry_is_derived_after_canvas_resolution(monkeypatch, tmp_path):

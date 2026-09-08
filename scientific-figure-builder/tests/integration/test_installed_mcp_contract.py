@@ -44,6 +44,10 @@ def test_source_install_exposes_current_panel_and_operation_contracts(tmp_path: 
         "tool=_tool_list()[1]; panel=tool['inputSchema']['properties']['request']"
         "['properties']['panels']['items']; print(json.dumps({'required':panel['required'],"
         "'fields':sorted(panel['properties']),"
+        "'bbox_items':[panel['properties']['bbox']['minItems'],panel['properties']['bbox']['maxItems']],"
+        "'physical_items':[panel['properties']['physical_size']['minItems'],panel['properties']['physical_size']['maxItems']],"
+        "'element_required':panel['properties']['elements']['items']['required'],"
+        "'element_types':sorted(panel['properties']['elements']['items']['properties']['type']['enum']),"
         "'statuses':tool['outputSchema']['properties']['status']['enum']}))"
     )
     checked = subprocess.run(
@@ -53,5 +57,11 @@ def test_source_install_exposes_current_panel_and_operation_contracts(tmp_path: 
     contract = json.loads(checked.stdout)
     assert contract["required"] == ["panel_id"]
     assert contract["fields"] == ["bbox", "elements", "panel_id", "physical_size"]
+    assert contract["bbox_items"] == [4, 4]
+    assert contract["physical_items"] == [2, 2]
+    assert contract["element_required"] == ["element_id", "type"]
+    assert contract["element_types"] == [
+        "annotation", "data_plot", "equation", "image_asset", "label",
+        "text", "vector_element",
+    ]
     assert contract["statuses"] == ["in_progress", "paused", "completed"]
-

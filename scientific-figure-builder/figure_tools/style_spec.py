@@ -107,7 +107,52 @@ def resolve_style_bible(
     else:  # pragma: no cover - guarded by StyleSpec validation
         raise StyleResolutionError(f"unsupported style kind: {kind}")
     _validate(bible, STYLE_BIBLE_SCHEMA, "Style Bible")
+    if kind == "description":
+        _validate_description_alignment(str(spec["description"]), bible)
     return bible, {"kind": kind, "content_hash": hash_json(bible)}
+
+
+def _validate_description_alignment(
+    description: str, style_bible: Mapping[str, Any],
+) -> None:
+    """Reject obvious semantic inversions without pretending to compile prose."""
+
+    requested = description.lower()
+    fields = {
+        "view": str(style_bible.get("view") or "").lower(),
+        "projection": str(style_bible.get("projection") or "").lower(),
+        "material": str(style_bible.get("material") or "").lower(),
+        "background": str(style_bible.get("background") or "").lower(),
+        "shadow": str(style_bible.get("shadow") or "").lower(),
+    }
+    prohibiting = any(
+        marker in requested
+        for marker in ("forbid", "avoid", "without", "no ", "禁止", "避免", "不要")
+    )
+    contradictions = []
+    checks = {
+        "isometric": fields["view"] + " " + fields["projection"],
+        "oblique": fields["view"] + " " + fields["projection"],
+        "glass": fields["view"] + " " + fields["material"],
+        "glassmorphism": fields["view"] + " " + fields["material"],
+        "heavy shadow": fields["shadow"],
+        "dark background": fields["background"],
+    }
+    if prohibiting:
+        contradictions.extend(
+            term for term, resolved in checks.items()
+            if term in requested and term in resolved
+        )
+    if "flat" in requested or "orthographic" in requested:
+        contradictions.extend(
+            term for term in ("isometric", "oblique")
+            if term in checks[term]
+        )
+    if contradictions:
+        raise StyleResolutionError(
+            "Style Bible contradicts the style description: "
+            + ", ".join(dict.fromkeys(contradictions))
+        )
 
 
 def style_digest(style_bible: Mapping[str, Any]) -> str:
