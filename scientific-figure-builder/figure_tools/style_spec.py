@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import colorsys
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -148,11 +149,54 @@ def _validate_description_alignment(
             term for term in ("isometric", "oblique")
             if term in checks[term]
         )
+    if "flat" in requested and any(
+        term in fields["material"]
+        for term in ("glass", "specular", "glossy", "3d")
+    ):
+        contradictions.append("glass-like material")
+    if "indigo" in requested and not _palette_contains_indigo(
+        style_bible.get("palette") or {}
+    ):
+        contradictions.append("non-indigo palette")
+    background = fields["background"]
+    if "white background" in requested and "white" not in background:
+        contradictions.append("non-white background")
+    if any(term in requested for term in ("black background", "on black")) \
+            and not any(term in background for term in ("black", "dark")):
+        contradictions.append("non-black background")
+    if "transparent background" in requested and "transparent" not in background:
+        contradictions.append("non-transparent background")
+    if (
+        ("flat" in requested or "poster" in requested)
+        and "transparent" not in requested
+        and "transparent" in background
+    ):
+        contradictions.append("unrequested transparent background")
     if contradictions:
         raise StyleResolutionError(
             "Style Bible contradicts the style description: "
             + ", ".join(dict.fromkeys(contradictions))
         )
+
+
+def _palette_contains_indigo(palette: Mapping[str, Any]) -> bool:
+    for key, value in palette.items():
+        text = f"{key} {value}".lower()
+        if "indigo" in text:
+            return True
+        raw = str(value).lstrip("#")
+        if len(raw) != 6:
+            continue
+        try:
+            red, green, blue = (
+                int(raw[index:index + 2], 16) / 255 for index in (0, 2, 4)
+            )
+        except ValueError:
+            continue
+        hue, saturation, _value = colorsys.rgb_to_hsv(red, green, blue)
+        if 0.64 <= hue <= 0.75 and saturation >= 0.4:
+            return True
+    return False
 
 
 def style_digest(style_bible: Mapping[str, Any]) -> str:

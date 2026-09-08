@@ -544,9 +544,7 @@ def test_model_style_cannot_invert_explicit_flat_prohibitions(tmp_path):
                 }
             return result
 
-    request = diagram_request(
-        style="flat orthographic poster; forbid isometric, oblique and glassmorphism",
-    )
+    request = diagram_request(style="flat indigo orthographic poster")
     orch, run, client = _orchestrator(
         tmp_path, request, worker=ContradictingStyleWorker(),
     )
