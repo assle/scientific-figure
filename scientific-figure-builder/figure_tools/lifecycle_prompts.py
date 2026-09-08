@@ -15,13 +15,11 @@ PHASE_PROMPTS = {
         "Return only a Figure brief suggestion; do not render or call a Provider."
     ),
     "planning": (
-        "Turn the completed Figure brief into a reproducible Figure plan. "
-        "Preserve generation_units, generation_intent_hash and every generation_unit_id from the supplied shape. "
-        "An image_model unit is one complete image_asset with all requested text/arrows and background; "
-        "do not replace it with SVG, subdivide it, or add duplicate internal labels/connectors. "
-        "Every declared member must be represented. When consolidating vector members into one asset, "
-        "source.represented_members must list their original IDs exactly; retain their panel scope. "
-        "vector_element.content must be complete SVG source, never prose. "
+        "Advise the deterministic Figure Planning Module about composition and style. "
+        "Return only the supplied Planning Advice shape. Do not return or rewrite a Figure plan, "
+        "Generation units, intent hashes, production assets, routes, ownership, or canonical sources. "
+        "Composition regions may reference only semantic node IDs from the Figure brief and must not overlap membership. "
+        "A Style Bible suggestion must satisfy the supplied schema and preserve explicit prohibitions. "
         "Do not generate assets or change the brief."
     ),
     "review_and_repair": (

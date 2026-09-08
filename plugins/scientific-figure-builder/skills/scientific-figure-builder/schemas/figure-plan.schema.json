@@ -96,6 +96,10 @@
     "figure_graph_ref": {"$ref": "#/$defs/artifactRef"},
     "solved_layout_ref": {"$ref": "#/$defs/artifactRef"},
     "blueprint_ref": {"$ref": "#/$defs/artifactRef"},
+    "asset_blueprint_ref": {"$ref": "#/$defs/artifactRef"},
+    "composition_blueprint_ref": {"$ref": "#/$defs/artifactRef"},
+    "planning_advice_ref": {"$ref": "#/$defs/artifactRef"},
+    "composition": {"$ref": "#/$defs/composition"},
     "structure_questions_ref": {"$ref": "#/$defs/artifactRef"},
     "generation_conditions_ref": {"$ref": "#/$defs/artifactRef"},
     "delivery": {
@@ -108,11 +112,55 @@
       }
     },
     "language": {"type": "string", "enum": ["zh", "en"]},
-    "style": {"type": "string", "minLength": 1},
+    "style": {"type": ["string", "object"]},
+    "style_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "content_hash"],
+      "properties": {
+        "kind": {"enum": ["default", "description", "file", "inline"]},
+        "content_hash": {"type": "string", "minLength": 1}
+      }
+    },
+    "style_summary": {"type": "string", "minLength": 1},
     "publication_profile": {"type": "string", "minLength": 1},
     "approval": { "$ref": "#/$defs/approval" }
   },
   "$defs": {
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reading_direction", "density_flow", "regions", "forbidden_patterns"],
+      "properties": {
+        "reading_direction": {
+          "type": "string",
+          "enum": ["left_to_right", "right_to_left", "top_to_bottom", "radial"]
+        },
+        "density_flow": {"type": "string", "minLength": 1},
+        "regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region_id", "label", "bbox", "node_ids", "emphasis"],
+            "properties": {
+              "region_id": {"type": "string", "minLength": 1},
+              "label": {"type": "string", "minLength": 1},
+              "bbox": {"$ref": "#/$defs/bbox"},
+              "node_ids": {
+                "type": "array", "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1}
+              },
+              "emphasis": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "forbidden_patterns": {
+          "type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
     "artifactRef": {
       "type": "object",
       "additionalProperties": false,

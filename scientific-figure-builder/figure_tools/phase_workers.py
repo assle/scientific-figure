@@ -71,29 +71,12 @@ class StructuredPhaseWorker:
         }
 
     def _planning(self, invocation: Any) -> dict[str, Any]:
-        from figure_tools.planning.planner import create_figure_plan, resolve_figure_canvas
+        from figure_tools.planning.advice import default_planning_advice
 
         brief = copy.deepcopy(dict(invocation.context["figure_brief"]))
         if brief.get("status") != "ready":
             raise ValueError("Planning requires a ready Figure brief")
-        request = copy.deepcopy(dict(brief["request"]))
-        request.update(brief.get("delivery") or {})
-        request["language"] = brief.get("language")
-        request["style"] = brief.get("style")
-        request["canvas"] = resolve_figure_canvas(
-            request, default_canvas=invocation.context.get("default_canvas") or None,
-        )
-        request["brief_ref"] = {
-            "artifact": "plans/figure_brief.json",
-            "content_hash": hash_json(brief),
-        }
-        plan = create_figure_plan(
-            request, style_bible_ref=request.get("style") or "default",
-        )
-        revision = int(invocation.context.get("revision", 1))
-        plan["revision"] = revision
-        plan["plan_id"] = f"{plan['figure_id']}-plan-v{revision}"
-        return plan
+        return default_planning_advice(brief)
 
     def _review(self, invocation: Any) -> dict[str, Any]:
         plan = dict(invocation.context["figure_plan"])

@@ -166,8 +166,13 @@ inactivity, interrupted streams and cancellation never automatically resend. Exp
 recovery resends the failed operation while preserving consumed budget.
 
 Sanitized latest status lives in Run state's `provider_status`; MCP progress notifications
-are sent when the host supplies a progress token. Host lifetime limits remain independent,
-and local cancellation does not confirm remote cancellation. Partial output never becomes
+are sent when the host supplies a progress token. `advance_figure_workflow` waits briefly
+for a local operation and otherwise returns `status: in_progress` plus a durable operation
+reference. Call it again with `resume` to observe or consume that same operation; polling
+never resubmits the Provider request. `wait_timeout` can tune the initial local wait from
+0 to 240 seconds. If the local owner disappears, the operation becomes
+`remote_outcome_unknown` and requires inspection rather than automatic resubmission.
+Local cancellation does not confirm remote cancellation, and partial output never becomes
 a Phase artifact.
 
 Phase reasoning starts at **8,192 output tokens per phase**. Intake, Planning and Review
@@ -268,6 +273,19 @@ labels and arrows. Data plots remain deterministic, as does outer assembly. Dete
 findings remain authoritative; a vision model may enrich them but cannot turn a
 failed geometry check into a pass.
 
+The Phase worker returns narrow Planning Advice for composition and style. The Figure
+Planning Module, not the model, deterministically owns Generation-unit identity, membership,
+routes, asset ownership, hashes, and source provenance. A schema-valid suggestion therefore
+cannot silently rewrite the selected production method or scope.
+
+Style input is normalized at the Lifecycle seam. The canonical forms are
+`{"kind":"default"}`, `{"kind":"description","description":"..."}`,
+`{"kind":"file","path":"...json"}`, and
+`{"kind":"inline","style_bible":{...}}`; legacy strings and inline Style Bible objects
+remain accepted. Descriptions compile to a validated Style Bible and never silently fall
+back to the default template. The Generation summary includes the resolved view,
+projection, background, palette, and important forbidden elements.
+
 Explicit generation choices are submitted through the existing Lifecycle request:
 
 ```json
@@ -295,7 +313,11 @@ preserves budgets, phase token history and reusable unrelated assets. Invalid or
 conflicting choices pause with actionable information rather than changing routes.
 
 Whole image units preserve their background by default, can contain their required
-text/arrows, and retain semantic topology separately from assembly geometry. Three
+text/arrows, and retain semantic topology separately from assembly geometry. Planning
+publishes an Asset Blueprint for production ownership and, for collapsed image units, a
+Composition Blueprint with semantic regions, reading direction, density flow, anchors, and
+relationships. The Composition Blueprint is the primary pre-generation review artifact; it
+is not final artwork or a promise of editable raster internals. Three
 unit-specific review results (content, connections, quality) are required; missing
 image review evidence blocks normal export. `apply_repair` can regenerate that same
 unit (`image_model`) or use supported `image_edit`, but cannot silently replace it
@@ -303,12 +325,30 @@ with SVG or subdivide it. Raster units do not provide per-object editability;
 `require_editable_objects: true` makes that conflict explicit. Existing waiting,
 retry and phase output-token policies remain unchanged.
 
+A minimal single-panel request needs only an ID and its content when figure width or canvas
+dimensions are available:
+
+```json
+{
+  "figure_id": "overview",
+  "figure_width_cm": 14,
+  "panels": [{
+    "panel_id": "main",
+    "elements": [{"element_id": "title", "type": "text", "content": "Overview"}]
+  }]
+}
+```
+
+After canvas resolution, the single panel receives the full normalized bounding box and a
+derived physical size. Multiple panels still need explicit bounding boxes; the runtime does
+not invent an ambiguous layout.
+
 ## Mechanism-figure workflow
 
 ```text
 Scientific intent
   → Figure Graph (nodes, ports, typed edges, groups, constraints)
-  → Solved layout + editable SVG blueprint
+  → Solved layout + Asset Blueprint + optional Composition Blueprint
   → Provider-neutral Generation Conditions
   → declared Generation units + their owned text/connectors
   → assembled-figure structure/OCR/publication validation

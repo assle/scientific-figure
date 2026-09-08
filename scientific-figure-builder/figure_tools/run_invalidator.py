@@ -36,6 +36,8 @@ _LAYOUT_DERIVED_PATHS = (
     "plans/layout_wireframe.svg",
     "plans/solved_layout.json",
     "plans/figure_blueprint.svg",
+    "plans/asset_blueprint.svg",
+    "plans/composition_blueprint.svg",
 )
 
 _GRAPH_DERIVED_PATHS = (
@@ -46,6 +48,7 @@ _GRAPH_DERIVED_PATHS = (
 )
 
 _PLANNING_DERIVED_PATHS = (
+    "plans/planning_advice.json",
     "plans/layout_analysis.json",
     *_GRAPH_DERIVED_PATHS,
     "plans/generation_conditions.json",

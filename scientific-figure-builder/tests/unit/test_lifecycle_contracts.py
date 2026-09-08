@@ -50,3 +50,20 @@ def test_public_repair_contract_accepts_local_patch_operations():
     }
 
     assert not list(Draft202012Validator(WORKFLOW_INPUT_SCHEMA).iter_errors(action))
+
+
+def test_public_style_contract_accepts_canonical_and_legacy_inputs():
+    base = {
+        "figure_id": "styles",
+        "panels": [{"panel_id": "main"}],
+    }
+    values = [
+        "default",
+        "flat orthographic scientific graphic",
+        {"kind": "default"},
+        {"kind": "description", "description": "flat scientific graphic"},
+        {"kind": "file", "path": "/tmp/style.json"},
+    ]
+    for style in values:
+        request = {**base, "style": style}
+        assert not list(Draft202012Validator(FIGURE_REQUEST_SCHEMA).iter_errors(request))

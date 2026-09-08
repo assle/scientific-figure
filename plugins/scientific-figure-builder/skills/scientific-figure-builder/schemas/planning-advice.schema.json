@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/planning-advice.schema.json",
+  "title": "Planning Advice",
+  "description": "Model-assisted presentation advice that cannot own deterministic Figure plan invariants.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_type", "asset_hints", "composition", "style_bible"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "artifact_type": {"const": "planning_advice"},
+    "asset_hints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "bbox"],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "bbox": {"$ref": "#/$defs/bbox"}
+        }
+      }
+    },
+    "composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reading_direction", "density_flow", "regions", "forbidden_patterns"],
+      "properties": {
+        "reading_direction": {
+          "type": "string",
+          "enum": ["left_to_right", "right_to_left", "top_to_bottom", "radial"]
+        },
+        "density_flow": {"type": "string", "minLength": 1},
+        "regions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["region_id", "label", "bbox", "node_ids", "emphasis"],
+            "properties": {
+              "region_id": {"type": "string", "minLength": 1},
+              "label": {"type": "string", "minLength": 1},
+              "bbox": {"$ref": "#/$defs/bbox"},
+              "node_ids": {
+                "type": "array", "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1}
+              },
+              "emphasis": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "forbidden_patterns": {
+          "type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "style_bible": {"type": ["object", "null"]}
+  },
+  "$defs": {
+    "bbox": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {"type": "number", "minimum": 0, "maximum": 1}
+    }
+  }
+}

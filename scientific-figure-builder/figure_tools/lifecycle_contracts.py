@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 from figure_tools.generation_intent import SELECTION_SCHEMA
+from figure_tools.style_spec import STYLE_INPUT_SCHEMA
 
 
 FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
@@ -34,7 +35,7 @@ FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["panel_id", "bbox", "physical_size", "elements"],
+                "required": ["panel_id"],
                 "properties": {
                     "panel_id": {"type": "string", "minLength": 1},
                     "bbox": {
@@ -112,7 +113,7 @@ FIGURE_REQUEST_SCHEMA: dict[str, Any] = {
         "export_target": {"type": ["string", "null"], "enum": ["general", "ppt", None]},
         "figure_width_cm": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "language": {"type": ["string", "null"], "enum": ["zh", "en", None]},
-        "style": {"type": ["string", "object", "null"]},
+        "style": STYLE_INPUT_SCHEMA,
         "publication_profile": {"type": "string", "enum": ["general", "nature_research"]},
         "figure_graph": {
             "type": "object",
@@ -140,6 +141,7 @@ WORKFLOW_INPUT_SCHEMA: dict[str, Any] = {
         "project_dir": {"type": "string", "minLength": 1},
         "base_dir": {"type": "string", "minLength": 1},
         "dpi": {"type": "integer", "minimum": 1},
+        "wait_timeout": {"type": "number", "minimum": 0, "maximum": 240},
         "request": FIGURE_REQUEST_SCHEMA,
         "action": {
             "oneOf": [
@@ -167,7 +169,7 @@ WORKFLOW_INPUT_SCHEMA: dict[str, Any] = {
                                 "export_target": {"type": "string", "enum": ["general", "ppt"]},
                                 "figure_width_cm": {"type": "number", "exclusiveMinimum": 0},
                                 "language": {"type": "string", "enum": ["zh", "en"]},
-                                "style": {"type": "string", "minLength": 1},
+                                "style": STYLE_INPUT_SCHEMA,
                             },
                         },
                     },
@@ -246,7 +248,7 @@ WORKFLOW_OUTPUT_SCHEMA: dict[str, Any] = {
         "phase": {"type": "string", "enum": [
             "intake", "planning", "execution", "review_and_repair", "export",
         ]},
-        "status": {"type": "string", "enum": ["paused", "completed"]},
+        "status": {"type": "string", "enum": ["in_progress", "paused", "completed"]},
         "next_action": {"type": ["string", "null"]},
         "artifacts": {
             "type": "object",
@@ -257,6 +259,11 @@ WORKFLOW_OUTPUT_SCHEMA: dict[str, Any] = {
         "generation_summary": {"type": "string"},
         "error": {"type": "string"},
         "recovery": {"type": "string"},
+        "operation_id": {"type": "string", "minLength": 1},
+        "operation_status": {
+            "type": "string",
+            "enum": ["running", "failed", "remote_outcome_unknown"],
+        },
     },
 }
 

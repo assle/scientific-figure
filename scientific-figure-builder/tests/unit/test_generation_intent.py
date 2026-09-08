@@ -91,12 +91,15 @@ def test_phase_worker_cannot_silently_change_route(tmp_path):
         def run(self, invocation):
             result = super().run(invocation)
             if invocation.phase == 'planning':
-                result['assets'][0]['routing'] = 'svg'
+                result['asset_hints'] = [{
+                    'asset_id': 'diagram', 'bbox': [0, 0, 1, 1],
+                    'routing': 'svg',
+                }]
             return result
     orch, run, client = _orchestrator(tmp_path, diagram_request(), worker=WrongRoute())
     result = orch.advance('start')
-    assert result['next_action'] == 'revise_generation_intent'
-    assert 'one whole image-model asset' in result['error']
+    assert result['next_action'] == 'resume'
+    assert 'invalid Planning Advice' in result['error']
     assert client.state.calls_used('generation') == 0
     assert not (run / 'plans/figure_plan.json').exists()
 
@@ -246,8 +249,10 @@ def test_intake_cannot_discard_explicit_selection(tmp_path):
                 result['request'].pop('generation_intent')
             return result
     orch, run, client = _orchestrator(tmp_path, diagram_request(), worker=WrongIntake())
-    assert orch.advance('start')['next_action'] == 'revise_generation_intent'
-    assert not (run / 'plans/figure_brief.json').exists()
+    assert orch.advance('start')['next_action'] == 'resume'
+    brief = json.loads((run / 'plans/figure_brief.json').read_text())
+    assert brief['request']['generation_intent'][0]['unit_id'] == 'diagram'
+    assert (run / 'plans/figure_plan.json').exists()
     assert client.state.calls_used('generation') == 0
 
 
@@ -293,14 +298,201 @@ def test_vector_member_cannot_disappear_from_worker_plan(tmp_path):
         def run(self, invocation):
             result = super().run(invocation)
             if invocation.phase == 'planning':
-                result['assets'] = result['assets'][:1]
+                result['generation_units'] = []
             return result
     request = diagram_request(generation_intent=[{'unit_id': 'diagram', 'method': 'vector', 'scope': 'figure'}])
     orch, _, client = _orchestrator(tmp_path, request, worker=DropMember())
     result = orch.advance('start')
-    assert result['next_action'] == 'revise_generation_intent'
-    assert 'members' in result['error']
+    assert result['next_action'] == 'resume'
+    assert 'invalid Planning Advice' in result['error']
     assert client.state.calls_used('generation') == 0
+
+
+def test_recorded_whole_figure_vector_shape_keeps_ten_members(tmp_path):
+    elements = [
+        {"element_id": f"member-{index}", "type": "text", "content": f"M{index}"}
+        for index in range(10)
+    ]
+    request = diagram_request(
+        panels=[{
+            "panel_id": "a", "bbox": [0, 0, 1, 1],
+            "physical_size": [140, 90], "elements": elements,
+        }],
+        generation_intent=[{
+            "unit_id": "panorama", "method": "vector", "scope": "figure",
+        }],
+    )
+
+    orch, run, _ = _orchestrator(tmp_path, request)
+    assert orch.advance("start")["next_action"] == "resume"
+
+    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    assert len(plan["generation_units"][0]["members"]) == 10
+    assert len(plan["assets"]) == 10
+    assert all(asset["generation_unit_id"] == "panorama" for asset in plan["assets"])
+
+
+def test_recorded_whole_figure_image_shape_preserves_semantic_graph(tmp_path):
+    elements = [
+        {"element_id": f"node-{index}", "type": "text", "content": f"N{index}"}
+        for index in range(28)
+    ]
+    ports = [
+        {"port_id": f"node-{index}-out", "node_id": f"node-{index}", "side": "right"}
+        for index in range(20)
+    ] + [
+        {"port_id": f"node-{index + 1}-in", "node_id": f"node-{index + 1}", "side": "left"}
+        for index in range(20)
+    ]
+    edges = [{
+        "edge_id": f"edge-{index}",
+        "source_port": f"node-{index}-out",
+        "target_port": f"node-{index + 1}-in",
+        "direction": "forward",
+        "semantic_type": "sequence",
+    } for index in range(20)]
+    request = diagram_request(
+        panels=[{
+            "panel_id": "a", "bbox": [0, 0, 1, 1],
+            "physical_size": [140, 90], "elements": elements,
+        }],
+        figure_graph={
+            "ports": ports, "typed_edges": edges, "groups": [],
+            "labels": [], "constraints": [],
+        },
+        generation_intent=[{
+            "unit_id": "panorama", "method": "image_model", "scope": "figure",
+        }],
+    )
+
+    orch, run, _ = _orchestrator(tmp_path, request)
+    assert orch.advance("start")["next_action"] == "resume"
+
+    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    semantic = json.loads((run / "plans/semantic_graph.json").read_text())
+    assert len(plan["generation_units"][0]["members"]) == 28
+    assert [(asset["asset_id"], asset["routing"]) for asset in plan["assets"]] == [
+        ("panorama", "image_model")
+    ]
+    assert len(semantic["nodes"]) == 28
+    assert len(semantic["typed_edges"]) == 20
+
+
+def test_inline_style_bible_is_normalized_and_used_end_to_end(tmp_path):
+    style_bible = {
+        "schema_version": "1.0",
+        "palette": {"primary": "#2B176E", "accent": "#38BDF8"},
+        "view": "flat 2D panoramic editorial scientific graphic",
+        "projection": "orthographic front view",
+        "lighting": "none",
+        "material": "flat matte surfaces",
+        "stroke_widths": {"thin": 0.75, "medium": 1.1},
+        "fonts": {"family": "Arial", "sizes": {"label": 9}},
+        "equation_style": "clean scientific typesetting",
+        "background": "white",
+        "shadow": "none",
+        "forbidden_elements": ["isometric perspective", "glassmorphism"],
+        "style_reference_hashes": [],
+    }
+    orch, run, _ = _orchestrator(
+        tmp_path, diagram_request(style=style_bible),
+    )
+
+    result = orch.advance("start")
+
+    assert result["next_action"] == "resume"
+    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    assert brief["style"] == {"kind": "inline", "style_bible": style_bible}
+    assert json.loads((run / "style_bible.json").read_text()) == style_bible
+    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    assert plan["style_source"]["kind"] == "inline"
+    assert plan["style_source"]["content_hash"].startswith("sha256:")
+    assert "orthographic front view" in result["generation_summary"]
+    assert "#2B176E" in result["generation_summary"]
+
+
+def test_natural_language_style_compiles_without_default_fallback(tmp_path):
+    description = (
+        "flat indigo orthographic AI conference poster; white background; "
+        "forbid isometric perspective and glassmorphism"
+    )
+    orch, run, _ = _orchestrator(
+        tmp_path, diagram_request(style=description),
+    )
+
+    result = orch.advance("start")
+
+    assert result["next_action"] == "resume"
+    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    assert brief["style"] == {"kind": "description", "description": description}
+    resolved = json.loads((run / "style_bible.json").read_text())
+    assert resolved["projection"] == "orthographic front view"
+    assert resolved["view"] != "isometric"
+    assert resolved["material"] != "matte with subtle specular highlights on glass"
+    assert "isometric perspective" in resolved["forbidden_elements"]
+
+
+def test_missing_style_file_pauses_before_plan_acceptance(tmp_path):
+    missing = tmp_path / "missing-style.json"
+    orch, run, client = _orchestrator(
+        tmp_path, diagram_request(style=str(missing)),
+    )
+
+    result = orch.advance("start")
+
+    assert result["status"] == "paused"
+    assert result["phase"] == "planning"
+    assert result["next_action"] == "resume"
+    assert "Style Bible file is missing" in result["error"]
+    assert not (run / "plans/figure_plan.json").exists()
+    assert client.state.calls_used("generation") == 0
+
+
+def test_invalid_model_style_advice_pauses_without_changing_brief(tmp_path):
+    from figure_tools.phase_workers import StructuredPhaseWorker
+
+    class InvalidStyle(StructuredPhaseWorker):
+        def run(self, invocation):
+            result = dict(super().run(invocation))
+            if invocation.phase == "planning":
+                result["style_bible"] = {}
+            return result
+
+    description = "flat orthographic scientific graphic"
+    orch, run, client = _orchestrator(
+        tmp_path, diagram_request(style=description), worker=InvalidStyle(),
+    )
+
+    result = orch.advance("start")
+
+    assert result["status"] == "paused"
+    assert "style resolution failed" in result["error"]
+    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    assert brief["style"] == {"kind": "description", "description": description}
+    assert not (run / "plans/figure_plan.json").exists()
+    assert client.state.calls_used("generation") == 0
+
+
+def test_whole_figure_image_plan_exposes_asset_and_composition_blueprints(tmp_path):
+    orch, run, _ = _orchestrator(tmp_path, diagram_request())
+
+    result = orch.advance("start")
+
+    assert result["next_action"] == "resume"
+    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    assert plan["asset_blueprint_ref"]["artifact"] == "plans/asset_blueprint.svg"
+    assert plan["composition_blueprint_ref"]["artifact"] == "plans/composition_blueprint.svg"
+    assert plan["blueprint_ref"] == plan["composition_blueprint_ref"]
+    asset_svg = (run / "plans/asset_blueprint.svg").read_text()
+    composition_svg = (run / "plans/composition_blueprint.svg").read_text()
+    assert set(part.split('"')[0] for part in asset_svg.split('data-node-id="')[1:]) == {
+        "diagram"
+    }
+    assert composition_svg.count('data-region-id="') >= 2
+    assert 'data-node-id="start"' in composition_svg
+    assert 'data-node-id="finish"' in composition_svg
+    client_calls = json.loads((run / "run_state.json").read_text())["calls"]["counts"]
+    assert client_calls.get("generation", 0) == 0
 
 
 def test_hybrid_top_level_label_can_be_image_owned_with_explicit_placement(tmp_path):

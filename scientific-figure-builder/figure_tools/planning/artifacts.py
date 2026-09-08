@@ -21,6 +21,7 @@ from figure_tools.publication_profiles import get_publication_profile
 from figure_tools.run_store import RunStore
 from figure_tools.validation.graph_structure import build_structure_questions
 from figure_tools.vector.blueprint import render_figure_blueprint
+from figure_tools.vector.composition_blueprint import render_composition_blueprint
 from figure_tools.vector.wireframe import generate_wireframe
 
 
@@ -35,6 +36,7 @@ class FigurePlanningArtifacts:
         provider_client: Any,
         *,
         base_dir: str | Path = ".",
+        style_bible: Mapping[str, Any] | None = None,
     ) -> None:
         self.request = request
         self.config = config
@@ -42,6 +44,7 @@ class FigurePlanningArtifacts:
         self.run_dir = Path(run_dir)
         self.provider = provider_client
         self.base_dir = Path(base_dir)
+        self.style_bible = dict(style_bible) if style_bible is not None else None
 
     def prepare(self, plan: dict[str, Any]) -> dict[str, Any]:
         self._write_style_bible()
@@ -67,6 +70,7 @@ class FigurePlanningArtifacts:
         self._commit_plan(plan)
 
     def refresh_graph(self, plan: dict[str, Any]) -> None:
+        semantic = None
         if any((asset.get("source") or {}).get("generation_unit") for asset in plan.get("assets", [])):
             semantic, graph = projected_graphs(self.request, plan)
             ref = self.store.commit_json("plans/semantic_graph.json", semantic, schema="figure-graph.schema.json")
@@ -91,13 +95,14 @@ class FigurePlanningArtifacts:
         plan["structure_questions_ref"] = self._artifact_ref(
             "plans/structure_questions.json", questions_reference
         )
-        self.refresh_layout(plan, graph=graph)
+        self.refresh_layout(plan, graph=graph, semantic_graph=semantic)
 
     def refresh_layout(
         self,
         plan: dict[str, Any],
         *,
         graph: dict[str, Any] | None = None,
+        semantic_graph: dict[str, Any] | None = None,
     ) -> None:
         graph = graph or self.store.load_json(
             "plans/figure_graph.json", schema="figure-graph.schema.json"
@@ -124,15 +129,33 @@ class FigurePlanningArtifacts:
             solved_layout,
             schema="solved-layout.schema.json",
         )
-        blueprint_reference = self.store.commit_text(
-            "plans/figure_blueprint.svg", render_figure_blueprint(solved_layout)
+        asset_blueprint = render_figure_blueprint(solved_layout)
+        asset_blueprint_reference = self.store.commit_text(
+            "plans/asset_blueprint.svg", asset_blueprint
         )
+        self.store.commit_text("plans/figure_blueprint.svg", asset_blueprint)
         plan["solved_layout_ref"] = self._artifact_ref(
             "plans/solved_layout.json", layout_reference
         )
-        plan["blueprint_ref"] = self._artifact_ref(
-            "plans/figure_blueprint.svg", blueprint_reference
+        plan["asset_blueprint_ref"] = self._artifact_ref(
+            "plans/asset_blueprint.svg", asset_blueprint_reference
         )
+        composition = plan.get("composition") or {}
+        if semantic_graph is not None and composition.get("regions"):
+            composition_reference = self.store.commit_text(
+                "plans/composition_blueprint.svg",
+                render_composition_blueprint(
+                    composition, semantic_graph, plan["canvas"],
+                ),
+            )
+            plan["composition_blueprint_ref"] = self._artifact_ref(
+                "plans/composition_blueprint.svg", composition_reference
+            )
+            plan["blueprint_ref"] = dict(plan["composition_blueprint_ref"])
+        else:
+            self.store.delete("plans/composition_blueprint.svg")
+            plan.pop("composition_blueprint_ref", None)
+            plan["blueprint_ref"] = dict(plan["asset_blueprint_ref"])
         self.store.commit_text("plans/layout_wireframe.svg", generate_wireframe(plan))
 
     def refresh_generation_conditions(
@@ -240,21 +263,15 @@ class FigurePlanningArtifacts:
         return verified
 
     def _write_style_bible(self) -> None:
-        from figure_tools._resources import template_path
+        from figure_tools.style_spec import resolve_style_bible
 
-        style = self.request.get("style", "default")
-        destination = self.run_dir / "style_bible.json"
-        if isinstance(style, dict):
-            self.store.commit_json("style_bible.json", style)
-            return
-        if isinstance(style, str) and style not in {"", "default"}:
-            candidate = Path(style)
-            if candidate.is_file():
-                shutil.copyfile(candidate, destination)
-                return
-        source = template_path("default-style-bible.json")
+        style_bible = self.style_bible
+        if style_bible is None:
+            style_bible, _ = resolve_style_bible(
+                self.request.get("style"), base_dir=self.base_dir,
+            )
         self.store.commit_json(
-            "style_bible.json", json.loads(source.read_text(encoding="utf-8"))
+            "style_bible.json", style_bible, schema="style-bible.schema.json",
         )
 
     def _copy_inputs(self) -> None:

@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import queue
+import contextvars
 from contextvars import ContextVar
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -22,10 +23,13 @@ from figure_tools.lifecycle_contracts import (
     WORKFLOW_OUTPUT_SCHEMA,
 )
 from figure_tools.orchestrator import FigureOrchestrator
+from figure_tools.phase_operation import LocalPhaseOperationManager
 from figure_tools.runtime_context import RuntimeContextFactory
+from figure_tools.run_store import RunStore
 
 
 _CALL_CONTROL: ContextVar[Any] = ContextVar("call_control", default=None)
+_OUTPUT_LOCK = threading.Lock()
 
 PUBLIC_TOOLS = ("initialize_figure_project", "advance_figure_workflow")
 
@@ -77,6 +81,24 @@ def _advance(arguments: dict[str, Any]) -> dict[str, Any]:
         raise PublicToolError(context.client.clean_error(exc)) from exc
 
 
+def _advance_durably(arguments: dict[str, Any]) -> dict[str, Any]:
+    run_dir = Path(arguments["run_dir"])
+    state = RunStore(run_dir).load_optional_json("run_state.json") or {}
+    phase = str(state.get("current_phase") or (
+        "planning" if (run_dir / "plans/figure_brief.json").is_file() else "intake"
+    ))
+    timeout = float(arguments.get("wait_timeout", 2.0))
+    operation_arguments = dict(arguments)
+    operation_arguments.pop("wait_timeout", None)
+    return LocalPhaseOperationManager().start_or_observe(
+        run_dir,
+        lambda: _advance(operation_arguments),
+        wait_timeout=timeout,
+        phase_hint=phase,
+        context=contextvars.copy_context(),
+    )
+
+
 _TOOL_SPECS: dict[str, dict[str, Any]] = {
     "initialize_figure_project": {
         "description": "Create non-secret Project configuration.",
@@ -87,7 +109,7 @@ _TOOL_SPECS: dict[str, dict[str, Any]] = {
         "description": "Advance one lifecycle transition through the Orchestrator.",
         "input_schema": WORKFLOW_INPUT_SCHEMA,
         "output_schema": WORKFLOW_OUTPUT_SCHEMA,
-        "handler": _advance,
+        "handler": _advance_durably,
     },
 }
 
@@ -178,12 +200,13 @@ def serve_stdio() -> int:
                 if progress_token is None:
                     return
                 progress_count += 1
-                sys.stdout.write(json.dumps({
-                    "jsonrpc": "2.0", "method": "notifications/progress",
-                    "params": {"progressToken": progress_token, "progress": progress_count,
-                               "message": json.dumps(snapshot)},
-                }) + "\n")
-                sys.stdout.flush()
+                with _OUTPUT_LOCK:
+                    sys.stdout.write(json.dumps({
+                        "jsonrpc": "2.0", "method": "notifications/progress",
+                        "params": {"progressToken": progress_token, "progress": progress_count,
+                                   "message": json.dumps(snapshot)},
+                    }) + "\n")
+                    sys.stdout.flush()
 
             with lock:
                 cancelled = cancellations[message_id]
@@ -208,20 +231,22 @@ def serve_stdio() -> int:
         else:
             _write_error(message_id, -32601, f"unknown method {method}")
             continue
-        sys.stdout.write(json.dumps({
-            "jsonrpc": "2.0", "id": message_id, "result": result,
-        }) + "\n")
-        sys.stdout.flush()
+        with _OUTPUT_LOCK:
+            sys.stdout.write(json.dumps({
+                "jsonrpc": "2.0", "id": message_id, "result": result,
+            }) + "\n")
+            sys.stdout.flush()
     return 0
 
 
 def _write_error(message_id: Any, code: int, message: str) -> None:
-    sys.stdout.write(json.dumps({
-        "jsonrpc": "2.0",
-        "id": message_id,
-        "error": {"code": code, "message": message},
-    }) + "\n")
-    sys.stdout.flush()
+    with _OUTPUT_LOCK:
+        sys.stdout.write(json.dumps({
+            "jsonrpc": "2.0",
+            "id": message_id,
+            "error": {"code": code, "message": message},
+        }) + "\n")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":

@@ -50,6 +50,22 @@ _Avoid_: scene graph, asset list, flowchart
 The normalized node placements and port-bound connector geometry derived from one Figure Graph for a specific canvas.
 _Avoid_: panel layout, bounding-box list, wireframe
 
+**Planning Advice**:
+A schema-governed suggestion for composition and style that may inform Planning but cannot own Generation identity, routes, assets, or source provenance.
+_Avoid_: Figure plan, fallback plan, model plan
+
+**StyleSpec**:
+The canonical discriminated style input identifying the default style, a natural-language description, a Style Bible file, or an inline Style Bible.
+_Avoid_: overloaded style string, style prompt
+
+**Asset Blueprint**:
+The no-cost SVG preview of production asset boundaries and outer assembly ownership.
+_Avoid_: Composition Blueprint, final figure
+
+**Composition Blueprint**:
+The no-cost SVG preview of semantic regions, reading direction, density flow, anchors, and relationships inside a collapsed image Generation unit.
+_Avoid_: Asset Blueprint, editable raster internals, final figure
+
 **Publication profile**:
 A named contract for physical dimensions, final typography, line widths, accessibility, vector editability, and export constraints for a publication target.
 _Avoid_: Style Bible, journal style prompt, export target
@@ -106,6 +122,10 @@ _Avoid_: Skill prompt, workflow prompt, system prompt
 **Phase artifact**:
 A versioned, schema-governed result of one Lifecycle phase that becomes explicit input to downstream phases.
 _Avoid_: conversation context, intermediate output, run file
+
+**Local phase operation**:
+The persisted local ownership and outcome of one potentially long-running Lifecycle advance, observed by a stable operation identity without resubmitting Provider work.
+_Avoid_: Provider response ID, remote background job, retry
 
 **Figure brief**:
 The Phase artifact produced by Intake that records the resolved scientific intent, source inputs, output constraints, and remaining Required clarifications.

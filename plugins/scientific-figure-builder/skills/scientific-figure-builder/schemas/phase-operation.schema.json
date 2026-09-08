@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/phase-operation.schema.json",
+  "title": "Local Phase Operation",
+  "description": "Durable local ownership and outcome for a long-running Lifecycle advance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "operation_id", "phase", "status", "owner_pid",
+    "created_at", "updated_at", "provider_invocation_id", "result", "error"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 1},
+    "phase": {
+      "type": "string",
+      "enum": ["intake", "planning", "execution", "review_and_repair", "export"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["running", "completed", "failed", "remote_outcome_unknown", "consumed"]
+    },
+    "owner_pid": {"type": "integer", "minimum": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "updated_at": {"type": "string", "minLength": 1},
+    "provider_invocation_id": {"type": ["string", "null"]},
+    "result": {"type": ["object", "null"]},
+    "error": {"type": ["string", "null"]}
+  }
+}

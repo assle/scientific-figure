@@ -311,7 +311,10 @@ def generation_summary(plan: Mapping[str, Any]) -> str:
         else:
             parts = [f"{a['asset_id']}由{'生图模型' if a['routing'] == 'image_model' else '本地绘制'}生成" for a in owned]
             statements.append(f"{unit['unit_id']}（{scope}）：" + '；'.join(parts) + '。')
-    return ' '.join(statements) + ' 各部分最终由本地排版合并；位图内容不会因此变成可逐项编辑的矢量。'
+    summary = ' '.join(statements) + ' 各部分最终由本地排版合并；位图内容不会因此变成可逐项编辑的矢量。'
+    if plan.get('style_summary'):
+        summary += ' ' + str(plan['style_summary'])
+    return summary
 
 
 def projected_graphs(request: Mapping[str, Any], plan: Mapping[str, Any]) -> tuple[dict, dict]:

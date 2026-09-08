@@ -50,7 +50,7 @@
       }
     },
     "language": {"type": ["string", "null"], "enum": ["zh", "en", null]},
-    "style": {"type": ["string", "null"]},
+    "style": {"type": ["string", "object", "null"]},
     "assumptions": {"type": "array", "items": {"type": "string"}},
     "uncertainties": {"type": "array", "items": {"type": "string"}},
     "required_clarifications": {

@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "artifact_type": "planning_advice",
+  "asset_hints": [],
+  "composition": {
+    "reading_direction": "left_to_right",
+    "density_flow": "balanced",
+    "regions": [],
+    "forbidden_patterns": []
+  },
+  "style_bible": null
+}

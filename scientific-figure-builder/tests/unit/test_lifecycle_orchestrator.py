@@ -263,7 +263,7 @@ def test_figure_brief_is_schema_valid_and_carries_resolved_delivery(tmp_path: Pa
     assert brief["status"] == "ready"
     assert brief["delivery"] == {"export_target": "general", "figure_width_cm": 14.0}
     assert brief["language"] == "en"
-    assert brief["style"] == "default"
+    assert brief["style"] == {"kind": "default"}
     assert brief["request"]["figure_id"] == "figure-01"
 
 
@@ -886,7 +886,7 @@ def test_approved_hybrid_run_returns_artifacts_through_one_seam(tmp_path: Path):
     assert plan["brief_ref"]["artifact"] == "plans/figure_brief.json"
     assert plan["delivery"]["export_target"] == "general"
     assert plan["language"] == "en"
-    assert plan["style"] == "default"
+    assert plan["style"] == {"kind": "default"}
     assert [inv.phase for inv in worker.invocations] == [
         "intake", "planning", "review_and_repair",
     ]

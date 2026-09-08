@@ -23,7 +23,9 @@ from figure_tools.lifecycle_prompts import (
 from figure_tools.imaging.edit_validation import evaluate_local_edit
 from figure_tools.phase_workers import StructuredPhaseWorker
 from figure_tools.planning.artifacts import FigurePlanningArtifacts
+from figure_tools.planning.module import FigurePlanningModule, PlanningAdviceError
 from figure_tools.provenance import hash_file
+from figure_tools.style_spec import normalize_request_style
 from figure_tools.run_invalidator import RunInvalidator
 from figure_tools.run_store import RunStore
 
@@ -84,6 +86,12 @@ class FigureOrchestrator:
     def advance(self, action: str | Mapping[str, Any] | None = None) -> dict[str, Any]:
         try:
             return self._advance(action)
+        except PlanningAdviceError as exc:
+            self.state.mark_step("planning", "failed")
+            return self._paused(
+                "planning", "resume", error=str(exc),
+                recovery="Correct the Planning Advice output, then resume.",
+            )
         except GenerationIntentError as exc:
             self.state.mark_step("generation_intent", "failed")
             return self._paused("planning", "revise_generation_intent", error=str(exc),
@@ -102,6 +110,7 @@ class FigureOrchestrator:
         if self.request is None:
             raise ValueError("request is required to start a figure run")
         assert self.request is not None
+        self.request = normalize_request_style(self.request)
         if action_name == "revise_generation_intent":
             self._revise_generation_intent(action_data)
             action_name = "resume"
@@ -461,6 +470,8 @@ class FigureOrchestrator:
             },
             ("check_figure_requirements",),
         ))
+        brief["request"] = copy.deepcopy(self.request)
+        brief["style"] = copy.deepcopy(self.request.get("style"))
         self.store.validate(brief, "figure-brief.schema.json")
         request_snapshot = dict(brief["request"])
         if resolve_units(request_snapshot) != resolve_units(self.request):
@@ -479,7 +490,7 @@ class FigureOrchestrator:
 
     def _planning(self, brief: dict[str, Any]) -> dict[str, Any]:
         assert self.request is not None
-        plan = dict(self._invoke_worker(
+        advice = dict(self._invoke_worker(
             "planning",
             {
                 "figure_brief": brief,
@@ -488,23 +499,32 @@ class FigureOrchestrator:
             },
             (
                 "analyze_reference_figure", "check_figure_requirements",
-                "create_figure_plan", "create_layout_wireframe",
+                "create_layout_wireframe",
             ),
         ))
+        module = FigurePlanningModule(self.config.get("canvas") or None)
+        plan, request, style_bible = module.build_plan(
+            brief, advice, revision=self._next_plan_revision,
+            base_dir=str(self.base_dir),
+        )
+        self.store.commit_json(
+            "plans/planning_advice.json", advice,
+            schema="planning-advice.schema.json",
+        )
+        plan["planning_advice_ref"] = {
+            "artifact": "plans/planning_advice.json",
+            "content_hash": self.store.hash_json(advice),
+        }
         self.store.validate(plan, "figure-plan.schema.json")
         validate_plan(brief["request"], plan)
-        request = self.request
-        request.update(brief.get("delivery") or {})
-        request["language"] = brief.get("language")
-        request["style"] = brief.get("style")
-        request["canvas"] = plan["canvas"]
-        request["brief_ref"] = plan["brief_ref"]
+        self.request = request
         FigurePlanningArtifacts(
             request,
             self.config,
             self.run_dir,
             self.provider,
             base_dir=self.base_dir,
+            style_bible=style_bible,
         ).prepare(plan)
         self.store.commit_json(f"plans/figure_plan.v{plan.get('revision', 1)}.json", plan)
         self.state.request_approval("plan_approval", "pending")

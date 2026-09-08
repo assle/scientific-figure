@@ -153,8 +153,11 @@ DeepSeek Responses 使用同一 SSE 连接持续接收状态。心跳只表示�
 角色预算。停止本地等待不代表远端已取消，恢复会重新发送失败阶段请求并保留已用预算。
 
 最新脱敏状态保存在 Run state 的 `provider_status` 中；宿主提供 progress token 时
-同时发送进度通知。宿主自身的任务时限仍可能提前终止调用，不承诺凭响应 ID 取回旧结果。
-只有完整且通过校验的结果才能成为 Phase artifact。
+同时发送进度通知。`advance_figure_workflow` 会短暂等待本地操作，超出后返回
+`status: in_progress` 和持久化操作引用。再次使用 `resume` 只观察或消费同一个操作，
+不会重新提交 Provider 请求；`wait_timeout` 可在 0～240 秒内调整首次本地等待。
+如果本地执行者消失，操作会变为 `remote_outcome_unknown`，必须先检查证据，不能自动重发。
+本地取消不代表远端已取消，只有完整且通过校验的结果才能成为 Phase artifact。
 
 阶段推理的需求解析、规划、审核与修复分别从 **8,192 个输出 token** 开始。
 同一次运行中，恢复相同阶段、Provider 和模型时，沿用已实际发出过的最高额度；
@@ -244,6 +247,16 @@ scientific-figure install-gui
 确定性检查保持权威；视觉模型可以补充
 语义说明，但不能把几何检查的失败改成通过。
 
+Phase worker 只返回关于构图与风格的窄化 Planning Advice。Generation unit 身份、成员、
+路线、资产所有权、哈希与来源均由 Figure Planning Module 确定性生成，不再要求模型复制
+整份 Figure plan，因此合法建议也不能悄悄改变已经选择的生成方式或范围。
+
+风格输入会在 Lifecycle seam 统一规范化。标准形式为 `{"kind":"default"}`、
+`{"kind":"description","description":"..."}`、`{"kind":"file","path":"...json"}`
+以及 `{"kind":"inline","style_bible":{...}}`；旧字符串和直接传入的 Style Bible 对象
+仍可使用。自然语言说明必须编译成通过校验的 Style Bible，不能静默退回默认模板；
+Generation summary 会显示最终视角、投影、背景、主色和关键禁止项。
+
 通过现有工作流请求明确指定生成方式和范围，例如整张流程图由生图模型生成：
 
 ```json
@@ -265,19 +278,38 @@ scientific-figure install-gui
 后续明确改变选择时，可提交 `revise_generation_intent` 动作，携带新 `generation_intent`
 和用户指令 `reason`。预算、阶段 token 历史及无关素材继续保留；矛盾选择会明确暂停，
 不会悄悄改成另一条路线。完整生图单元默认保留背景，允许其内部文字和箭头；内部科学关系
-单独保存用于审核，不会再叠加一遍矢量连接线。
+单独保存用于审核，不会再叠加一遍矢量连接线。Planning 同时提供表示生产边界的
+Asset Blueprint；折叠式整图生图还会提供包含语义区域、阅读方向、密度变化、锚点和关系的
+Composition Blueprint，并将后者作为生成前的主要审批视图。它不是最终图片，也不承诺
+位图内部对象可编辑。
 
 正常导出要求该生图单元具备内容、连接关系和视觉质量三项具体审核证据；缺失证据不会默认
 通过。`apply_repair` 可按 `image_model` 重新生成同一单元，或使用支持的 `image_edit`，
 不能擅自改为 SVG 或拆小范围。位图内容不可逐对象编辑；`require_editable_objects: true`
 可明确要求该能力，遇到位图路线时会报告冲突。既有等待、重试与阶段 token 策略不变。
 
+当画布或图宽已经确定时，最小单面板请求只需要面板 ID 和内容：
+
+```json
+{
+  "figure_id": "overview",
+  "figure_width_cm": 14,
+  "panels": [{
+    "panel_id": "main",
+    "elements": [{"element_id": "title", "type": "text", "content": "总览"}]
+  }]
+}
+```
+
+画布解析后，单面板会获得覆盖全画布的标准化 bbox 和推导出的物理尺寸。多个面板仍必须
+明确提供 bbox；运行时不会猜测有歧义的多面板布局。
+
 ## 机制图工作流
 
 ```text
 科学意图
   → Figure Graph（节点、端口、有类型边、分组、约束）
-  → Solved layout + 可编辑 SVG 蓝图
+  → Solved layout + Asset Blueprint + 可选 Composition Blueprint
   → Provider-neutral Generation Conditions
   → 已确认的生成单元及其文字／连接线
   → 最终图结构/OCR/出版规范验证

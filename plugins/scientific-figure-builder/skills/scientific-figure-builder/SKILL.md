@@ -18,6 +18,10 @@ single `advance_figure_workflow` orchestrator tool. Read its returned
 clarification or approval, then submit the corresponding action. Do not
 manually sequence the low-level MCP tools for a normal figure run.
 
+For `status: in_progress`, call the same tool with `resume` to observe the
+returned operation; never start a replacement. Inspect
+`remote_outcome_unknown` before any explicit new submission.
+
 The orchestrator owns the Lifecycle phases Intake, Planning, Execution, Review
 and repair, and Export. Each model-assisted phase uses its own Phase prompt and
 context. Versioned Phase artifacts, not conversation history, are the handoff
@@ -39,15 +43,17 @@ top-level labels need `panel_id` and `bbox`, or can be grouped into an image pan
 For an entire image-generated flowchart, submit for example:
 `"generation_intent": [{"unit_id":"workflow","method":"image_model","scope":"figure","background":"preserve"}]`.
 Optional `parameters` and `candidate_count` control that unit; image-model calls
-remain subject to the configured Provider capabilities and run budgets. Do not
-create SVG artwork for an image-owned unit. Keep semantic nodes/relations as
-review requirements. Strict per-object editability can be expressed using
-`require_editable_objects`; raster output cannot satisfy that guarantee.
+remain budgeted. Do not create SVG artwork for an image-owned unit; keep its
+semantic graph for review. Raster output cannot satisfy `require_editable_objects`.
 
 Always show returned `generation_summary` before starting image generation.
 If `next_action` is `resume`, continue through `advance_figure_workflow` without
 asking for another approval when auto-execution was selected. Otherwise use
 existing plan approval. A summary pause is not a completed figure.
+
+Prefer StyleSpec kinds `default`, `description`, `file`, or `inline`. Legacy
+strings remain accepted, but descriptions must resolve to a validated Style
+Bible without default fallback. Review its Generation-summary digest.
 
 If a latest explicit instruction changes the previous method or scope, submit
 `action: {"action":"revise_generation_intent","generation_intent":[...],"reason":"the user's instruction"}`.
@@ -65,8 +71,11 @@ export; an image's appearance alone is not proof of correctness.
 
 - Intake must resolve output target (`general` or `ppt`), physical width, text
   language, and style before Planning can start.
-- Planning must produce a Figure plan, Figure Graph, Solved layout, editable
-  blueprint, structure questions, and Generation Conditions before image generation.
+- Planning must produce a Figure plan, Figure Graph, Solved layout, Asset
+  Blueprint, optional Composition Blueprint, structure questions, and
+  Generation Conditions before image generation. The Phase worker supplies
+  Planning Advice; deterministic Generation identity, routes, and ownership
+  belong to the Figure Planning Module.
   Wait for approval unless the user explicitly selected `auto_execute`.
 - Measured data, quantitative plots and their axes remain deterministic.
   A complete non-quantitative image Generation unit may own its descriptive

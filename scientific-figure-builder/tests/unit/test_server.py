@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import io
 import json
+import time
+from dataclasses import replace
 from pathlib import Path
 
 import figure_tools.server as server
 from figure_tools.runtime_context import RuntimeContextFactory
 from figure_tools.state import RunState
+from figure_tools.phase_workers import StructuredPhaseWorker
+from figure_tools.run_store import RunStore
 
 
 ROOT = Path(__file__).parents[2]
@@ -85,6 +89,181 @@ def test_initialize_and_tools_list_expose_exactly_two_public_tools(monkeypatch):
         "advance_figure_workflow",
     ]
     assert "outputSchema" in tools[1]
+    panel = (
+        tools[1]["inputSchema"]["properties"]["request"]
+        ["properties"]["panels"]["items"]
+    )
+    assert panel["required"] == ["panel_id"]
+    assert set(panel["properties"]) >= {
+        "panel_id", "bbox", "physical_size", "elements",
+    }
+
+
+def test_single_panel_geometry_is_derived_after_canvas_resolution(monkeypatch, tmp_path):
+    _use_offline_runtime(monkeypatch, tmp_path)
+    request = _request()
+    request["auto_execute"] = False
+    request["panels"] = [{
+        "panel_id": "a",
+        "elements": [{
+            "element_id": "curve", "type": "data_plot",
+            "plot_spec": str(FIXTURES / "plot_spec_line.json"),
+        }],
+    }]
+    run_dir = tmp_path / "default-panel"
+
+    response = _rpc(
+        monkeypatch,
+        {
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(run_dir), "request": request,
+            }},
+        },
+    )[0]
+
+    payload = json.loads(response["result"]["content"][0]["text"])
+    assert payload["next_action"] == "approve_plan"
+    plan = json.loads((run_dir / "plans/figure_plan.json").read_text())
+    assert plan["panels"] == [{
+        "panel_id": "a", "bbox": [0, 0, 1, 1],
+        "physical_size": [140.0, 70.0],
+    }]
+
+
+def test_multiple_panels_do_not_receive_ambiguous_default_layout(monkeypatch, tmp_path):
+    _use_offline_runtime(monkeypatch, tmp_path)
+    request = _request()
+    request["auto_execute"] = False
+    request["panels"] = [
+        {
+            "panel_id": "a", "bbox": [0, 0, 0.5, 1],
+            "physical_size": [90, 112.5],
+            "elements": request["panels"][0]["elements"],
+        },
+        {
+            "panel_id": "b", "physical_size": [90, 112.5],
+            "elements": [{
+                "element_id": "note", "type": "text", "content": "Note",
+            }],
+        },
+    ]
+    run_dir = tmp_path / "ambiguous-panels"
+
+    response = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "project_dir": str(tmp_path), "base_dir": str(ROOT),
+            "run_dir": str(run_dir), "request": request,
+        }},
+    })[0]
+
+    payload = json.loads(response["result"]["content"][0]["text"])
+    assert payload["status"] == "paused"
+    assert payload["phase"] == "planning"
+    assert "panel 'b' is missing bbox" in payload["error"]
+
+
+def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
+    monkeypatch, tmp_path,
+):
+    calls: list[str] = []
+
+    class SlowWorker(StructuredPhaseWorker):
+        def run(self, invocation):
+            calls.append(invocation.phase)
+            if invocation.phase == "intake":
+                time.sleep(0.05)
+            return super().run(invocation)
+
+    base_factory = RuntimeContextFactory(
+        config_loader=lambda _project: {"models": {}, "providers": {}},
+        environ={}, cache_dir=tmp_path / "cache",
+    )
+
+    class SlowFactory:
+        def create(self, project_dir, run_dir):
+            return replace(
+                base_factory.create(project_dir, run_dir),
+                worker=SlowWorker(),
+            )
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", SlowFactory)
+    run_dir = tmp_path / "async-run"
+    request = _request()
+    request["auto_execute"] = False
+    arguments = {
+        "project_dir": str(tmp_path), "base_dir": str(ROOT),
+        "run_dir": str(run_dir), "request": request,
+        "wait_timeout": 0.005,
+    }
+
+    first = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": arguments},
+    })[0]
+    first_payload = json.loads(first["result"]["content"][0]["text"])
+    assert first_payload["status"] == "in_progress"
+    assert first_payload["operation_status"] == "running"
+    assert first_payload["operation_id"]
+
+    deadline = time.monotonic() + 2
+    second_payload = first_payload
+    while second_payload["status"] == "in_progress" and time.monotonic() < deadline:
+        time.sleep(0.02)
+        second = _rpc(monkeypatch, {
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "base_dir": str(ROOT),
+                "run_dir": str(run_dir), "action": "resume",
+                "wait_timeout": 0.005,
+            }},
+        })[0]
+        second_payload = json.loads(second["result"]["content"][0]["text"])
+    assert second_payload["status"] == "paused"
+    assert second_payload["next_action"] == "approve_plan"
+    assert calls.count("intake") == 1
+    assert calls.count("planning") == 1
+    operation = json.loads((run_dir / "plans/phase_operation.json").read_text())
+    assert operation["operation_id"] == first_payload["operation_id"]
+    assert operation["status"] == "consumed"
+
+
+def test_orphaned_phase_operation_is_not_resubmitted(monkeypatch, tmp_path):
+    run_dir = tmp_path / "orphaned-run"
+    store = RunStore(run_dir)
+    store.ensure_structure()
+    store.commit_json("plans/phase_operation.json", {
+        "schema_version": "1.0",
+        "operation_id": "orphaned-operation",
+        "phase": "planning",
+        "status": "running",
+        "owner_pid": 99999999,
+        "created_at": "2026-09-08T00:00:00+00:00",
+        "updated_at": "2026-09-08T00:00:00+00:00",
+        "provider_invocation_id": "provider-operation",
+        "result": None,
+        "error": None,
+    }, schema="phase-operation.schema.json")
+
+    class MustNotStart:
+        def create(self, *_args):
+            raise AssertionError("orphaned operation must not be resubmitted")
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", MustNotStart)
+    response = _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "run_dir": str(run_dir), "action": "resume",
+        }},
+    })[0]
+
+    payload = json.loads(response["result"]["content"][0]["text"])
+    assert payload["status"] == "paused"
+    assert payload["operation_status"] == "remote_outcome_unknown"
+    assert payload["next_action"] is None
+    assert "Do not resubmit automatically" in payload["recovery"]
 
 
 def test_public_initialize_call_and_hidden_tool_rejection(monkeypatch, tmp_path):

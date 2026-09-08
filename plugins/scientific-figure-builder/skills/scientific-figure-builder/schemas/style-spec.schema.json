@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scientific-figure-builder/schemas/style-spec.schema.json",
+  "title": "Style Spec",
+  "description": "Canonical discriminated style input for one figure run.",
+  "type": "object",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {"kind": {"const": "default"}}
+    },
+    {
+      "additionalProperties": false,
+      "required": ["kind", "description"],
+      "properties": {
+        "kind": {"const": "description"},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": {"const": "file"},
+        "path": {"type": "string", "minLength": 1}
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": ["kind", "style_bible"],
+      "properties": {
+        "kind": {"const": "inline"},
+        "style_bible": {"type": "object"}
+      }
+    }
+  ],
+  "required": ["kind"],
+  "properties": {
+    "kind": {"enum": ["default", "description", "file", "inline"]},
+    "description": {"type": "string"},
+    "path": {"type": "string"},
+    "style_bible": {"type": "object"}
+  }
+}

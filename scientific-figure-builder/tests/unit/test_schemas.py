@@ -31,6 +31,8 @@ SCHEMA_DOCUMENTS = {
     "figure-plan.schema.json": ["figure_plan.json"],
     "generation-conditions.schema.json": ["generation_conditions.json"],
     "plot-spec.schema.json": ["plot_spec.json"],
+    "phase-operation.schema.json": ["phase_operation.json"],
+    "planning-advice.schema.json": ["planning_advice.json"],
     "repair-plan.schema.json": ["repair_plan.json"],
     "asset-manifest.schema.json": ["asset_manifest.json"],
     "style-bible.schema.json": ["style_bible.json", "default-style-bible.json"],
@@ -135,6 +137,14 @@ def test_default_project_yaml_is_valid_and_non_secret() -> None:
 
 def test_publication_mplstyle_exists() -> None:
     assert (TEMPLATE_DIR / "publication.mplstyle").is_file()
+
+
+def test_style_spec_schema_validates_the_canonical_example() -> None:
+    schema = _load_json(SCHEMA_DIR / "style-spec.schema.json")
+    Draft202012Validator.check_schema(schema)
+    assert not list(Draft202012Validator(schema).iter_errors(
+        _load_json(FIXTURE_DIR / "style_spec.json")
+    ))
 
 
 def test_network_only_via_transport_abstraction() -> None:
