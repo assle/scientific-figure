@@ -14,12 +14,35 @@ by an established pattern in the existing codebase.
 When multiple implementations are valid, prefer the simplest one with the smallest
 diff.
 
+## Incremental Development
+
+Keep understanding, decomposition, and implementation choices with the user. Treat a concrete
+change the user has already selected as the current increment. When a request is exploratory or
+spans multiple changes, inspect the existing code, explain the smallest coherent next change, and
+wait for the user to choose before editing.
+
+Implement only the selected increment. Include its mechanically necessary tests and documentation,
+verify the observable result, report what changed, and stop before starting another increment.
+
+Before ending an increment that changed workspace files, inspect the actual diff and use the CI/CD
+command index below. Give the user the exact applicable verification and delivery commands, state
+whether the next action is push/PR only, local source activation, or a Product release, and justify
+that classification from the changed files (for example, repository docs versus Core or shipped
+workflow resources).
+
+Treat newly discovered knowledge, terminology, constraints, and follow-up work as decision points,
+not implicit requirements. Explain them in plain language and how they affect the current choice;
+do not silently expand the scope, rewrite the requirement, or turn them into a complete upfront spec.
+
+This is the default for non-trivial coding work. If the user explicitly requests end-to-end
+implementation or invokes a workflow skill, follow that requested scope or workflow instead.
+
 ## Language
 
 - **User-facing interaction**: Always communicate with the user in Chinese (中文).
 - **Background operations**: All call chains, prompts, execution chains, and internal logs must use English for clarity and consistency.
 
-## Agent skills
+## Project references
 
 ### Issue tracker
 
@@ -32,6 +55,11 @@ The five canonical triage roles use their default label strings (`needs-triage`,
 ### Domain docs
 
 Single-context layout: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### CI/CD commands
+
+For documentation-only, test/CI, Core or installer, Skill/Schema/template, local source activation,
+and patch/minor release changes, follow `docs/operations/ci-cd-commands.md`.
 
 ## Filesystem layout
 

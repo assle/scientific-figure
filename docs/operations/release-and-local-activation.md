@@ -69,36 +69,8 @@ Lifecycle MCP server 或 Configuration app
 
 ## 维护者发布
 
-功能修改应先提交到 `main`。只需要检查本地候选版本而暂不发布时，可以在隔离 Git
-worktree 中准备版本；该操作不会暂存当前工作区里的无关修改，并会保留一个本地候选 ref：
-
-```bash
-python3 scripts/release.py minor
-```
-
-正式发布前，Release notes 必须经过审阅，并包含 `status: approved` frontmatter。发布
-新版本时直接用 `--notes-file` 提供该文件：
-
-```bash
-python3 scripts/release.py minor --publish --notes-file /path/to/approved.md
-```
-
-`0.6.0` Delivery 契约还具有一次性的真实宿主验收门禁：安装候选 Product bundle，完全
-重启 Codex，在新任务中实际启动 Lifecycle MCP server，并打开 Configuration app。确认
-本地版本收敛后运行：
-
-```bash
-python3 scripts/record_release_acceptance.py --confirm-codex-restarted
-```
-
-该命令从 `scientific-figure status --json` 生成不含配置或凭据的验收证据。自动测试不能
-替代这次真实宿主重载证据。
-
-也可以在发布后接着激活本机：
-
-```bash
-python3 scripts/release.py minor --publish --notes-file /path/to/approved.md --activate-local
-```
+按修改类型选择验证、提交、版本递增、发布和本地试用命令时，使用
+[CI/CD 命令手册](ci-cd-commands.md)。该文档是维护者命令的唯一来源。
 
 Release Pipeline 会：
 
