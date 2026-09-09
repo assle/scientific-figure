@@ -8,6 +8,7 @@ BOOTSTRAP_REF=${SCIENTIFIC_FIGURE_BOOTSTRAP_REF:-main}
 ACTIVATE_RELEASE=0
 REQUEST_CODEX=0
 REQUEST_VERIFY=0
+REQUEST_HELP=0
 for argument in "$@"; do
   case "$argument" in
     --release|--latest|--bundle)
@@ -19,8 +20,34 @@ for argument in "$@"; do
     --verify)
       REQUEST_VERIFY=1
       ;;
+    -h|--help)
+      REQUEST_HELP=1
+      ;;
   esac
 done
+
+if [ "$REQUEST_HELP" -eq 1 ]; then
+  printf '%s\n' \
+    'Scientific Figure Builder installer' \
+    '' \
+    'Complete Release activation:' \
+    '  ./install.sh --codex --release latest --with-gui' \
+    '  ./install.sh --codex --release vX.Y.Z [--with-gui]' \
+    '  ./install.sh --codex --bundle FILE [--with-gui]' \
+    '  ./install.sh --opencode --release VERSION [--with-gui]' \
+    '  ./install.sh --all --release VERSION [--with-gui]' \
+    '' \
+    'Core-only compatibility:' \
+    '  ./install.sh --runtime-only [--release VERSION] [--with-gui]' \
+    '' \
+    '--release selects latest or an exact vX.Y.Z Product bundle.' \
+    '--bundle installs a local Product bundle with adjacent SHA256SUMS.' \
+    '--codex installs Core, CLI, Native plugin, and optional Configuration app.' \
+    '--with-gui includes the Configuration app; omit it for headless use.' \
+    '--without-gui explicitly activates a headless Runtime.' \
+    'Provider configuration, credentials, projects, data, and run artifacts are preserved.'
+  exit 0
+fi
 
 if [ ! -f "$REPOSITORY_DIR/scientific-figure-builder/install.sh" ]; then
   BOOTSTRAP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/scientific-figure.XXXXXX")

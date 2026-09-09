@@ -103,6 +103,20 @@ def test_root_installer_requires_release_for_complete_codex_activation(
     assert completed.returncode == 2
     assert "--release" in completed.stderr
     assert "--runtime-only" in completed.stderr
+
+
+def test_root_installer_help_explains_complete_release_activation() -> None:
+    repository = Path(__file__).resolve().parents[3]
+    completed = subprocess.run(
+        [str(repository / "install.sh"), "--help"],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "--codex --release latest --with-gui" in completed.stdout
+    assert "Provider configuration, credentials" in completed.stdout
 from figure_tools.install_paths import activate_runtime, read_active_runtime
 
 MCP_ENTRY = {

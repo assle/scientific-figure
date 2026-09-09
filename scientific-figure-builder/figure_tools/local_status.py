@@ -181,7 +181,7 @@ def collect_local_status(
         conclusion = LocalConclusion.RESTART_REQUIRED
     elif (
         request.published_version is not None
-        and request.published_version != target_version
+        and _semver_core(request.published_version) > _semver_core(target_version)
     ):
         conclusion = LocalConclusion.UPDATE_AVAILABLE
     else:
@@ -269,6 +269,15 @@ def render_human_status(result: LocalStatusResult, *, verbose: bool = False) -> 
 
 def _children(path: Path) -> tuple[Path, ...]:
     return tuple(sorted(path.iterdir())) if path.is_dir() else ()
+
+
+def _semver_core(version: str) -> tuple[int, int, int]:
+    core = version.split("+", 1)[0].split("-", 1)[0]
+    try:
+        major, minor, patch = (int(item) for item in core.split("."))
+    except (TypeError, ValueError):
+        return (0, 0, 0)
+    return major, minor, patch
 
 
 def _child_directories(path: Path, *, exclude: str) -> tuple[Path, ...]:

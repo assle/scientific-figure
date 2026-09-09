@@ -5,6 +5,8 @@ Usage: python -m figure_tools init [project_dir]
        python -m figure_tools install-gui
        python -m figure_tools status [--json] [--verbose] [--remote]
        python -m figure_tools update (--latest|--release VERSION|--bundle FILE)
+         [--codex|--opencode|--all|--runtime-only]
+         [--with-gui|--without-gui] [--json]
        python -m figure_tools --version
 """
 
@@ -26,7 +28,9 @@ from figure_tools.config import initialize_project
 USAGE = (
     "usage: python -m figure_tools "
     "init [project_dir] | gui | install-gui | status [--json] [--verbose] [--remote] | "
-    "update (--latest|--release VERSION|--bundle FILE) [--codex|--opencode] | --version"
+    "update (--latest|--release VERSION|--bundle FILE) "
+    "[--codex|--opencode|--all|--runtime-only] "
+    "[--with-gui|--without-gui] [--json] | --version"
 )
 
 
@@ -45,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] == "status":
         options = set(argv[1:])
+        if options & {"-h", "--help"}:
+            print("usage: scientific-figure status [--json] [--verbose] [--remote]")
+            return 0
         if not options <= {"--json", "--verbose", "--remote"}:
             print(USAGE)
             return 2

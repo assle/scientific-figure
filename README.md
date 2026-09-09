@@ -416,20 +416,96 @@ synchronous multimodal-generation API. It cannot serve `phase_reasoning`,
 | `general` | Publishing, browsers, vector tools | Converted to portable paths |
 | `ppt` | PowerPoint editing and ungrouping | Preserved as editable text |
 
-## Installation options
+## Command reference
 
-```bash
-./install.sh --codex --release latest --with-gui
-./install.sh --opencode --release vX.Y.Z
-./install.sh --runtime-only --release vX.Y.Z
-scientific-figure update --latest
-scientific-figure update --bundle /path/to/product-bundle.tar.gz
-scientific-figure status --verbose
-```
+If `scientific-figure` is not on the current shell `PATH`, use the absolute
+launcher printed by the installer. Its Unix default is
+`~/.local/bin/scientific-figure`.
 
-`--codex` means complete Codex activation. `--runtime-only` is the explicit
-Core-only path. The older `--opencode-only` and `--codex-only` aliases remain for
-one minor migration cycle and print a compatibility notice.
+### Install and activate locally
+
+| Command | Meaning | Network and mutation |
+|---|---|---|
+| `./install.sh --help` | Show the current complete installation interface | Offline, read-only |
+| `./install.sh --codex --release latest --with-gui` | Install or activate the latest formal Release with Core runtime, CLI, Native plugin, and Configuration app | Online; changes product and Codex plugin state |
+| `./install.sh --codex --release vX.Y.Z --with-gui` | Install one pinned Product version | Online; changes product and Codex plugin state |
+| `./install.sh --codex --bundle /path/to/bundle.tar.gz --with-gui` | Install an offline Product bundle; `SHA256SUMS` must be beside it | Offline; changes product and Codex plugin state |
+| `./install.sh --opencode --release latest` | Install the Core runtime, CLI, and OpenCode integration | Online; no Native Codex plugin |
+| `./install.sh --all --release latest --with-gui` | Activate both Codex and OpenCode | Online; changes both host integrations |
+| `./install.sh --runtime-only --release latest` | Install only the Core runtime and CLI | Online; adds no Agent integration |
+| `./install.sh --runtime-only` | Compatibility Core-only installation from the current source tree | Development source, not a formal Release installation |
+
+`--with-gui` includes the Configuration app; `--without-gui` explicitly creates
+a headless new Runtime. `--codex` means complete Codex activation, not Core-only.
+The older `--opencode-only` and `--codex-only` aliases remain for one minor
+migration cycle and print a compatibility notice.
+
+### Update an installed version
+
+| Command | Meaning |
+|---|---|
+| `scientific-figure update --latest` | Resolve GitHub latest once, pin it as the Target version, and preserve the installed host/GUI shape |
+| `scientific-figure update --release vX.Y.Z` | Update online to one exact Release |
+| `scientific-figure update --bundle /path/to/bundle.tar.gz` | Update from a local bundle without deleting the user-supplied bundle |
+| `scientific-figure update --latest --codex` | Explicitly update the complete Codex integration |
+| `scientific-figure update --latest --opencode` | Explicitly update the OpenCode integration |
+| `scientific-figure update --latest --all` | Explicitly update Codex and OpenCode |
+| `scientific-figure update --latest --runtime-only` | Explicitly update only Core runtime and CLI |
+| `scientific-figure update --latest --with-gui` | Update and ensure the Configuration app is included |
+| `scientific-figure update --latest --without-gui` | Update to a headless Runtime |
+| Add `--json` to an update command | Emit the machine-readable Activation result |
+
+Update preserves Providers, Model routes, Credential references, Keyring API
+Keys, projects, data, and run artifacts. It replaces the Core runtime, Native
+plugin, Workflow Skill, CLI, Configuration app, and product dependencies. It
+does not terminate Codex/OpenCode or close a GUI that may contain an unsaved
+Configuration draft.
+
+### Status, configuration, and project setup
+
+| Command | Meaning | Mutates state |
+|---|---|---:|
+| `scientific-figure status` | Summarize Native plugin, Active runtime, CLI, Running runtime instances, and cleanup state offline | No |
+| `scientific-figure status --verbose` | Also show each MCP/Configuration app process and retained path | No |
+| `scientific-figure status --json` | Emit complete machine-readable status | No |
+| `scientific-figure status --remote` | Compare local status with the latest GitHub Release | No; uses network |
+| `scientific-figure --version` | Show the Product version of the current CLI | No |
+| `scientific-figure gui` | Open the Configuration app on demand | Starts GUI, not MCP |
+| `scientific-figure install-gui` | Add GUI dependencies to the Active runtime | Yes |
+| `scientific-figure init [project_dir]` | Create non-secret `.scientific-figure/` project configuration | Yes |
+
+Status conclusions and exit codes:
+
+| Exit | Conclusion | Meaning and next action |
+|---:|---|---|
+| `0` | `converged` | Local versions agree; `clean=true` means no obsolete product files remain |
+| `2` | `restart_required` | Disk is updated but old MCP/GUI instances remain; save work and fully restart the host |
+| `3` | `inconsistent` / `update_available` | Component versions differ or `--remote` found a newer Release; run update |
+| `4` | `broken` | Active runtime is missing or unreadable; repeat complete installation |
+| `1` | update/install failure | Download, checksum, manifest, installation, or compensation failed before an Activation result |
+
+MCP and the Configuration app are on-demand; idle is healthy. To load a newly
+installed MCP, fully quit and reopen Codex/OpenCode, then invoke Scientific
+Figure Builder in a new task.
+
+### Maintainer build and release
+
+| Command | Meaning |
+|---|---|
+| `python3 scripts/verify_release_candidate.py --tests --build` | Run the same full tests, Pyright, Core wheel, and Product bundle build used by CI |
+| `python3 scripts/release.py minor` | Prepare the next minor candidate in an isolated worktree and retain local ref `codex/release-X.Y.Z`; do not push |
+| `python3 scripts/release.py patch --publish --notes-file /path/to/approved.md` | Prepare a patch, push main, wait for CI, then tag; the tag workflow publishes formal artifacts |
+| `python3 scripts/release.py X.Y.Z --publish` | Continue an already-versioned candidate with approved notes; resume from remote facts after interruption |
+| Add `--activate-local` to publish | Activate the exact published version locally; exit `2` means host reload remains and does not undo the Release |
+| `python3 scripts/record_release_acceptance.py --confirm-codex-restarted` | Record observed Codex restart, new-task MCP, Configuration app, and clean status |
+| `python3 scripts/release.py X.Y.Z --check-acceptance` | Validate only local acceptance evidence |
+| `python3 scripts/release.py X.Y.Z --check-notes` | Validate only `status: approved` Release notes |
+| `python3 scripts/release.py X.Y.Z --check-release` | Validate a non-draft GitHub Release has bundle, wheel, and `SHA256SUMS` |
+
+Release notes begin as `status: draft`; review and change them to
+`status: approved` before `--publish`. Published tags are immutable; use a new
+patch version for conflicts. See [Release and local update](docs/operations/release-and-local-activation.md)
+for the complete maintainer flow.
 
 OpenCode configuration updates are JSONC-aware. Install, upgrade, and targeted
 uninstall edit only `mcp.scientific-figure` (and create the `mcp`/`$schema`

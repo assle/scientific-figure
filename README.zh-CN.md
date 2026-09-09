@@ -374,19 +374,91 @@ DashScope Native 会把上述 `compatible-mode/v1` 地址规范化为同地域�
 | `general` | 投稿、浏览器和通用矢量工具 | 转换为兼容性更好的路径 |
 | `ppt` | PowerPoint 编辑和取消组合 | 保留为可编辑文字 |
 
-## 安装选项
+## 命令速查与含义
 
-```bash
-./install.sh --codex --release latest --with-gui
-./install.sh --opencode --release vX.Y.Z
-./install.sh --runtime-only --release vX.Y.Z
-scientific-figure update --latest
-scientific-figure update --bundle /path/to/product-bundle.tar.gz
-scientific-figure status --verbose
-```
+如果 `scientific-figure` 尚未加入当前 shell 的 `PATH`，请使用安装器输出的绝对路径；
+Unix 默认是 `~/.local/bin/scientific-figure`。
 
-`--codex` 表示完整 Codex 激活；`--runtime-only` 是明确的 Core-only 路径。旧的
-`--opencode-only` 和 `--codex-only` 至少保留一个 minor 迁移周期，并输出兼容提示。
+### 安装与本地激活
+
+| 命令 | 表示的含义 | 网络与状态变化 |
+|---|---|---|
+| `./install.sh --help` | 显示当前完整安装入口和参数含义 | 离线、只读 |
+| `./install.sh --codex --release latest --with-gui` | 首次安装或激活 GitHub 最新正式版本，包括 Core runtime、CLI、Native plugin 和 Configuration app | 联网；修改产品安装和 Codex plugin 状态 |
+| `./install.sh --codex --release vX.Y.Z --with-gui` | 安装一个明确版本，不跟随之后出现的 latest | 联网；修改产品安装和 Codex plugin 状态 |
+| `./install.sh --codex --bundle /path/to/bundle.tar.gz --with-gui` | 从本地 Product bundle 离线安装；同目录必须有 `SHA256SUMS` | 离线；修改产品安装和 Codex plugin 状态 |
+| `./install.sh --opencode --release latest` | 安装 Core runtime、CLI 和 OpenCode 集成 | 联网；不安装 Native Codex plugin |
+| `./install.sh --all --release latest --with-gui` | 同时激活 Codex 与 OpenCode | 联网；修改两个宿主的集成状态 |
+| `./install.sh --runtime-only --release latest` | 只安装 Core runtime 和 CLI | 联网；不新增 Agent 集成 |
+| `./install.sh --runtime-only` | 从当前源码工作区执行兼容的 Core-only 开发安装 | 离线或仅访问依赖源；不表示正式 Release 安装 |
+
+`--with-gui` 表示包含 Configuration app；`--without-gui` 表示明确移除新 Runtime 中的
+GUI 依赖。`--codex` 表示完整 Codex 激活，不再表示 Core-only。旧的 `--opencode-only` 和
+`--codex-only` 至少保留一个 minor 迁移周期，并输出兼容提示。
+
+### 更新已安装版本
+
+| 命令 | 表示的含义 |
+|---|---|
+| `scientific-figure update --latest` | 查询一次 GitHub latest，将其固定为 Target version，并保持当前已安装的宿主和 GUI 形态 |
+| `scientific-figure update --release vX.Y.Z` | 联网更新到指定 Release |
+| `scientific-figure update --bundle /path/to/bundle.tar.gz` | 使用本地 bundle 更新；不删除用户提供的 bundle |
+| `scientific-figure update --latest --codex` | 明确更新完整 Codex 集成 |
+| `scientific-figure update --latest --opencode` | 明确更新 OpenCode 集成 |
+| `scientific-figure update --latest --all` | 明确更新 Codex 与 OpenCode |
+| `scientific-figure update --latest --runtime-only` | 明确只更新 Core runtime 和 CLI |
+| `scientific-figure update --latest --with-gui` | 更新并确保包含 Configuration app |
+| `scientific-figure update --latest --without-gui` | 更新为 headless Runtime |
+| 在上述 update 命令末尾加 `--json` | 输出机器可读的 Activation result |
+
+更新会保留 Provider、Model route、Credential reference、Keyring API Key、项目、数据和
+运行产物；会替换 Core runtime、Native plugin、Workflow Skill、CLI、Configuration app
+和程序依赖。它不会强制退出 Codex/OpenCode，也不会关闭可能包含未保存 Configuration
+draft 的 GUI。
+
+### 状态、配置与项目初始化
+
+| 命令 | 表示的含义 | 是否修改状态 |
+|---|---|---:|
+| `scientific-figure status` | 离线汇总 Native plugin、Active runtime、CLI、运行实例和清理状态 | 否 |
+| `scientific-figure status --verbose` | 额外显示每个 MCP/Configuration app 进程和保留路径 | 否 |
+| `scientific-figure status --json` | 输出机器可读的完整状态 | 否 |
+| `scientific-figure status --remote` | 在本地状态之外查询 GitHub 最新 Release | 否；会联网 |
+| `scientific-figure --version` | 显示当前 CLI 所属 Product version | 否 |
+| `scientific-figure gui` | 按需打开 Configuration app | 启动 GUI 进程，不启动 MCP |
+| `scientific-figure install-gui` | 为当前 Active runtime 补装 GUI 依赖 | 是 |
+| `scientific-figure init [project_dir]` | 在项目中创建不含凭据的 `.scientific-figure/` 配置 | 是 |
+
+`status` 的结论与退出码：
+
+| 退出码 | 结论 | 含义与下一步 |
+|---:|---|---|
+| `0` | `converged` | 本地组件版本一致；`clean=true` 时没有待清理旧文件 |
+| `2` | `restart_required` | 磁盘已更新，但旧 MCP/GUI 仍运行；保存工作并完全重启宿主 |
+| `3` | `inconsistent` / `update_available` | 组件版本不一致，或 `--remote` 发现新 Release；执行 update |
+| `4` | `broken` | Active runtime 缺失或状态不可读；重新执行完整安装 |
+| `1` | update/install failure | 下载、摘要、manifest、安装或补偿失败；没有达到可报告的激活结果 |
+
+MCP 和 Configuration app 都是按需运行；idle 是正常状态。完成安装后若需要加载新 MCP，
+请完全退出并重新打开 Codex/OpenCode，再在新任务中首次调用 Scientific Figure Builder。
+
+### 维护者构建与发布
+
+| 命令 | 表示的含义 |
+|---|---|
+| `python3 scripts/verify_release_candidate.py --tests --build` | 使用与 CI 相同的入口执行全量测试、Pyright、Core wheel 和 Product bundle 构建 |
+| `python3 scripts/release.py minor` | 在隔离 worktree 中准备下一个 minor 候选，并保留 `codex/release-X.Y.Z` 本地候选 ref；不推送 |
+| `python3 scripts/release.py patch --publish --notes-file /path/to/approved.md` | 准备 patch 版本，推送 main，等待 CI，通过后创建 tag；tag workflow 发布正式 artifacts |
+| `python3 scripts/release.py X.Y.Z --publish` | 继续一个已经版本化、已有 approved notes 的候选；中断后从远端事实续跑 |
+| 在 publish 命令末尾加 `--activate-local` | Release 成功后继续在本机激活该确切版本；本地需重启时返回 `2`，不影响已发布状态 |
+| `python3 scripts/record_release_acceptance.py --confirm-codex-restarted` | 从真实 `status --json` 记录 Codex 重启、新任务 MCP、Configuration app 和 clean 状态 |
+| `python3 scripts/release.py X.Y.Z --check-acceptance` | 只验证该版本的本机验收证据 |
+| `python3 scripts/release.py X.Y.Z --check-notes` | 只验证 Release notes frontmatter 为 `status: approved` |
+| `python3 scripts/release.py X.Y.Z --check-release` | 只验证 GitHub Release 非 draft 且 bundle、wheel、`SHA256SUMS` 齐全 |
+
+正式发布说明先以 `status: draft` 创建；维护者审阅并改为 `status: approved` 后才能
+`--publish`。已推送 tag 永不移动，冲突时使用新的 patch 版本。完整维护流程见
+[发布与本地更新](docs/operations/release-and-local-activation.md)。
 
 OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
 `mcp.scientific-figure`（缺少时才创建 `mcp`/`$schema` 父节点），无关字段顺序、缩进、
