@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     package = repository / "scientific-figure-builder"
     if args.tests:
         _run(("uv", "run", "--frozen", "pytest"), package)
-    _run(("uv", "sync", "--frozen"), package)
+    _run(("uv", "sync", "--frozen", "--extra", "gui"), package)
     _run((
         "uvx", "pyright", "--pythonpath", ".venv/bin/python",
         "figure_tools", "install", "../scripts",

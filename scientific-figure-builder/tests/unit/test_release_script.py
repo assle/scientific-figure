@@ -63,6 +63,10 @@ def test_ci_owns_quality_bundle_and_tag_release_workflows() -> None:
     )
     assert "verify_release_candidate.py --tests --build" in release_commands
     assert "gh release create" in release_commands
+    shared_verifier = (
+        REPOSITORY_ROOT / "scripts" / "verify_release_candidate.py"
+    ).read_text()
+    assert '"--extra", "gui"' in shared_verifier
 
 
 def test_publish_requires_real_local_convergence_acceptance(tmp_path: Path) -> None:
