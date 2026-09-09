@@ -1,8 +1,9 @@
 # Real Provider regression verification
 
-This is the current verification record for credential-backed Provider routes.
+This document preserves a dated credential-backed Provider evidence snapshot.
 It contains no credentials, prompts, uploaded image data, or authorization
-headers.
+headers. Re-run the opt-in acceptance suite for current Provider evidence; do
+not treat this historical run as verification of a different revision or model.
 
 ## Controlled live run
 
@@ -34,6 +35,7 @@ corner-color chroma key to edge-connected background, replaying the retained RGB
 pixels reduced both central transparency ratios to 0 while preserving the same
 foreground bounding boxes.
 
-The no-network suite completed with 572 passed and 3 explicitly skipped real
-Provider or desktop tests. The opt-in PowerPoint test passed separately after
-Microsoft 365 activation, including SVG insertion, conversion, and ungrouping.
+The current no-network regression command and its latest dated result are kept
+in [GUI and delivery verification](gui-platforms.md). The opt-in PowerPoint test
+for this 2026-09-05 snapshot passed separately after Microsoft 365 activation,
+including SVG insertion, conversion, and ungrouping.

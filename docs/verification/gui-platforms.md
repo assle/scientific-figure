@@ -1,15 +1,16 @@
 # GUI and delivery verification
 
-This document is the current verification record for the native Configuration
-app and its private runtime delivery. It is evidence, not a changelog.
+This document records reproducible checks and dated evidence for the native
+Configuration app and its private runtime delivery. It is evidence, not a
+changelog or a promise that an old count still describes the current tree.
 
 ## Automated evidence
 
 Run from `scientific-figure-builder/`:
 
 ```bash
-uv run --extra gui pytest -q
-uv build --wheel
+uv run --frozen pytest -q
+python3 ../scripts/verify_release_candidate.py --build
 ```
 
 The suite covers offscreen Qt creation, Provider CRUD, FakeSecretStore
@@ -19,20 +20,13 @@ protection, global/project install scope,
 Keyring-cleanup failure retention, MCP tool verification, CLI help, and wheel
 resource import. Tests do not access a real model endpoint or system Keyring.
 
-The recorded local run on 2026-09-05 after adding the DashScope Native image
-dialect, budgeted dynamic structured-output expansion, installed-wheel resource
-verification, and edge-connected background removal completed with **572
-passed, 3 skipped** (`SCIENTIFIC_FIGURE_CONFIG=/dev/null .venv/bin/pytest -q`).
-The skipped acceptance tests require explicitly configured real Providers and
-the optional PowerPoint desktop E2E test; neither is part of the no-network CI
-gate.
-`uv build --wheel` also completed successfully and the wheel contained
-`figure_tools/resources/icon.svg`, the QML
-component bundle, and the delivery cleanup modules.
-The opt-in Microsoft PowerPoint desktop E2E test also passed on macOS after
-PowerPoint was activated, including SVG insertion, conversion, and ungrouping.
-The repository-wide Pyright check completed with **0 errors, 0 warnings, and 0
-information diagnostics** (`uvx pyright --pythonpath .venv/bin/python figure_tools install`).
+The recorded local no-network run on 2026-09-09 completed with **680 passed and
+4 skipped** (`uv run --frozen pytest -q`). The skips were three explicitly
+opt-in paid Provider cases and the optional PowerPoint desktop E2E test; neither
+is part of the no-network CI gate. Run the commands above against the target
+revision instead of using this dated count as a substitute for current evidence.
+On the same revision, the shared candidate verifier reported zero Pyright errors,
+built the Core wheel, and produced a Product bundle plus `SHA256SUMS`.
 
 ## Platform matrix
 

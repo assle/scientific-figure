@@ -69,40 +69,47 @@ Lifecycle MCP server 或 Configuration app
 
 ## 维护者发布
 
-功能修改应先提交到 `main`。发布命令在隔离 Git worktree 中生成版本提交，不会暂存当前
-工作区里的无关修改：
+功能修改应先提交到 `main`。只需要检查本地候选版本而暂不发布时，可以在隔离 Git
+worktree 中准备版本；该操作不会暂存当前工作区里的无关修改，并会保留一个本地候选 ref：
 
 ```bash
-python3 scripts/release.py minor --publish
+python3 scripts/release.py minor
 ```
 
-首次发布新的 Delivery 契约（`0.6.0`）前，还必须安装候选 Product bundle，完全重启
-Codex，在新任务中实际启动 Lifecycle MCP server，并打开 Configuration app。确认本地
-版本收敛后运行：
+正式发布前，Release notes 必须经过审阅，并包含 `status: approved` frontmatter。发布
+新版本时直接用 `--notes-file` 提供该文件：
+
+```bash
+python3 scripts/release.py minor --publish --notes-file /path/to/approved.md
+```
+
+`0.6.0` Delivery 契约还具有一次性的真实宿主验收门禁：安装候选 Product bundle，完全
+重启 Codex，在新任务中实际启动 Lifecycle MCP server，并打开 Configuration app。确认
+本地版本收敛后运行：
 
 ```bash
 python3 scripts/record_release_acceptance.py --confirm-codex-restarted
 ```
 
-该命令从 `scientific-figure status --json` 生成不含配置或凭据的验收证据。将对应 Release
-notes 的 frontmatter 从 `status: draft` 改为 `status: approved` 后，`--publish` 才允许创建
-tag。自动测试不能替代这次真实宿主重载证据。
+该命令从 `scientific-figure status --json` 生成不含配置或凭据的验收证据。自动测试不能
+替代这次真实宿主重载证据。
 
 也可以在发布后接着激活本机：
 
 ```bash
-python3 scripts/release.py minor --publish --activate-local
+python3 scripts/release.py minor --publish --notes-file /path/to/approved.md --activate-local
 ```
 
 Release Pipeline 会：
 
 1. 从 `pyproject.toml` 计算并固定 Target version；
-2. 生成 Workflow Skill、Citation、lockfile 和 Native plugin 版本镜像；
-3. 推送 main 并等待该 commit 的 GitHub Actions；
-4. CI 通过后创建不可变 tag；
-5. tag workflow 构建 Product bundle、Core wheel、Release manifest 和 `SHA256SUMS`；
-6. 使用已确认的 Release notes 创建 GitHub Release；
-7. 中断后根据 Git、CI、tag 和 Release 的远端事实幂等继续。
+2. 同步 Workflow Skill、Citation、lockfile 和 Native plugin 的版本镜像；
+3. 在隔离 worktree 中提交版本和已批准的 Release notes；
+4. 推送 main 并等待该 commit 的 GitHub Actions；
+5. CI 通过后创建不可变 tag；
+6. tag workflow 重新验证并构建 Product bundle、Core wheel、Release manifest 和
+   `SHA256SUMS`，再创建 GitHub Release；
+7. 中断后根据 Git、CI、tag 和 Release 的远端事实继续。
 
 已推送 tag 若指向不同 commit，发布会失败并要求使用新的 patch 版本，永不移动旧 tag。
 Release 成功而本地需要重启时，Release 仍保持成功，组合命令返回退出码 `2`。
@@ -110,8 +117,9 @@ Release 成功而本地需要重启时，Release 仍保持成功，组合命令�
 ## 兼容入口
 
 - `./install.sh --runtime-only --release VERSION`：只安装 Core；
-- `./install.sh --codex`：不再表示 Core-only，会提示补充 `--release`；
-- 无 Release 参数的旧源码安装仍可通过明确的 `--runtime-only` 路径使用。
+- `./install.sh --codex`：缺少 `--release`、`--latest` 或 `--bundle` 时会拒绝执行；
+- `--codex-only` 仅保留给旧的手工 Codex 集成，不应作为新安装入口；
+- 无 Release 参数的源码开发安装必须显式使用 `--runtime-only`。
 
 安装事务日志经过脱敏，只保留最近 10 条。下载缓存、staging、临时备份以及不再运行的旧
 产品文件会自动清理。

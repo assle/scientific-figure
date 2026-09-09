@@ -6,7 +6,7 @@
 
 - 不要提交 API Key、真实凭据、未公开论文数据或无权再分发的素材。
 - 功能变更应保持“数据图由 Python/SVG 确定性生成，图像模型按已确认的生成单元生成非量化内容”这一职责边界。
-- 真实 Ark 测试会产生费用；普通贡献不应依赖真实凭据或付费调用。
+- 真实 Provider 验收测试会产生费用；普通贡献不应依赖真实凭据或付费调用。
 
 ## 本地开发
 
@@ -14,11 +14,11 @@
 
 ```bash
 cd scientific-figure-builder
-uv sync
-uv run pytest
+uv run --frozen pytest
+python3 ../scripts/verify_release_candidate.py --build
 ```
 
-没有 Ark 凭据时，真实端到端用例会自动跳过。只有在明确需要验证真实模型集成、了解费用并使用自己的凭据时，才运行付费验收测试。
+付费 Provider 和桌面 PowerPoint 验收用例默认跳过。只有在明确需要验证对应集成、了解费用或桌面副作用，并使用自己的凭据和环境时，才启用这些测试。
 
 ## 提交变更
 
@@ -42,15 +42,17 @@ uv run pytest
 - 1.0 前无法保持兼容的变更使用 minor 版本，并在发布说明中明确迁移方式。
 - 1.0 后不兼容的公开契约变更使用 major 版本。
 
-需要发布的功能修改应先正常提交到 `main`，然后运行：
+需要发布的功能修改应先正常提交到 `main`。只准备本地候选版本、不发布时运行：
 
 ```bash
-python3 scripts/release.py patch --publish
+python3 scripts/release.py patch
 ```
 
-脚本在隔离 worktree 中生成版本提交，推送后等待权威 CI，通过后才创建不可变 tag；tag
-workflow 构建完整 Product bundle、Core wheel、Release manifest 和校验摘要，并创建
-GitHub Release。详细的本地激活、宿主重载、退出码和兼容入口见
+正式发布时，应先准备包含 `status: approved` 的 Release notes，然后直接运行
+`python3 scripts/release.py patch --publish --notes-file FILE`。发布流程在隔离 worktree
+中生成版本提交，推送后等待权威 CI，通过后才创建不可变 tag。Tag workflow 构建完整
+Product bundle、Core wheel、Release manifest 和校验摘要，并创建 GitHub Release。
+详细的本地激活、宿主重载、退出码和兼容入口见
 [发布与本地更新](docs/operations/release-and-local-activation.md)。
 
 Schema version、Phase prompt version 和 recipe version 是独立兼容性契约，不能因为
