@@ -42,6 +42,8 @@ if [ "$ACTIVATE_RELEASE" -eq 1 ] || { [ "$REQUEST_CODEX" -eq 1 ] && [ "$REQUEST_
 fi
 
 if [ "$ACTIVATE_RELEASE" -eq 1 ]; then
+  SCIENTIFIC_FIGURE_CALLER_CWD=$(pwd)
+  export SCIENTIFIC_FIGURE_CALLER_CWD
   exec uv run --frozen --directory "$REPOSITORY_DIR/scientific-figure-builder" \
     python -m figure_tools update "$@"
 fi

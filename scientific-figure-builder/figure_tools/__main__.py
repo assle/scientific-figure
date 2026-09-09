@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -124,6 +125,11 @@ def _run_update(argv: list[str]) -> int:
         environment = PathEnvironment.from_environ()
         expected_version = None
         bundle = args.bundle
+        if bundle is not None and not bundle.is_absolute():
+            caller_cwd = Path(
+                os.environ.get("SCIENTIFIC_FIGURE_CALLER_CWD", os.getcwd())
+            )
+            bundle = (caller_cwd / bundle).resolve()
         if bundle is None:
             selector = "latest" if args.latest else str(args.release)
             resolved = resolve_release_bundle(

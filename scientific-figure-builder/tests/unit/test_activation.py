@@ -490,8 +490,10 @@ def test_update_cli_activates_a_verified_local_bundle(
     monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("FAKE_RUNTIME_PYTHON", str(runtime_python))
 
+    bundle = _bundle(tmp_path)
+    monkeypatch.setenv("SCIENTIFIC_FIGURE_CALLER_CWD", str(tmp_path))
     assert main([
-        "update", "--bundle", str(_bundle(tmp_path)), "--codex", "--json",
+        "update", "--bundle", str(bundle.relative_to(tmp_path)), "--codex", "--json",
     ]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["product_version"] == PRODUCT_VERSION
