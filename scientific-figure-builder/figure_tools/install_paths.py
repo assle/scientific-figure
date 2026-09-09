@@ -275,6 +275,14 @@ def global_active_runtime_file(environment: PathEnvironment) -> Path:
     return environment.install_root / "global" / "active-runtime.json"
 
 
+def global_launcher_file(environment: PathEnvironment) -> Path:
+    return environment.launcher_dir / (
+        "scientific-figure.cmd"
+        if environment.platform_name == "nt"
+        else "scientific-figure"
+    )
+
+
 def activation_cache_dir(environment: PathEnvironment) -> Path:
     return environment.cache_root / APP_NAME / "activation"
 

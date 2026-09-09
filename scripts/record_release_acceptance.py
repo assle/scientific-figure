@@ -99,14 +99,9 @@ def _default_launcher() -> Path:
     package_source = Path(__file__).resolve().parents[1] / "scientific-figure-builder"
     if str(package_source) not in sys.path:
         sys.path.insert(0, str(package_source))
-    from figure_tools.install_paths import PathEnvironment, resolve_delivery_paths
+    from figure_tools.install_paths import PathEnvironment, global_launcher_file
 
-    launcher = resolve_delivery_paths(
-        PathEnvironment.from_environ(), "launcher-resolution",
-    ).launcher_file
-    if launcher is None:
-        raise RuntimeError("Global scientific-figure launcher is unavailable")
-    return launcher
+    return global_launcher_file(PathEnvironment.from_environ())
 
 
 if __name__ == "__main__":
