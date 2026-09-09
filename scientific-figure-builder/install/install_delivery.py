@@ -1,12 +1,4 @@
-"""One-command installer for the Scientific Figure Builder Agent integration bundle.
-
-The installer keeps secrets out of files. It installs a private runtime,
-publishes the Skill and slash command to OpenCode's discovery directories,
-installs the Skill for Codex, merges MCP entries into both configuration files
-without replacing unrelated configuration, and verifies the installed Core
-runtime before reporting success. The optional Configuration app is installed
-only when explicitly requested.
-"""
+"""Install the Scientific Figure Builder Core runtime and Codex integration."""
 
 from __future__ import annotations
 
@@ -21,7 +13,7 @@ import tomllib
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePath
-from typing import Callable, Protocol, Sequence
+from typing import Callable, Sequence
 
 from figure_tools.install_paths import (
     DeliveryPaths,
@@ -36,13 +28,8 @@ from figure_tools.install_transaction import (
     prune_runtime_versions,
 )
 
-from install.configure_opencode import (
-    DEFAULT_MCP_NAME,
-    load_config,
-    mcp_entry_for_python,
-    render_mcp_merge,
-)
 from install.configure_codex import (
+    DEFAULT_MCP_NAME,
     codex_mcp_entry,
     render_codex_mcp_config,
     verify_codex_config,
@@ -53,11 +40,9 @@ RUNTIME_ITEMS = (
     "figure_tools",
     "schemas",
     "templates",
-    "commands",
     "install/install_delivery.py",
     "install/uninstall_delivery.py",
     "install/auth_cleanup.py",
-    "install/configure_opencode.py",
     "install/configure_codex.py",
     "install/provider_environment.py",
     "install.sh",
@@ -67,7 +52,6 @@ RUNTIME_ITEMS = (
     "LICENSE",
 )
 SKILL_ITEMS = ("SKILL.md", "schemas", "templates")
-COMMAND_SOURCE = Path("commands") / "scientific-figure.md"
 
 
 @dataclass(frozen=True)
@@ -81,7 +65,7 @@ class InstallRequest:
     defer_runtime_pruning: bool = False
 
     def __post_init__(self) -> None:
-        if self.target not in {"runtime", "opencode", "codex-legacy", "both"}:
+        if self.target not in {"runtime", "codex-legacy"}:
             raise ValueError(f"unsupported delivery target: {self.target}")
         if self.scope not in {"global", "project"}:
             raise ValueError(f"unsupported delivery scope: {self.scope}")
@@ -92,12 +76,8 @@ class InstallRequest:
             raise ValueError("Install Request scope does not match delivery paths")
 
     @property
-    def install_opencode(self) -> bool:
-        return self.target in {"opencode", "both"}
-
-    @property
     def install_codex(self) -> bool:
-        return self.target in {"codex-legacy", "both"}
+        return self.target == "codex-legacy"
 
 
 @dataclass(frozen=True)
@@ -106,9 +86,6 @@ class InstallResult:
     runtime_python: Path
     launcher: Path | None
     launcher_warning: str | None
-    skill: Path
-    command: Path
-    config: Path
     codex_skill: Path
     codex_config: Path
     mcp_tools: int
@@ -129,60 +106,6 @@ class StagedHostPath:
     destination: Path
     stage: str
     priority: int
-
-
-class HostDeliveryAdapter(Protocol):
-    """One real host-specific delivery implementation."""
-
-    def preflight(self, paths: DeliveryPaths) -> None: ...
-
-    def targets(self, paths: DeliveryPaths) -> tuple[Path, ...]: ...
-
-    def stage(
-        self,
-        transaction: InstallTransaction,
-        source_dir: Path,
-        paths: DeliveryPaths,
-        runtime_python_path: Path,
-    ) -> tuple[StagedHostPath, ...]: ...
-
-
-class OpenCodeDeliveryAdapter:
-    def preflight(self, paths: DeliveryPaths) -> None:
-        load_config(paths.config_file)
-
-    def targets(self, paths: DeliveryPaths) -> tuple[Path, ...]:
-        return paths.skill_dir, paths.command_file, paths.config_file
-
-    def stage(
-        self,
-        transaction: InstallTransaction,
-        source_dir: Path,
-        paths: DeliveryPaths,
-        runtime_python_path: Path,
-    ) -> tuple[StagedHostPath, ...]:
-        skill = transaction.stage_path("opencode-skill")
-        _copy_selected(source_dir, skill, SKILL_ITEMS)
-        command = transaction.stage_path("opencode-command.md")
-        shutil.copy2(source_dir / COMMAND_SOURCE, command)
-        existing_text = (
-            paths.config_file.read_text(encoding="utf-8")
-            if paths.config_file.exists()
-            else ""
-        )
-        config = _write_staged_text(
-            transaction.stage_path("opencode-config.json"),
-            render_mcp_merge(
-                existing_text,
-                DEFAULT_MCP_NAME,
-                mcp_entry_for_python(runtime_python_path),
-            ),
-        )
-        return (
-            StagedHostPath(skill, paths.skill_dir, "opencode_skill", 10),
-            StagedHostPath(command, paths.command_file, "opencode_command", 40),
-            StagedHostPath(config, paths.config_file, "opencode_config", 50),
-        )
 
 
 class LegacyCodexDeliveryAdapter:
@@ -221,16 +144,6 @@ class LegacyCodexDeliveryAdapter:
             StagedHostPath(skill, paths.codex_skill_dir, "codex_skill", 20),
             StagedHostPath(config, paths.codex_config_file, "codex_config", 60),
         )
-
-
-def host_delivery_adapters(request: InstallRequest) -> tuple[HostDeliveryAdapter, ...]:
-    adapters: list[HostDeliveryAdapter] = []
-    if request.install_opencode:
-        adapters.append(OpenCodeDeliveryAdapter())
-    if request.install_codex:
-        adapters.append(LegacyCodexDeliveryAdapter())
-    return tuple(adapters)
-
 
 def read_product_version(source_dir: Path | None = None) -> str:
     root = source_dir or Path(__file__).resolve().parents[1]
@@ -337,7 +250,7 @@ def validate_launcher_target(launcher_file: Path | None) -> None:
 def validate_source(source_dir: Path) -> None:
     missing = [
         item
-        for item in (*RUNTIME_ITEMS, *SKILL_ITEMS, str(COMMAND_SOURCE))
+        for item in (*RUNTIME_ITEMS, *SKILL_ITEMS)
         if not (source_dir / item).exists()
     ]
     if missing:
@@ -397,14 +310,14 @@ def preflight_install(
     source_dir: Path,
     paths: DeliveryPaths,
     *,
-    host_adapters: Sequence[HostDeliveryAdapter],
+    codex_adapter: LegacyCodexDeliveryAdapter | None,
     with_gui: bool,
 ) -> None:
     """Validate every known failure mode before creating transaction state."""
 
     validate_source(source_dir)
-    for adapter in host_adapters:
-        adapter.preflight(paths)
+    if codex_adapter is not None:
+        codex_adapter.preflight(paths)
     validate_launcher_target(paths.launcher_file)
 
     targets = [
@@ -416,8 +329,8 @@ def preflight_install(
     ]
     if paths.launcher_file is not None:
         targets.append(paths.launcher_file)
-    for adapter in host_adapters:
-        targets.extend(adapter.targets(paths))
+    if codex_adapter is not None:
+        targets.extend(codex_adapter.targets(paths))
     for target in targets:
         parent = _nearest_existing_parent(target.parent)
         if not os.access(parent, os.W_OK):
@@ -497,12 +410,12 @@ def install(
 ) -> InstallResult:
     source_dir = request.source_dir.resolve()
     paths = request.paths
-    adapters = host_delivery_adapters(request)
+    codex_adapter = LegacyCodexDeliveryAdapter() if request.install_codex else None
     with_gui = request.with_gui
     preflight_install(
         source_dir,
         paths,
-        host_adapters=adapters,
+        codex_adapter=codex_adapter,
         with_gui=with_gui,
     )
     previous_active = read_active_runtime(paths.active_runtime_file)
@@ -529,12 +442,12 @@ def install(
             smoke_test_mcp(staged_runtime_python, staged_runtime)
         runtime_python_relative = staged_runtime_python.relative_to(staged_runtime)
         final_runtime_python = paths.runtime_dir / runtime_python_relative
-        staged_host_paths = tuple(
-            staged
-            for adapter in adapters
-            for staged in adapter.stage(
-                transaction, source_dir, paths, final_runtime_python
+        staged_host_paths = (
+            codex_adapter.stage(
+                transaction, source_dir, paths, final_runtime_python,
             )
+            if codex_adapter is not None
+            else ()
         )
 
         staged_delivery_paths = list(staged_host_paths)
@@ -595,11 +508,8 @@ def install(
         path for path in (legacy_runtime, runtime_backup) if path is not None
     )
     return InstallResult(
-        skill=paths.skill_dir,
-        command=paths.command_file,
         runtime=paths.runtime_dir,
         runtime_python=runtime_python_path,
-        config=paths.config_file,
         runtime_backup=runtime_backup,
         codex_skill=paths.codex_skill_dir,
         codex_config=paths.codex_config_file,
@@ -620,7 +530,6 @@ def install(
 def verify_delivery(
     paths: DeliveryPaths,
     *,
-    verify_opencode: bool = True,
     verify_codex: bool = True,
     require_gui: bool = False,
 ) -> dict[str, object]:
@@ -640,19 +549,6 @@ def verify_delivery(
             and (paths.runtime_dir / "figure_tools" / "resources" / "qml" / "Main.qml").is_file()
         )
     runtime_command: Path | None = None
-
-    if verify_opencode:
-        config = load_config(paths.config_file)
-        mcp = config.get("mcp", {}).get(DEFAULT_MCP_NAME)
-        opencode_checks = {
-            "opencode_skill": (paths.skill_dir / "SKILL.md").is_file(),
-            "opencode_command": paths.command_file.is_file(),
-            "opencode_mcp_config": isinstance(mcp, dict),
-        }
-        checks.update(opencode_checks)
-        command = mcp.get("command", []) if isinstance(mcp, dict) else []
-        if command:
-            runtime_command = Path(command[0])
 
     if verify_codex:
         codex_result = verify_codex_config(paths.codex_config_file, DEFAULT_MCP_NAME)
@@ -687,8 +583,8 @@ def verify_delivery(
                 (
                     "from importlib.resources import files; "
                     "from figure_tools.config import load_skill_defaults; "
-                    "from figure_tools.resources_loader import read_gui_resource; "
-                    "read_gui_resource('icon.svg'); "
+                    "files('figure_tools.resources').joinpath('icon.svg')"
+                    ".read_text(encoding='utf-8'); "
                     "files('figure_tools.resources').joinpath('qml/Main.qml')"
                     ".read_text(encoding='utf-8'); "
                     "assert load_skill_defaults().get('schema_version') == '1.0'"
@@ -725,9 +621,7 @@ def verify_delivery(
 def build_parser() -> argparse.ArgumentParser:
     path_environment = default_path_environment()
     parser = argparse.ArgumentParser(
-        description=(
-            "Install and configure Scientific Figure Builder for OpenCode and Codex."
-        )
+        description="Install Scientific Figure Builder for Codex."
     )
     parser.add_argument(
         "--source-dir",
@@ -747,27 +641,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_const",
         const="runtime",
         help="Install the Core runtime for the Native Codex plugin.",
-    )
-    target_group.add_argument(
-        "--opencode",
-        dest="target",
-        action="store_const",
-        const="opencode",
-        help="Install the Core runtime and OpenCode integration only.",
-    )
-    target_group.add_argument(
-        "--all",
-        dest="target",
-        action="store_const",
-        const="both",
-        help="Explicitly install both legacy Agent integrations.",
-    )
-    target_group.add_argument(
-        "--opencode-only",
-        dest="target",
-        action="store_const",
-        const="opencode",
-        help="Deprecated alias for --opencode.",
     )
     target_group.add_argument(
         "--codex-only",
@@ -850,7 +723,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(raw_argv)
     compatibility_messages = {
         "--runtime-only": "--runtime-only is a compatibility alias; use ./install.sh or --codex.",
-        "--opencode-only": "--opencode-only is deprecated; use --opencode.",
         "--codex-only": (
             "--codex-only installs the deprecated manual Codex integration; "
             "use --codex and install the Native plugin from the repo marketplace."
@@ -859,8 +731,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for option, message in compatibility_messages.items():
         if option in raw_argv:
             print(f"Compatibility notice: {message}", file=sys.stderr)
-    install_opencode = args.target in {"both", "opencode"}
-    install_codex = args.target in {"both", "codex-legacy"}
+    install_codex = args.target == "codex-legacy"
     product_version = read_product_version(args.source_dir)
     paths = delivery_paths(
         config_home=args.config_home.expanduser(),
@@ -878,7 +749,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.verify:
             verification = verify_delivery(
                 paths,
-                verify_opencode=install_opencode,
                 verify_codex=install_codex,
                 require_gui=args.with_gui,
             )
@@ -926,10 +796,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print("  Configuration app: not installed")
         print("  GUI install:       scientific-figure install-gui")
-    if install_opencode:
-        print(f"  OpenCode skill:   {result.skill}")
-        print(f"  OpenCode command: /scientific-figure")
-        print(f"  OpenCode config:  {result.config}")
     if install_codex:
         print(f"  Codex skill:      {result.codex_skill}")
         print(f"  Codex config:     {result.codex_config}")
@@ -942,13 +808,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "  Legacy runtime:    retained for rollback at "
             f"{result.legacy_runtime_retained}"
         )
-    agents = []
-    if install_opencode:
-        agents.append("OpenCode")
     if install_codex:
-        agents.append("Codex")
-    if agents:
-        print(f"Restart {'/'.join(agents)} and ask it to use `scientific-figure-builder`.")
+        print("Restart Codex and ask it to use `scientific-figure-builder`.")
     else:
         print("Core runtime ready for the Scientific Figure Builder Native plugin.")
     print(

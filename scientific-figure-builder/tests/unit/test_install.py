@@ -1,7 +1,4 @@
-"""Safe OpenCode configuration merger tests (plan section 14).
-
-All tests use temp config files - the real opencode.json is never touched.
-"""
+"""Core runtime and Codex delivery tests."""
 
 from __future__ import annotations
 
@@ -15,22 +12,13 @@ from types import SimpleNamespace
 import pytest
 
 from figure_tools import __version__
-from figure_tools.config import deep_merge
-from install.configure_opencode import (
-    apply_merge,
-    mcp_entry_for_python,
-    propose_merge,
-    render_diff,
-)
+from figure_tools.install_paths import activate_runtime, read_active_runtime
 from install.install_delivery import (
     InstallRequest,
-    LegacyCodexDeliveryAdapter,
     LAUNCHER_MARKER,
-    OpenCodeDeliveryAdapter,
     build_parser,
     delivery_paths,
     install,
-    host_delivery_adapters,
     launcher_text,
     sync_runtime,
     validate_launcher_target,
@@ -117,13 +105,6 @@ def test_root_installer_help_explains_complete_release_activation() -> None:
 
     assert "--codex --release latest --with-gui" in completed.stdout
     assert "Provider configuration, credentials" in completed.stdout
-from figure_tools.install_paths import activate_runtime, read_active_runtime
-
-MCP_ENTRY = {
-    "type": "local",
-    "command": ["uv", "run", "python", "-m", "figure_tools.server"],
-    "enabled": True,
-}
 
 
 def _stage_test_python(runtime_dir: Path, with_gui: bool = False) -> Path:
@@ -143,195 +124,17 @@ def _stage_test_python(runtime_dir: Path, with_gui: bool = False) -> Path:
 
 
 def _install(source_dir: Path, paths, **kwargs):
-    install_opencode = kwargs.pop("install_opencode", True)
     install_codex = kwargs.pop("install_codex", True)
     with_gui = kwargs.pop("with_gui", False)
-    if install_opencode and install_codex:
-        target = "both"
-    elif install_opencode:
-        target = "opencode"
-    elif install_codex:
-        target = "codex-legacy"
-    else:
-        target = "runtime"
     request = InstallRequest(
         source_dir=source_dir,
         paths=paths,
-        target=target,
+        target="codex-legacy" if install_codex else "runtime",
         scope="global" if paths.scope_id == "global" else "project",
         product_version=paths.product_version,
         with_gui=with_gui,
     )
     return install(request, **kwargs)
-
-
-def _existing_config():
-    return {
-        "$schema": "https://opencode.ai/config.json",
-        "provider": {"anthropic": {"models": {"claude": {}}}},
-        "mcp": {
-            "other-server": {"type": "local", "command": ["bun", "x", "other"]},
-        },
-        "permission": {"bash": {"*": "ask"}},
-        "agent": {"build": {"tools": {"bash": True}}},
-        "tools": {"other-server_*": False},
-        "command": {"test": {"template": "run tests"}},
-    }
-
-
-def test_propose_merge_adds_scientific_figure_mcp():
-    existing = _existing_config()
-    proposed = propose_merge(existing, "scientific-figure", MCP_ENTRY)
-    assert proposed["mcp"]["scientific-figure"] == MCP_ENTRY
-    assert proposed["$schema"] == "https://opencode.ai/config.json"
-    # unrelated keys preserved
-    assert proposed["provider"] == existing["provider"]
-    assert proposed["mcp"]["other-server"] == existing["mcp"]["other-server"]
-    assert proposed["permission"] == existing["permission"]
-    assert proposed["agent"] == existing["agent"]
-    assert proposed["tools"] == existing["tools"]
-    assert proposed["command"] == existing["command"]
-
-
-def test_propose_merge_updates_own_entry_preserves_others():
-    existing = _existing_config()
-    existing["mcp"]["scientific-figure"] = {"type": "local", "command": ["old"]}
-    proposed = propose_merge(existing, "scientific-figure", MCP_ENTRY)
-    assert proposed["mcp"]["scientific-figure"] == MCP_ENTRY  # updated
-    assert proposed["mcp"]["other-server"]["command"] == ["bun", "x", "other"]
-
-
-def test_propose_merge_does_not_mutate_input():
-    existing = _existing_config()
-    propose_merge(existing, "scientific-figure", MCP_ENTRY)
-    assert "scientific-figure" not in existing["mcp"]
-
-
-def test_apply_merge_writes_and_backs_up(tmp_path: Path):
-    cfg = tmp_path / "opencode.json"
-    cfg.write_text(json.dumps(_existing_config(), indent=2), encoding="utf-8")
-    result = apply_merge(cfg, "scientific-figure", MCP_ENTRY,
-                         approver=lambda diff: True, backup=True)
-    assert result["applied"] is True
-    assert Path(result["backup"]).is_file()
-    merged = json.loads(cfg.read_text(encoding="utf-8"))
-    assert merged["mcp"]["scientific-figure"] == MCP_ENTRY
-    # backup equals original
-    assert json.loads(Path(result["backup"]).read_text(encoding="utf-8"))["mcp"][
-        "other-server"]
-
-
-def test_apply_merge_approver_false_does_not_write(tmp_path: Path):
-    cfg = tmp_path / "opencode.json"
-    original = json.dumps(_existing_config(), indent=2)
-    cfg.write_text(original, encoding="utf-8")
-    result = apply_merge(cfg, "scientific-figure", MCP_ENTRY,
-                         approver=lambda diff: False, backup=True)
-    assert result["applied"] is False
-    assert cfg.read_text(encoding="utf-8") == original  # unchanged
-
-
-def test_apply_merge_preserves_unrelated_providers_and_permissions(tmp_path: Path):
-    cfg = tmp_path / "opencode.json"
-    cfg.write_text(json.dumps(_existing_config(), indent=2), encoding="utf-8")
-    apply_merge(cfg, "scientific-figure", MCP_ENTRY, approver=lambda d: True)
-    merged = json.loads(cfg.read_text(encoding="utf-8"))
-    assert merged["provider"]["anthropic"]["models"]["claude"] == {}
-    assert merged["permission"]["bash"]["*"] == "ask"
-    assert merged["command"]["test"]["template"] == "run tests"
-
-
-def test_render_diff_mentions_new_mcp():
-    existing = _existing_config()
-    proposed = propose_merge(existing, "scientific-figure", MCP_ENTRY)
-    diff = render_diff(existing, proposed)
-    assert "scientific-figure" in diff
-
-
-def test_apply_merge_handles_jsonc_comments(tmp_path: Path):
-    cfg = tmp_path / "opencode.jsonc"
-    cfg.write_text(
-        '{\n  // a comment\n  "mcp": {"other": {"type": "local", "command": ["x"]}}\n}\n',
-        encoding="utf-8",
-    )
-    apply_merge(cfg, "scientific-figure", MCP_ENTRY, approver=lambda d: True)
-    text = cfg.read_text(encoding="utf-8")
-    from figure_tools.jsonc_edit import load_jsonc
-
-    merged = load_jsonc(text)
-    assert "// a comment" in text
-    assert merged["mcp"]["scientific-figure"] == MCP_ENTRY
-    assert merged["mcp"]["other"]["command"] == ["x"]
-
-
-def test_transactional_install_preserves_jsonc_comments_and_order(tmp_path: Path):
-    config_home = tmp_path / "config"
-    config = config_home / "opencode" / "opencode.jsonc"
-    config.parent.mkdir(parents=True)
-    original = """{
-  // provider stays first
-  "provider": {"custom": {"url": "https://example.test//v1"}},
-  /* keep before MCP */
-  "mcp": {
-    "other": {"command": ["other"]}, // keep other
-  },
-  "permission": {"bash": "ask"},
-}
-"""
-    config.write_text(original, encoding="utf-8")
-    paths = delivery_paths(
-        config_home=config_home,
-        data_home=tmp_path / "data",
-        state_home=tmp_path / "state",
-        install_home=tmp_path / "install",
-        codex_home=tmp_path / "codex",
-        bin_dir=tmp_path / "bin",
-    )
-    _install(
-        Path(__file__).resolve().parents[2],
-        paths,
-        runtime_sync=_stage_test_python,
-        run_smoke_test=False,
-        install_opencode=True,
-        install_codex=False,
-    )
-    candidate = config.read_text(encoding="utf-8")
-    assert candidate.index("provider") < candidate.index('"mcp"') < candidate.index("permission")
-    for exact in (
-        "// provider stays first",
-        '"provider": {"custom": {"url": "https://example.test//v1"}}',
-        "/* keep before MCP */",
-        '"other": {"command": ["other"]}, // keep other',
-        '"permission": {"bash": "ask"},',
-    ):
-        assert exact in candidate
-
-
-def test_invalid_jsonc_fails_preflight_without_any_install_write(tmp_path: Path):
-    config_home = tmp_path / "config"
-    config = config_home / "opencode" / "opencode.jsonc"
-    config.parent.mkdir(parents=True)
-    original = '{"mcp": {/* unterminated}'
-    config.write_text(original, encoding="utf-8")
-    paths = delivery_paths(
-        config_home=config_home,
-        data_home=tmp_path / "data",
-        state_home=tmp_path / "state",
-        install_home=tmp_path / "install",
-        codex_home=tmp_path / "codex",
-        bin_dir=tmp_path / "bin",
-    )
-    with pytest.raises(ValueError, match="unterminated"):
-        _install(
-            Path(__file__).resolve().parents[2],
-            paths,
-            runtime_sync=_stage_test_python,
-            install_opencode=True,
-            install_codex=False,
-        )
-    assert config.read_text(encoding="utf-8") == original
-    assert not paths.runtime_scope_dir.exists()
-    assert not paths.transaction_log_dir.exists()
 
 
 def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
@@ -345,10 +148,10 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    assert global_paths.skill_dir == (
-        config_home / "opencode" / "skills" / "scientific-figure-builder"
+    assert global_paths.codex_skill_dir == (
+        tmp_path / "codex" / "skills" / "scientific-figure-builder"
     )
-    assert global_paths.config_file == config_home / "opencode" / "opencode.json"
+    assert global_paths.codex_config_file == tmp_path / "codex" / "config.toml"
     assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
     assert global_paths.runtime_dir == (
         tmp_path / "install" / "global" / "runtimes" / __version__
@@ -365,58 +168,15 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         codex_home=project / ".codex",
         bin_dir=tmp_path / "bin",
     )
-    assert project_paths.skill_dir == (
-        project / ".opencode" / "skills" / "scientific-figure-builder"
+    assert project_paths.codex_skill_dir == (
+        project / ".codex" / "skills" / "scientific-figure-builder"
     )
-    assert project_paths.config_file == project / "opencode.json"
+    assert project_paths.codex_config_file == project / ".codex" / "config.toml"
     assert project_paths.launcher_file is None
     assert project_paths.runtime_dir != global_paths.runtime_dir
 
 
-def test_delivery_paths_use_existing_jsonc_config(tmp_path: Path):
-    config_home = tmp_path / "config"
-    opencode_home = config_home / "opencode"
-    opencode_home.mkdir(parents=True)
-    jsonc = opencode_home / "opencode.jsonc"
-    jsonc.write_text("{}\n", encoding="utf-8")
-    paths = delivery_paths(
-        config_home=config_home,
-        data_home=tmp_path / "data",
-        install_home=tmp_path / "install",
-        state_home=tmp_path / "state",
-        codex_home=tmp_path / "codex",
-        bin_dir=tmp_path / "bin",
-    )
-    assert paths.config_file == jsonc
-
-
-def test_project_delivery_paths_use_existing_dot_opencode_config(tmp_path: Path):
-    project = tmp_path / "project"
-    nested_config = project / ".opencode" / "opencode.json"
-    nested_config.parent.mkdir(parents=True)
-    nested_config.write_text("{}\n", encoding="utf-8")
-    paths = delivery_paths(
-        config_home=tmp_path / "config",
-        data_home=tmp_path / "data",
-        install_home=tmp_path / "install",
-        state_home=tmp_path / "state",
-        project_dir=project,
-        codex_home=project / ".codex",
-        bin_dir=tmp_path / "bin",
-    )
-    assert paths.config_file == nested_config
-
-
-def test_mcp_environment_forwards_model_and_endpoint_configuration(tmp_path: Path):
-    entry = mcp_entry_for_python(tmp_path / "python")
-    assert entry["environment"]["SCIENTIFIC_FIGURE_CONFIG"] == (
-        "{env:SCIENTIFIC_FIGURE_CONFIG}"
-    )
-    assert entry["environment"]["OPENAI_API_KEY"] == "{env:OPENAI_API_KEY}"
-    assert entry["environment"]["SCI_FIG_IMAGE_GENERATE"] == "{env:SCI_FIG_IMAGE_GENERATE}"
-
-
-def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
+def test_install_delivery_is_discoverable_and_preserves_codex_config(tmp_path: Path):
     source = Path(__file__).resolve().parents[2]
     paths = delivery_paths(
         config_home=tmp_path / "config",
@@ -426,8 +186,10 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         codex_home=tmp_path / "codex",
         bin_dir=tmp_path / "bin",
     )
-    paths.config_file.parent.mkdir(parents=True)
-    paths.config_file.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    paths.codex_config_file.parent.mkdir(parents=True)
+    paths.codex_config_file.write_text(
+        "[mcp_servers.other]\ncommand = 'other'\n", encoding="utf-8",
+    )
 
     def _use_test_python(runtime_dir: Path, _with_gui: bool) -> Path:
         assert (runtime_dir / "figure_tools" / "server.py").is_file()
@@ -438,20 +200,16 @@ def test_install_delivery_is_discoverable_and_preserves_config(tmp_path: Path):
         paths,
         runtime_sync=_use_test_python,
     )
-    assert (paths.skill_dir / "SKILL.md").is_file()
-    assert not (paths.skill_dir / "references").exists()
-    assert paths.command_file.is_file()
+    assert (paths.codex_skill_dir / "SKILL.md").is_file()
+    assert not (paths.codex_skill_dir / "references").exists()
     assert result.mcp_tools == 2
     assert result.active_runtime["version"] == __version__
     assert result.launcher.is_file()
     assert LAUNCHER_MARKER in result.launcher.read_text(encoding="utf-8")
 
-    merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
-    assert merged["provider"] == _existing_config()["provider"]
-    assert merged["mcp"]["other-server"] == _existing_config()["mcp"]["other-server"]
-    assert merged["mcp"]["scientific-figure"]["command"][0] == str(
-        paths.runtime_dir / ".venv" / "bin" / "python"
-    )
+    config = paths.codex_config_file.read_text(encoding="utf-8")
+    assert "[mcp_servers.other]" in config
+    assert "[mcp_servers.scientific-figure]" in config
 
     verified = verify_delivery(paths)
     assert verified["mcp_tools"] == 2
@@ -527,14 +285,14 @@ def test_install_delivery_can_be_repeated_safely(tmp_path: Path):
     )
     assert first.runtime_backup is None
     assert second.runtime_backup is None
-    assert len(list(paths.skill_dir.parent.glob("*/SKILL.md"))) == 1
-    assert (paths.skill_dir / "SKILL.md").is_file()
+    assert len(list(paths.codex_skill_dir.parent.glob("*/SKILL.md"))) == 1
+    assert (paths.codex_skill_dir / "SKILL.md").is_file()
     assert not paths.install_lock_dir.exists()
     assert not list(paths.staging_parent.glob("*"))
     assert not list(paths.transaction_backup_parent.glob("*"))
     assert len(list(paths.transaction_log_dir.glob("*.json"))) == 2
-    merged = json.loads(paths.config_file.read_text(encoding="utf-8"))
-    assert list(merged["mcp"]).count("scientific-figure") == 1
+    config = paths.codex_config_file.read_text(encoding="utf-8")
+    assert config.count("[mcp_servers.scientific-figure]") == 1
 
 
 @pytest.mark.parametrize(
@@ -596,10 +354,7 @@ def test_installer_gui_option_is_explicit():
     assert parser.parse_args([]).with_gui is False
     assert parser.parse_args(["--with-gui"]).with_gui is True
     assert parser.parse_args(["--codex"]).target == "runtime"
-    assert parser.parse_args(["--opencode"]).target == "opencode"
-    assert parser.parse_args(["--all"]).target == "both"
     assert parser.parse_args(["--runtime-only"]).target == "runtime"
-    assert parser.parse_args(["--opencode-only"]).target == "opencode"
     assert parser.parse_args(["--codex-only"]).target == "codex-legacy"
 
 
@@ -615,16 +370,14 @@ def test_install_request_is_the_single_target_scope_and_version_interface(tmp_pa
     request = InstallRequest(
         source_dir=Path(__file__).resolve().parents[2],
         paths=paths,
-        target="opencode",
+        target="codex-legacy",
         scope="global",
         product_version=paths.product_version,
         with_gui=True,
     )
 
-    assert request.install_opencode is True
-    assert request.install_codex is False
+    assert request.install_codex is True
     assert request.with_gui is True
-    assert isinstance(host_delivery_adapters(request)[0], OpenCodeDeliveryAdapter)
     with pytest.raises(ValueError, match="scope"):
         InstallRequest(
             source_dir=request.source_dir,
@@ -633,18 +386,6 @@ def test_install_request_is_the_single_target_scope_and_version_interface(tmp_pa
             scope="project",
             product_version=paths.product_version,
         )
-
-    both = InstallRequest(
-        source_dir=request.source_dir,
-        paths=paths,
-        target="both",
-        scope="global",
-        product_version=paths.product_version,
-    )
-    assert [type(adapter) for adapter in host_delivery_adapters(both)] == [
-        OpenCodeDeliveryAdapter,
-        LegacyCodexDeliveryAdapter,
-    ]
 
 
 def test_cli_translates_flags_into_an_install_request(tmp_path: Path, monkeypatch, capsys):
@@ -668,8 +409,6 @@ def test_cli_translates_flags_into_an_install_request(tmp_path: Path, monkeypatc
             transaction_log=tmp_path / "transaction.json",
             mcp_tools=2,
             gui_installed=True,
-            skill=paths.skill_dir,
-            config=paths.config_file,
             codex_skill=paths.codex_skill_dir,
             codex_config=paths.codex_config_file,
             launcher=paths.launcher_file,
@@ -680,10 +419,10 @@ def test_cli_translates_flags_into_an_install_request(tmp_path: Path, monkeypatc
 
     assert delivery.main([
         "--source-dir", str(Path(__file__).parents[2]),
-        "--opencode", "--with-gui",
+        "--codex-only", "--with-gui",
     ]) == 0
 
-    assert captured[0].target == "opencode"
+    assert captured[0].target == "codex-legacy"
     assert captured[0].scope == "global"
     assert captured[0].with_gui is True
     assert "installed successfully" in capsys.readouterr().out
@@ -703,24 +442,15 @@ def test_runtime_only_install_does_not_publish_agent_integrations(tmp_path: Path
         paths,
         runtime_sync=_stage_test_python,
         run_smoke_test=False,
-        install_opencode=False,
         install_codex=False,
     )
     assert result.runtime.is_dir()
     assert result.launcher.is_file()
-    assert not paths.skill_dir.exists()
     assert not paths.codex_skill_dir.exists()
-    assert not paths.config_file.exists()
     assert not paths.codex_config_file.exists()
 
 
-@pytest.mark.parametrize(
-    ("install_opencode", "install_codex"),
-    [(True, False), (False, True), (True, True)],
-)
-def test_host_install_targets_do_not_touch_unselected_agent(
-    tmp_path: Path, install_opencode: bool, install_codex: bool,
-):
+def test_codex_install_publishes_only_codex_integration(tmp_path: Path):
     paths = delivery_paths(
         config_home=tmp_path / "config",
         data_home=tmp_path / "data",
@@ -734,14 +464,9 @@ def test_host_install_targets_do_not_touch_unselected_agent(
         paths,
         runtime_sync=_stage_test_python,
         run_smoke_test=False,
-        install_opencode=install_opencode,
-        install_codex=install_codex,
     )
-    assert paths.skill_dir.exists() is install_opencode
-    assert paths.command_file.exists() is install_opencode
-    assert paths.config_file.exists() is install_opencode
-    assert paths.codex_skill_dir.exists() is install_codex
-    assert paths.codex_config_file.exists() is install_codex
+    assert paths.codex_skill_dir.exists()
+    assert paths.codex_config_file.exists()
 
 
 def test_verify_reports_optional_gui_and_can_require_it(tmp_path: Path, monkeypatch):
@@ -830,11 +555,8 @@ def test_successful_global_install_records_and_retains_legacy_runtime(tmp_path: 
     "failure_stage",
     [
         "runtime",
-        "opencode_skill",
         "codex_skill",
         "launcher",
-        "opencode_command",
-        "opencode_config",
         "codex_config",
         "active_runtime",
     ],
@@ -866,9 +588,6 @@ def test_failure_at_every_commit_stage_leaves_no_partial_install(
 
     for target in (
         paths.runtime_dir,
-        paths.skill_dir,
-        paths.command_file,
-        paths.config_file,
         paths.codex_skill_dir,
         paths.codex_config_file,
         paths.launcher_file,
@@ -898,13 +617,11 @@ def test_late_failure_restores_existing_installation_byte_for_byte(tmp_path: Pat
         runtime_sync=_stage_test_python,
         run_smoke_test=False,
     )
-    marker = paths.skill_dir / "existing-marker.txt"
+    marker = paths.codex_skill_dir / "existing-marker.txt"
     marker.write_text("preserve me", encoding="utf-8")
     before = {
         path: path.read_bytes()
         for path in (
-            paths.command_file,
-            paths.config_file,
             paths.codex_config_file,
             paths.launcher_file,
             paths.active_runtime_file,
@@ -952,7 +669,6 @@ def test_preflight_rejects_insufficient_disk_before_writes(tmp_path: Path, monke
             Path(__file__).resolve().parents[2],
             paths,
             runtime_sync=_stage_test_python,
-            install_opencode=False,
             install_codex=False,
         )
     assert not paths.runtime_scope_dir.exists()

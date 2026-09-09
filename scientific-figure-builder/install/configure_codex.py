@@ -8,7 +8,6 @@ preserves unrelated configuration and, when present, leaves the existing
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tomllib
 from pathlib import Path

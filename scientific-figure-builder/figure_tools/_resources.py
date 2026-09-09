@@ -28,10 +28,3 @@ def template_path(name: str) -> Path:
         return dev
     res = resources.files("figure_tools").joinpath(_INSTALLED_DATA, "templates", name)
     return Path(str(res))
-
-
-def templates_dir() -> Path:
-    dev = _dev_path("templates")
-    if dev is not None:
-        return dev
-    return Path(str(resources.files("figure_tools").joinpath(_INSTALLED_DATA, "templates")))

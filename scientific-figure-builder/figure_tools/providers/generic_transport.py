@@ -31,7 +31,6 @@ from figure_tools.providers.transport import (
     IncompleteStructuredResponseError,
     ProviderError,
     ProviderTransport,
-    RateLimitError,
     RequestError,
     ROLE_TO_MODEL_CONFIG,
     model_config_for_role,

@@ -30,8 +30,8 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The latest fixed release ships a **Native Codex plugin**, an OpenCode
-Agent integration, and an independently versioned Core runtime. The Native plugin
+The latest fixed release ships a **Native Codex plugin** and an independently
+versioned Core runtime. The Native plugin
 owns Codex discovery, enablement, upgrade, and removal of its Workflow Skill and
 MCP declaration; the separate Core runtime keeps deterministic execution and the
 optional Configuration app outside the host plugin cache.
@@ -42,7 +42,7 @@ optional Configuration app outside the host plugin cache.
 | Lifecycle MCP server | Exposes exactly `initialize_figure_project` and `advance_figure_workflow` |
 | Core runtime | Owns lifecycle state, execution, plotting, assembly, validation, and export locally |
 | Configuration app | Manages Providers, Model routes, and system credentials |
-| Agent integrations | Make the Skill and MCP server discoverable in Codex or OpenCode |
+| Codex integration | Makes the Skill and MCP server discoverable in Codex |
 
 ## Architecture and lifecycle
 
@@ -219,7 +219,7 @@ cd scientific-figure
 
 The verified Product bundle installs the Core runtime, CLI, Native plugin, and
 optional Configuration app as one Local activation. Omit `--with-gui` for a
-headless Core runtime. OpenCode users select `--opencode` instead of `--codex`.
+headless Core runtime.
 
 Installing a new Runtime does not hot-replace MCP or GUI processes that are already
 running. Maintainers and users who need every local process on the released version
@@ -430,15 +430,13 @@ launcher printed by the installer. Its Unix default is
 | `./install.sh --codex --release latest --with-gui` | Install or activate the latest formal Release with Core runtime, CLI, Native plugin, and Configuration app | Online; changes product and Codex plugin state |
 | `./install.sh --codex --release vX.Y.Z --with-gui` | Install one pinned Product version | Online; changes product and Codex plugin state |
 | `./install.sh --codex --bundle /path/to/bundle.tar.gz --with-gui` | Install an offline Product bundle; `SHA256SUMS` must be beside it | Offline; changes product and Codex plugin state |
-| `./install.sh --opencode --release latest` | Install the Core runtime, CLI, and OpenCode integration | Online; no Native Codex plugin |
-| `./install.sh --all --release latest --with-gui` | Activate both Codex and OpenCode | Online; changes both host integrations |
 | `./install.sh --runtime-only --release latest` | Install only the Core runtime and CLI | Online; adds no Agent integration |
 | `./install.sh --runtime-only` | Compatibility Core-only installation from the current source tree | Development source, not a formal Release installation |
 
 `--with-gui` includes the Configuration app; `--without-gui` explicitly creates
 a headless new Runtime. `--codex` means complete Codex activation, not Core-only.
-The older `--opencode-only` and `--codex-only` aliases remain for one minor
-migration cycle and print a compatibility notice.
+The older `--codex-only` alias remains for one minor migration cycle and prints
+a compatibility notice.
 
 ### Update an installed version
 
@@ -448,8 +446,6 @@ migration cycle and print a compatibility notice.
 | `scientific-figure update --release vX.Y.Z` | Update online to one exact Release |
 | `scientific-figure update --bundle /path/to/bundle.tar.gz` | Update from a local bundle without deleting the user-supplied bundle |
 | `scientific-figure update --latest --codex` | Explicitly update the complete Codex integration |
-| `scientific-figure update --latest --opencode` | Explicitly update the OpenCode integration |
-| `scientific-figure update --latest --all` | Explicitly update Codex and OpenCode |
 | `scientific-figure update --latest --runtime-only` | Explicitly update only Core runtime and CLI |
 | `scientific-figure update --latest --with-gui` | Update and ensure the Configuration app is included |
 | `scientific-figure update --latest --without-gui` | Update to a headless Runtime |
@@ -458,7 +454,7 @@ migration cycle and print a compatibility notice.
 Update preserves Providers, Model routes, Credential references, Keyring API
 Keys, projects, data, and run artifacts. It replaces the Core runtime, Native
 plugin, Workflow Skill, CLI, Configuration app, and product dependencies. It
-does not terminate Codex/OpenCode or close a GUI that may contain an unsaved
+does not terminate Codex or close a GUI that may contain an unsaved
 Configuration draft.
 
 ### Status, configuration, and project setup
@@ -485,7 +481,7 @@ Status conclusions and exit codes:
 | `1` | update/install failure | Download, checksum, manifest, installation, or compensation failed before an Activation result |
 
 MCP and the Configuration app are on-demand; idle is healthy. To load a newly
-installed MCP, fully quit and reopen Codex/OpenCode, then invoke Scientific
+installed MCP, fully quit and reopen Codex, then invoke Scientific
 Figure Builder in a new task.
 
 ### Maintainer build and release
@@ -506,12 +502,6 @@ Release notes begin as `status: draft`; review and change them to
 `status: approved` before `--publish`. Published tags are immutable; use a new
 patch version for conflicts. See [Release and local update](docs/operations/release-and-local-activation.md)
 for the complete maintainer flow.
-
-OpenCode configuration updates are JSONC-aware. Install, upgrade, and targeted
-uninstall edit only `mcp.scientific-figure` (and create the `mcp`/`$schema`
-parents when absent), while preserving unrelated field order, indentation, line
-and block comments, inline comments, and trailing commas. Invalid JSONC fails
-preflight before any install transaction starts.
 
 ### Filesystem layout
 
@@ -545,8 +535,8 @@ scope and that legacy runtime; a Project uninstall removes only its own scope.
 Install and upgrade run as one filesystem transaction per Runtime scope. The
 installer performs source, config, launcher, permission, and disk-space preflight;
 builds the Core runtime with non-editable package metadata in same-filesystem
-staging; validates the CLI and MCP server; then atomically commits runtime, Skill,
-launcher, command, host config, and active-runtime metadata. A failure or process
+staging; validates the CLI and MCP server; then atomically commits runtime,
+launcher, optional legacy Codex integration, and active-runtime metadata. A failure or process
 interruption restores replaced paths in reverse order. A scope lock rejects
 concurrent installs, while the next safe run removes orphan staging from a dead
 installer.
@@ -554,9 +544,8 @@ installer.
 The Delivery Interface is `InstallRequest → InstallResult`. The request carries
 target, Runtime scope, Product version, and GUI selection; the result reports
 committed, retained, pruned, and logged paths. The CLI only translates flags
-into this Interface. OpenCode and deprecated manual Codex delivery are separate
-Host delivery Adapters inside the same transaction, while the Native Codex
-plugin remains host-managed.
+into this Interface. Deprecated manual Codex delivery remains inside the same
+transaction, while the Native Codex plugin is host-managed.
 
 During activation, the previous verified Runtime remains available for
 compensation and every Runtime used by a live MCP or GUI is protected. After
@@ -573,10 +562,8 @@ runtime while its install transaction is running.
 ```bash
 codex plugin remove scientific-figure-builder@scientific-figure
 ./uninstall.sh                    # default: Core runtime and CLI only
-./uninstall.sh --opencode         # OpenCode integration only
 ./uninstall.sh --codex-legacy     # deprecated manual Codex integration only
-./uninstall.sh --integrations     # both legacy integrations; keep Core
-./uninstall.sh --all              # Core, legacy integrations, config, credentials
+./uninstall.sh --all              # Core, legacy Codex integration, config, credentials
 ./uninstall.sh --runtime-only --project DIR
 ./uninstall.sh --dry-run
 codex plugin marketplace remove scientific-figure # optional: stop listing this repo

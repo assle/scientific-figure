@@ -12,7 +12,6 @@ import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Iterable, Mapping, Protocol
 
 REDACTED = "***REDACTED***"
@@ -282,27 +281,6 @@ def sanitize_error(error: BaseException | str, secrets: Iterable[str] = ()) -> s
     return redactor.redact_text(str(error))
 
 
-def get_api_key(
-    env_var: str = "SCIENTIFIC_FIGURE_API_KEY",
-    file_path: str | Path | None = None,
-) -> str | None:
-    """Backward-compatible helper for legacy callers."""
-
-    if env_var in os.environ:
-        return os.environ[env_var]
-    if file_path is not None:
-        path = Path(file_path)
-        if path.exists():
-            return path.read_text(encoding="utf-8").strip()
-    return None
-
-
-def redact(text: str, key: str | None) -> str:
-    """Backward-compatible single-secret redaction helper."""
-
-    return SecretRedactor([key] if key else []).redact_text(text)
-
-
 def looks_like_secret(value: str) -> bool:
     """Detect recognizable secret *values*, not ordinary model IDs."""
 
@@ -330,7 +308,7 @@ __all__ = [
     "FakeSecretStore", "KeyringSecretStore", "MemorySecretStore",
     "ResolvedCredential", "SecretRedactor", "SecretStore", "SecretStoreReadError",
     "SecretStoreUnavailable", "credential_status", "default_secret_store",
-    "get_api_key", "looks_like_secret", "looks_like_secret_field",
+    "looks_like_secret", "looks_like_secret_field",
     "new_credential_id", "provider_key_env",
-    "redact", "resolve_provider_credentials", "sanitize_error",
+    "resolve_provider_credentials", "sanitize_error",
 ]

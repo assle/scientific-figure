@@ -13,7 +13,6 @@ from typing import Any
 from figure_tools.validation.models import (
     LayoutElement,
     LayoutManifest,
-    LayoutManifest as _Manifest,
     PixelBBox,
     read_layout_manifest,
 )

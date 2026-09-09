@@ -17,12 +17,7 @@ import yaml
 from figure_tools.install_paths import APP_NAME, PathEnvironment
 from figure_tools._resources import template_path
 from figure_tools.provider_configuration import (
-    LEGACY_PROVIDER_PROTOCOLS,
-    MODEL_ROLES,
     PLACEHOLDER_MODEL,
-    PROVIDER_TYPES,
-    ROLE_ENV_VARS,
-    configured_model_routes,
     merge_model_route_sources,
     normalize_providers,
 )

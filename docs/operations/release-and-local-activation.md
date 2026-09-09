@@ -25,7 +25,7 @@ scientific-figure status
 ```
 
 `update` 默认保持当前安装形态。已经安装 Configuration app 就继续更新，没有安装就不会新增；
-也可以显式使用 `--with-gui`、`--without-gui`、`--codex`、`--opencode` 或 `--all`。
+也可以显式使用 `--with-gui`、`--without-gui`、`--codex` 或 `--runtime-only`。
 
 正式更新从 GitHub Release 下载完整 Product bundle，先验证 `SHA256SUMS`、Release
 manifest 和内部文件摘要，再安装。离线时使用：
@@ -42,7 +42,7 @@ Core runtime、Native plugin、Workflow Skill、CLI、Configuration app 和程�
 
 ## 按需运行与重启
 
-Lifecycle MCP server 由 Codex/OpenCode 按需启动，Configuration app 只在运行
+Lifecycle MCP server 由 Codex 按需启动，Configuration app 只在运行
 `scientific-figure gui` 时启动。未运行表示
 正常 idle，不需要 `start-all`，也没有产品 daemon。
 
@@ -52,7 +52,7 @@ Lifecycle MCP server 由 Codex/OpenCode 按需启动，Configuration app 只在�
 restart_required
 ```
 
-保存当前任务和未保存的 Configuration draft，完全退出并重新打开 Codex/OpenCode。新的
+保存当前任务和未保存的 Configuration draft，完全退出并重新打开 Codex。新的
 Lifecycle MCP server 或 Configuration app
 首次启动时会清理已经无人使用的旧 Core runtime 和 Native plugin cache；仍被进程引用的
 目录不会删除。
@@ -60,7 +60,7 @@ Lifecycle MCP server 或 Configuration app
 状态退出码：
 
 - `0`：本地版本已收敛；
-- `2`：需要重载 Codex/OpenCode；
+- `2`：需要重载 Codex；
 - `3`：组件版本不一致或远端有更新；
 - `4`：安装损坏或状态无法读取。
 
@@ -111,8 +111,7 @@ Release 成功而本地需要重启时，Release 仍保持成功，组合命令�
 
 - `./install.sh --runtime-only --release VERSION`：只安装 Core；
 - `./install.sh --codex`：不再表示 Core-only，会提示补充 `--release`；
-- 无 Release 参数的旧源码安装仍可通过明确的 `--runtime-only`、`--opencode` 等内部兼容
-  路径使用，并输出迁移提示。
+- 无 Release 参数的旧源码安装仍可通过明确的 `--runtime-only` 路径使用。
 
 安装事务日志经过脱敏，只保留最近 10 条。下载缓存、staging、临时备份以及不再运行的旧
 产品文件会自动清理。

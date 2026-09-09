@@ -34,8 +34,6 @@ if [ "$REQUEST_HELP" -eq 1 ]; then
     '  ./install.sh --codex --release latest --with-gui' \
     '  ./install.sh --codex --release vX.Y.Z [--with-gui]' \
     '  ./install.sh --codex --bundle FILE [--with-gui]' \
-    '  ./install.sh --opencode --release VERSION [--with-gui]' \
-    '  ./install.sh --all --release VERSION [--with-gui]' \
     '' \
     'Core-only compatibility:' \
     '  ./install.sh --runtime-only [--release VERSION] [--with-gui]' \

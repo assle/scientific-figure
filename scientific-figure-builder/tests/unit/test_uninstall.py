@@ -29,12 +29,7 @@ def _layout(tmp_path: Path) -> dict[str, Path]:
 def _seed(paths, tmp_path: Path):
     paths.runtime_dir.mkdir(parents=True)
     (paths.runtime_dir / "figure_tools").mkdir()
-    paths.skill_dir.mkdir(parents=True)
-    paths.command_file.parent.mkdir(parents=True)
-    paths.command_file.write_text("command", encoding="utf-8")
     paths.codex_skill_dir.mkdir(parents=True)
-    paths.config_file.parent.mkdir(parents=True, exist_ok=True)
-    paths.config_file.write_text(json.dumps({"mcp": {"scientific-figure": {}}}), encoding="utf-8")
     paths.codex_config_file.parent.mkdir(parents=True, exist_ok=True)
     paths.codex_config_file.write_text("[mcp_servers.scientific-figure]\ncommand = 'x'\n", encoding="utf-8")
     if paths.launcher_file is not None:
@@ -134,7 +129,7 @@ def test_project_uninstall_removes_only_its_versioned_runtime(tmp_path: Path):
     assert project_b.runtime_dir.is_dir()
 
 
-@pytest.mark.parametrize("target", ["runtime", "opencode", "codex"])
+@pytest.mark.parametrize("target", ["runtime", "codex"])
 def test_targeted_uninstall_preserves_unselected_products(
     tmp_path: Path, target: str,
 ):
@@ -144,14 +139,9 @@ def test_targeted_uninstall_preserves_unselected_products(
     uninstall(
         **layout,
         remove_runtime=target == "runtime",
-        remove_opencode=target == "opencode",
         remove_codex=target == "codex",
     )
     assert paths.runtime_scope_dir.exists() is (target != "runtime")
-    assert paths.skill_dir.exists() is (target != "opencode")
-    assert paths.command_file.exists() is (target != "opencode")
-    opencode_config = json.loads(paths.config_file.read_text(encoding="utf-8"))
-    assert ("scientific-figure" in opencode_config["mcp"]) is (target != "opencode")
     assert paths.codex_skill_dir.exists() is (target != "codex")
     codex_text = paths.codex_config_file.read_text(encoding="utf-8")
     assert ("[mcp_servers.scientific-figure]" in codex_text) is (target != "codex")
@@ -160,9 +150,7 @@ def test_targeted_uninstall_preserves_unselected_products(
 def test_uninstall_cli_targets_are_explicit():
     parser = build_parser()
     assert parser.parse_args([]).target == "runtime"
-    assert parser.parse_args(["--opencode"]).target == "opencode"
     assert parser.parse_args(["--codex-legacy"]).target == "codex"
-    assert parser.parse_args(["--integrations"]).target == "integrations"
     assert parser.parse_args(["--all"]).target == "all"
 
 
@@ -174,7 +162,6 @@ def test_uninstall_recognizes_active_install_lock(tmp_path: Path):
         result = uninstall(
             **layout,
             remove_runtime=True,
-            remove_opencode=False,
             remove_codex=False,
         )
         assert paths.runtime_dir.is_dir()
@@ -195,42 +182,8 @@ def test_uninstall_cleans_orphaned_install_state(tmp_path: Path):
     result = uninstall(
         **layout,
         remove_runtime=True,
-        remove_opencode=False,
         remove_codex=False,
     )
     assert not paths.runtime_scope_dir.exists()
     assert not paths.install_lock_dir.exists()
     assert str(paths.install_lock_dir) in result["removed"]
-
-
-def test_opencode_uninstall_preserves_jsonc_comments_and_other_servers(tmp_path: Path):
-    layout = _layout(tmp_path)
-    opencode_home = layout["config_home"] / "opencode"
-    config = opencode_home / "opencode.jsonc"
-    config.parent.mkdir(parents=True)
-    config.write_text(
-        """{
-  // keep top
-  "mcp": {
-    "other": {"command": ["other"]}, // keep inline
-    "scientific-figure": {"command": ["scientific"]},
-  },
-  /* keep permission */
-  "permission": {"bash": "ask"},
-}
-""",
-        encoding="utf-8",
-    )
-    uninstall(
-        **layout,
-        remove_runtime=False,
-        remove_opencode=True,
-        remove_codex=False,
-    )
-    candidate = config.read_text(encoding="utf-8")
-    assert "scientific-figure" not in candidate
-    assert '"other": {"command": ["other"]}, // keep inline' in candidate
-    assert "// keep top" in candidate
-    assert "// keep inline" in candidate
-    assert "/* keep permission */" in candidate
-    assert '"permission": {"bash": "ask"},' in candidate

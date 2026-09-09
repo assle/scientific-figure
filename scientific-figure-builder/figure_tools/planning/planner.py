@@ -1,7 +1,6 @@
 """Figure-plan builder (plan sections 4, 7, 15).
 
-Consumes a structured request (the OpenCode planning model turns natural
-language into this structure) and emits a figure_plan.json that conforms to the
+Consumes a structured request and emits a figure_plan.json that conforms to the
 v1 schema.
 """
 

@@ -9,7 +9,7 @@ composable lifecycles. A convenience release command may orchestrate them, but
 each lifecycle keeps its own idempotent implementation and result: a Published
 release does not depend on local installation succeeding, Local activation owns
 disk delivery and compensation, and host reload is the human safety boundary
-that lets Codex or OpenCode replace Running runtime instances without
+    that lets Codex replace Running runtime instances without
 interrupting active Provider work or unsaved Configuration drafts.
 
 ## Consequences

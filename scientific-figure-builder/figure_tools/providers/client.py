@@ -6,7 +6,6 @@ The API key is never serialized into artifacts, logs, or manifests.
 
 from __future__ import annotations
 
-import io
 import json
 import threading
 import uuid
@@ -24,7 +23,6 @@ from figure_tools.providers.transport import (
     IncompleteStructuredResponseError,
     ProviderError,
     ProviderTransport,
-    RateLimitError,
     RequestError,
     ROLE_TO_MODEL_CONFIG,
     model_config_for_role,

@@ -16,7 +16,6 @@ from typing import Any, Callable, Iterable, Protocol
 
 from figure_tools.codex_plugin import (
     MARKETPLACE_NAME,
-    PLUGIN_NAME,
     PLUGIN_SELECTOR,
     find_codex_executable,
     native_plugin_configured,
@@ -59,16 +58,10 @@ class PluginAdapter(Protocol):
 class HostTarget(str, Enum):
     RUNTIME = "runtime"
     CODEX = "codex"
-    OPENCODE = "opencode"
-    ALL = "all"
 
     @property
     def includes_codex(self) -> bool:
-        return self in {HostTarget.CODEX, HostTarget.ALL}
-
-    @property
-    def includes_opencode(self) -> bool:
-        return self in {HostTarget.OPENCODE, HostTarget.ALL}
+        return self is HostTarget.CODEX
 
 
 class CodexPluginAdapter:
@@ -83,7 +76,6 @@ class CodexPluginAdapter:
         self.marketplace = native_plugin_marketplace_dir(environment)
         self._backup: Path | None = None
         self._previous_source: str | None = None
-        self._previous_version: str | None = None
 
     def install(self, product_root: Path, version: str) -> PluginInstallation:
         manifest_path = (
@@ -102,16 +94,6 @@ class CodexPluginAdapter:
             if source.get("sourceType") == "local":
                 self._previous_source = str(source.get("source"))
             break
-        plugins = self._json((
-            "plugin", "list", "--marketplace", self.marketplace_name, "--json",
-        ))
-        for item in plugins.get("installed", []):
-            if item.get("name") == PLUGIN_NAME:
-                self._previous_version = (
-                    str(item["version"]) if item.get("version") is not None else None
-                )
-                break
-
         candidate = self.marketplace.with_name(
             f".{self.marketplace.name}.candidate-{uuid.uuid4().hex[:8]}"
         )
@@ -231,13 +213,6 @@ class ActivationResult:
         }
 
 
-@dataclass(frozen=True)
-class SavedPath:
-    original: Path
-    backup: Path
-    existed: bool
-
-
 def activate_local(
     request: ActivationRequest,
     *,
@@ -270,23 +245,12 @@ def activate_local(
         paths = resolve_delivery_paths(
             request.environment, manifest.product_version,
         )
-        host_snapshot = (
-            _save_paths(
-                (paths.skill_dir, paths.command_file, paths.config_file),
-                Path(temporary) / "host-backup",
-            )
-            if target.includes_opencode
-            else ()
-        )
         previous_active = read_active_runtime(paths.active_runtime_file)
-        delivery_target = (
-            "opencode" if target.includes_opencode else "runtime"
-        )
         installed = install(
             InstallRequest(
                 source_dir=source_dir,
                 paths=paths,
-                target=delivery_target,
+                target="runtime",
                 scope="global",
                 product_version=manifest.product_version,
                 with_gui=request.with_gui,
@@ -330,7 +294,6 @@ def activate_local(
                 previous_active,
                 selected_plugin_adapter,
             )
-            _restore_paths(host_snapshot)
             raise
         cleanup_error = None
         try:
@@ -380,36 +343,6 @@ def _restore_previous_installation(
         shutil.rmtree(failed_runtime)
 
 
-def _save_paths(paths: tuple[Path, ...], backup_root: Path) -> tuple[SavedPath, ...]:
-    saved: list[SavedPath] = []
-    for index, original in enumerate(paths):
-        backup = backup_root / str(index)
-        existed = original.exists()
-        if existed:
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            if original.is_dir():
-                shutil.copytree(original, backup)
-            else:
-                shutil.copy2(original, backup)
-        saved.append(SavedPath(original=original, backup=backup, existed=existed))
-    return tuple(saved)
-
-
-def _restore_paths(saved: tuple[SavedPath, ...]) -> None:
-    for item in saved:
-        if item.original.is_dir():
-            shutil.rmtree(item.original)
-        elif item.original.exists():
-            item.original.unlink()
-        if not item.existed:
-            continue
-        item.original.parent.mkdir(parents=True, exist_ok=True)
-        if item.backup.is_dir():
-            shutil.copytree(item.backup, item.original)
-        else:
-            shutil.copy2(item.backup, item.original)
-
-
 class NoPluginAdapter:
     def install(self, product_root: Path, version: str) -> PluginInstallation:
         del product_root
@@ -417,7 +350,6 @@ class NoPluginAdapter:
 
     def restore(self, version: str | None) -> None:
         del version
-        return None
 
     def finalize(self) -> None:
         return None
@@ -427,15 +359,6 @@ def detect_installed_host(environment: PathEnvironment) -> HostTarget:
     """Preserve the currently installed host set for an update."""
 
     codex = native_plugin_configured(environment)
-    opencode_skill = (
-        environment.config_root / "opencode" / "skills"
-        / "scientific-figure-builder" / "SKILL.md"
-    )
-    opencode = opencode_skill.is_file()
-    if codex and opencode:
-        return HostTarget.ALL
-    if opencode:
-        return HostTarget.OPENCODE
     if codex:
         return HostTarget.CODEX
     return HostTarget.RUNTIME

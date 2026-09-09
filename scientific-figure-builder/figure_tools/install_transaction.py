@@ -69,7 +69,7 @@ class InstallTransaction:
         self.backup_dir.mkdir(parents=True)
         return self
 
-    def __exit__(self, exc_type, exc, _traceback) -> bool:
+    def __exit__(self, _exc_type, exc, _traceback) -> bool:
         try:
             if exc is not None or not self.committed:
                 self.rollback()

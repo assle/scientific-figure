@@ -5,7 +5,7 @@ Usage: python -m figure_tools init [project_dir]
        python -m figure_tools install-gui
        python -m figure_tools status [--json] [--verbose] [--remote]
        python -m figure_tools update (--latest|--release VERSION|--bundle FILE)
-         [--codex|--opencode|--all|--runtime-only]
+         [--codex|--runtime-only]
          [--with-gui|--without-gui] [--json]
        python -m figure_tools --version
 """
@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 from figure_tools import __version__
 from figure_tools.config import initialize_project
@@ -29,7 +28,7 @@ USAGE = (
     "usage: python -m figure_tools "
     "init [project_dir] | gui | install-gui | status [--json] [--verbose] [--remote] | "
     "update (--latest|--release VERSION|--bundle FILE) "
-    "[--codex|--opencode|--all|--runtime-only] "
+    "[--codex|--runtime-only] "
     "[--with-gui|--without-gui] [--json] | --version"
 )
 
@@ -106,8 +105,6 @@ def _run_update(argv: list[str]) -> int:
     source.add_argument("--latest", action="store_true")
     hosts = parser.add_mutually_exclusive_group()
     hosts.add_argument("--codex", action="store_const", dest="host", const="codex")
-    hosts.add_argument("--opencode", action="store_const", dest="host", const="opencode")
-    hosts.add_argument("--all", action="store_const", dest="host", const="all")
     hosts.add_argument(
         "--runtime-only", action="store_const", dest="host", const="runtime",
     )
@@ -172,7 +169,7 @@ def _run_update(argv: list[str]) -> int:
         if result.cleanup_error:
             print(f"  Cleanup warning: {result.cleanup_error}")
         if result.conclusion == "restart_required":
-            print("  Next action:    restart Codex/OpenCode after saving active work")
+            print("  Next action:    restart Codex after saving active work")
     return result.exit_code
 
 

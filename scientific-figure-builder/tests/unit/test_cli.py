@@ -9,7 +9,10 @@ from figure_tools import __version__
 from figure_tools.__main__ import main
 
 
-def test_cli_init_creates_project_config(tmp_path: Path, capsys):
+def test_cli_init_creates_project_config(tmp_path: Path, capsys, monkeypatch):
+    monkeypatch.setenv(
+        "SCIENTIFIC_FIGURE_CONFIG", str(tmp_path / "missing-user-config.yaml")
+    )
     rc = main(["init", str(tmp_path)])
     assert rc == 0
     assert (tmp_path / ".scientific-figure" / "project.yaml").is_file()

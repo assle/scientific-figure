@@ -100,8 +100,8 @@ _Avoid_: generation route, tool step, model role
 The single authority that advances a scientific-figure run between Lifecycle phases from persisted Phase artifacts and approvals.
 _Avoid_: Calling Agent, Phase worker, step runner
 
-Its external Interface is `advance_figure_workflow`. Calling Agents, OpenCode
-commands, and the Lifecycle MCP server do not call Generation routes or phase
+Its external Interface is `advance_figure_workflow`. Calling Agents and the
+Lifecycle MCP server do not call Generation routes or phase
 implementations directly.
 
 **Figure Execution Module**:

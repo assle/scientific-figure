@@ -28,8 +28,8 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-最新固定版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
-核心运行时。原生插件负责 Codex 中 Workflow Skill 与 MCP 声明的发现、启停、升级和
+最新固定版本提供 **原生 Codex 插件**和带版本的核心运行时。原生插件负责 Codex 中
+Workflow Skill 与 MCP 声明的发现、启停、升级和
 移除；独立核心运行时让确定性执行与可选配置应用不进入宿主插件缓存。
 
 | 组件 | 职责 |
@@ -38,7 +38,7 @@ Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生
 | 生命周期 MCP 服务 | 只公开 `initialize_figure_project` 与 `advance_figure_workflow` |
 | 核心运行时 | 在本地拥有生命周期状态、执行、绘图、组装、验证和导出 |
 | 配置应用 | 管理 Provider、Model route 和系统凭据 |
-| Agent 集成 | 让 Codex 或 OpenCode 发现 Skill 与 MCP 服务 |
+| Codex 集成 | 让 Codex 发现 Skill 与 MCP 服务 |
 
 ## 架构与生命周期
 
@@ -199,8 +199,7 @@ cd scientific-figure
 ```
 
 经过验证的 Product bundle 会在一次本地激活中安装 Core、CLI、Native plugin 和可选
-Configuration app。无桌面环境可省略 `--with-gui`；OpenCode 用户把 `--codex` 换成
-`--opencode`。
+Configuration app。无桌面环境可省略 `--with-gui`。
 
 从旧版本升级时，安装新 Runtime 不会热更新已经运行的 MCP 或 GUI。发布维护者和需要确保
 本机所有进程都切换到新版的用户，请执行[当前发布与本地更新流程](docs/operations/release-and-local-activation.md)，
@@ -387,14 +386,12 @@ Unix 默认是 `~/.local/bin/scientific-figure`。
 | `./install.sh --codex --release latest --with-gui` | 首次安装或激活 GitHub 最新正式版本，包括 Core runtime、CLI、Native plugin 和 Configuration app | 联网；修改产品安装和 Codex plugin 状态 |
 | `./install.sh --codex --release vX.Y.Z --with-gui` | 安装一个明确版本，不跟随之后出现的 latest | 联网；修改产品安装和 Codex plugin 状态 |
 | `./install.sh --codex --bundle /path/to/bundle.tar.gz --with-gui` | 从本地 Product bundle 离线安装；同目录必须有 `SHA256SUMS` | 离线；修改产品安装和 Codex plugin 状态 |
-| `./install.sh --opencode --release latest` | 安装 Core runtime、CLI 和 OpenCode 集成 | 联网；不安装 Native Codex plugin |
-| `./install.sh --all --release latest --with-gui` | 同时激活 Codex 与 OpenCode | 联网；修改两个宿主的集成状态 |
 | `./install.sh --runtime-only --release latest` | 只安装 Core runtime 和 CLI | 联网；不新增 Agent 集成 |
 | `./install.sh --runtime-only` | 从当前源码工作区执行兼容的 Core-only 开发安装 | 离线或仅访问依赖源；不表示正式 Release 安装 |
 
 `--with-gui` 表示包含 Configuration app；`--without-gui` 表示明确移除新 Runtime 中的
-GUI 依赖。`--codex` 表示完整 Codex 激活，不再表示 Core-only。旧的 `--opencode-only` 和
-`--codex-only` 至少保留一个 minor 迁移周期，并输出兼容提示。
+GUI 依赖。`--codex` 表示完整 Codex 激活，不再表示 Core-only。旧的 `--codex-only`
+至少保留一个 minor 迁移周期，并输出兼容提示。
 
 ### 更新已安装版本
 
@@ -404,8 +401,6 @@ GUI 依赖。`--codex` 表示完整 Codex 激活，不再表示 Core-only。旧�
 | `scientific-figure update --release vX.Y.Z` | 联网更新到指定 Release |
 | `scientific-figure update --bundle /path/to/bundle.tar.gz` | 使用本地 bundle 更新；不删除用户提供的 bundle |
 | `scientific-figure update --latest --codex` | 明确更新完整 Codex 集成 |
-| `scientific-figure update --latest --opencode` | 明确更新 OpenCode 集成 |
-| `scientific-figure update --latest --all` | 明确更新 Codex 与 OpenCode |
 | `scientific-figure update --latest --runtime-only` | 明确只更新 Core runtime 和 CLI |
 | `scientific-figure update --latest --with-gui` | 更新并确保包含 Configuration app |
 | `scientific-figure update --latest --without-gui` | 更新为 headless Runtime |
@@ -413,7 +408,7 @@ GUI 依赖。`--codex` 表示完整 Codex 激活，不再表示 Core-only。旧�
 
 更新会保留 Provider、Model route、Credential reference、Keyring API Key、项目、数据和
 运行产物；会替换 Core runtime、Native plugin、Workflow Skill、CLI、Configuration app
-和程序依赖。它不会强制退出 Codex/OpenCode，也不会关闭可能包含未保存 Configuration
+和程序依赖。它不会强制退出 Codex，也不会关闭可能包含未保存 Configuration
 draft 的 GUI。
 
 ### 状态、配置与项目初始化
@@ -440,7 +435,7 @@ draft 的 GUI。
 | `1` | update/install failure | 下载、摘要、manifest、安装或补偿失败；没有达到可报告的激活结果 |
 
 MCP 和 Configuration app 都是按需运行；idle 是正常状态。完成安装后若需要加载新 MCP，
-请完全退出并重新打开 Codex/OpenCode，再在新任务中首次调用 Scientific Figure Builder。
+请完全退出并重新打开 Codex，再在新任务中首次调用 Scientific Figure Builder。
 
 ### 维护者构建与发布
 
@@ -459,10 +454,6 @@ MCP 和 Configuration app 都是按需运行；idle 是正常状态。完成安�
 正式发布说明先以 `status: draft` 创建；维护者审阅并改为 `status: approved` 后才能
 `--publish`。已推送 tag 永不移动，冲突时使用新的 patch 版本。完整维护流程见
 [发布与本地更新](docs/operations/release-and-local-activation.md)。
-
-OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
-`mcp.scientific-figure`（缺少时才创建 `mcp`/`$schema` 父节点），无关字段顺序、缩进、
-行/块/行尾注释和尾随逗号均保持原文。无效 JSONC 会在任何安装事务开始前失败。
 
 ### 文件系统布局
 
@@ -491,14 +482,14 @@ OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
 
 安装和升级在每个 Runtime scope 内作为一个文件系统事务执行。安装器先完成来源、配置、
 启动器、权限和磁盘空间预检，再在同一文件系统的 staging 中用 non-editable 包构建核心
-运行时并验证 CLI/MCP，最后原子提交 runtime、Skill、launcher、command、宿主配置和
+运行时并验证 CLI/MCP，最后原子提交 runtime、launcher、可选旧 Codex 集成和
 活动运行时记录。任一步失败或进程中断都会按相反顺序恢复已替换路径。同一 scope 的锁
 拒绝并发安装；后续安全运行会清理死亡安装器留下的孤儿 staging。
 
 Delivery Interface 是 `InstallRequest → InstallResult`。Request 携带目标、Runtime scope、
 Product version 和 GUI 选择；Result 报告 committed、retained、pruned 与日志路径。CLI
-只负责把参数翻译到这个 Interface。OpenCode 与 deprecated 手工 Codex 交付由同一事务
-中的独立 Host delivery Adapter 处理；原生 Codex 插件仍由宿主管理。
+只负责把参数翻译到这个 Interface。Deprecated 手工 Codex 交付仍在同一事务中处理；
+原生 Codex 插件由宿主管理。
 
 激活期间保留上一 Verified Runtime 用于补偿，并保护所有仍被 MCP/GUI 进程引用的 Runtime；
 进程收敛后，按需启动会删除过期 Runtime 和 Plugin cache。临时事务备份在提交或回滚后
@@ -511,10 +502,8 @@ Product version 和 GUI 选择；Result 报告 committed、retained、pruned 与
 ```bash
 codex plugin remove scientific-figure-builder@scientific-figure
 ./uninstall.sh                    # 默认：只删除核心运行时与 CLI
-./uninstall.sh --opencode         # 只删除 OpenCode 集成
 ./uninstall.sh --codex-legacy     # 只删除 deprecated 手工 Codex 集成
-./uninstall.sh --integrations     # 删除两个旧集成，保留核心
-./uninstall.sh --all              # 删除核心、旧集成、配置和引用凭据
+./uninstall.sh --all              # 删除核心、旧 Codex 集成、配置和引用凭据
 ./uninstall.sh --runtime-only --project DIR
 ./uninstall.sh --dry-run
 codex plugin marketplace remove scientific-figure # 可选：不再列出这个 repo

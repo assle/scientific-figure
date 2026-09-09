@@ -144,25 +144,6 @@ def test_newer_local_candidate_is_not_reported_as_update_available(
     assert result.conclusion == "converged"
 
 
-def test_opencode_only_status_does_not_require_native_codex_plugin(
-    tmp_path: Path,
-) -> None:
-    environment, _runtime = _active_install(tmp_path, "0.6.0")
-
-    result = collect_local_status(
-        LocalStatusRequest(
-            environment=environment,
-            cli_version="0.6.0",
-            require_plugin=False,
-        ),
-        plugin=PluginInstallation(False, False, None),
-        running_instances=[],
-    )
-
-    assert result.conclusion == "converged"
-    assert result.exit_code == 0
-
-
 def test_runtime_only_system_status_does_not_invent_codex_requirement(
     tmp_path: Path,
 ) -> None:

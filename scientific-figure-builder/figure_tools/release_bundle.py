@@ -29,7 +29,6 @@ PRODUCT_SOURCE_ITEMS = (
     "install",
     "schemas",
     "templates",
-    "commands",
     "SKILL.md",
     "pyproject.toml",
     "uv.lock",

@@ -144,9 +144,6 @@ class DeliveryPaths:
     state_dir: Path
     cache_dir: Path
     session_dir: Path
-    skill_dir: Path
-    command_file: Path
-    config_file: Path
     codex_skill_dir: Path
     codex_config_file: Path
     launcher_file: Path | None
@@ -171,13 +168,7 @@ def resolve_delivery_paths(
         scope_state = environment.state_root / APP_NAME / "global"
         scope_cache = environment.cache_root / APP_NAME / "global"
         scope_session = environment.session_root / APP_NAME / "global"
-        opencode_home = environment.config_root / "opencode"
         codex_home = environment.codex_home
-        json_file = opencode_home / "opencode.json"
-        jsonc_file = json_file.with_suffix(".jsonc")
-        config_file = (
-            jsonc_file if jsonc_file.exists() and not json_file.exists() else json_file
-        )
         launcher_file = environment.launcher_dir / (
             "scientific-figure.cmd"
             if environment.platform_name == "nt"
@@ -191,15 +182,7 @@ def resolve_delivery_paths(
         scope_state = environment.state_root / APP_NAME / "projects" / scope_id
         scope_cache = environment.cache_root / APP_NAME / "projects" / scope_id
         scope_session = environment.session_root / APP_NAME / "projects" / scope_id
-        opencode_home = project / ".opencode"
         codex_home = project / ".codex"
-        candidates = (
-            project / "opencode.json",
-            project / "opencode.jsonc",
-            opencode_home / "opencode.json",
-            opencode_home / "opencode.jsonc",
-        )
-        config_file = next((path for path in candidates if path.exists()), candidates[0])
         launcher_file = None
         legacy_runtime_dir = None
 
@@ -220,9 +203,6 @@ def resolve_delivery_paths(
         state_dir=scope_state,
         cache_dir=scope_cache,
         session_dir=scope_session,
-        skill_dir=opencode_home / "skills" / APP_NAME,
-        command_file=opencode_home / "commands" / "scientific-figure.md",
-        config_file=config_file,
         codex_skill_dir=codex_home / "skills" / APP_NAME,
         codex_config_file=codex_home / "config.toml",
         launcher_file=launcher_file,

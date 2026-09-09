@@ -254,44 +254,6 @@ def test_activation_compensates_when_plugin_result_is_not_converged(
     assert active is not None and active["version"] == "0.5.0"
 
 
-def test_all_host_activation_restores_opencode_files_when_codex_plugin_fails(
-    tmp_path: Path,
-) -> None:
-    environment = _environment(tmp_path)
-    previous = resolve_delivery_paths(environment, "0.5.0")
-    previous.runtime_dir.mkdir(parents=True)
-    _runtime_sync(previous.runtime_dir, False)
-    activate_runtime(previous)
-    previous.skill_dir.mkdir(parents=True)
-    (previous.skill_dir / "SKILL.md").write_text("old skill", encoding="utf-8")
-    previous.command_file.parent.mkdir(parents=True)
-    previous.command_file.write_text("old command", encoding="utf-8")
-    previous.config_file.parent.mkdir(parents=True, exist_ok=True)
-    previous.config_file.write_text(
-        '{"unrelated":true,"mcp":{}}\n', encoding="utf-8"
-    )
-
-    class FailingPlugin(PluginAdapter):
-        def install(self, product_root: Path, version: str) -> PluginInstallation:
-            del product_root, version
-            raise RuntimeError("plugin update failed")
-
-    with pytest.raises(RuntimeError, match="plugin update failed"):
-        activate_local(
-            ActivationRequest(
-                bundle=_bundle(tmp_path), environment=environment,
-                expected_version=PRODUCT_VERSION, host="all",
-            ),
-            plugin_adapter=FailingPlugin(),
-            runtime_sync=_runtime_sync,
-            running_instances=[],
-        )
-
-    assert (previous.skill_dir / "SKILL.md").read_text() == "old skill"
-    assert previous.command_file.read_text() == "old command"
-    assert previous.config_file.read_text() == '{"unrelated":true,"mcp":{}}\n'
-
-
 @pytest.mark.parametrize(
     ("old_processes", "expected_conclusion", "previous_exists"),
     [([], "converged", False), ([42], "restart_required", True)],
@@ -395,10 +357,6 @@ def test_codex_plugin_adapter_replaces_and_can_restore_marketplace(
         {"marketplaces": [{
             "name": "scientific-figure",
             "marketplaceSource": {"sourceType": "local", "source": str(stable)},
-        }]},
-        {"installed": [{
-            "name": "scientific-figure-builder", "installed": True,
-            "enabled": True, "version": "0.5.0",
         }]},
         {},
         {},

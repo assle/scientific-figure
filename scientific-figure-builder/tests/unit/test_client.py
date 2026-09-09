@@ -19,8 +19,6 @@ from figure_tools.providers.auth import (
     SecretRedactor,
     credential_status,
     new_credential_id,
-    get_api_key,
-    redact,
 )
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.generic_transport import OpenAICompatibleTransport
@@ -57,16 +55,6 @@ def _save_rgba(path: Path):
     from PIL import ImageDraw
     ImageDraw.Draw(img).ellipse((384, 384, 640, 640), fill=(200, 40, 40, 255))
     img.save(path)
-
-
-# --- auth ----------------------------------------------------------------
-def test_get_api_key_from_env(monkeypatch):
-    monkeypatch.setenv("SCIENTIFIC_FIGURE_API_KEY", "sk-test")
-    assert get_api_key() == "sk-test"
-
-
-def test_redact_replaces_key():
-    assert redact("hello sk-test world", "sk-test") == "hello ***REDACTED*** world"
 
 
 def test_credential_resolver_uses_configured_environment_name(monkeypatch):

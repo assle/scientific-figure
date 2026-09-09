@@ -141,10 +141,6 @@ def resolve_units(request: Mapping[str, Any]) -> list[dict[str, Any]]:
     return units
 
 
-def intent_hash(request: Mapping[str, Any]) -> str:
-    return hash_json(resolve_units(request))
-
-
 def _bounding_box(items: list[list[float]]) -> list[float]:
     x, y = min(b[0] for b in items), min(b[1] for b in items)
     return [x, y, max(b[0] + b[2] for b in items) - x, max(b[1] + b[3] for b in items) - y]

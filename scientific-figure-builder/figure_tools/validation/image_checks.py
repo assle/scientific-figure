@@ -10,10 +10,6 @@ from pathlib import Path
 from PIL import Image
 
 
-def _check_id(level: str, status: str, detail: str = "") -> dict:
-    return {"level": level, "status": status, "detail": detail}
-
-
 def deterministic_image_checks(
     image_path: str | Path,
     physical_size_mm: tuple[float, float] | None = None,
