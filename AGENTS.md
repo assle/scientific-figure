@@ -2,6 +2,18 @@
 
 These constraints are loaded by default on every execution.
 
+## Avoid Overengineering
+
+Implement the smallest correct change that satisfies the explicit request.
+
+Do not add abstractions, fallback logic, defensive checks, compatibility layers,
+configuration, refactors, or future-proofing for hypothetical requirements. Only
+introduce additional complexity when it is required for correctness, security, or
+by an established pattern in the existing codebase.
+
+When multiple implementations are valid, prefer the simplest one with the smallest
+diff.
+
 ## Language
 
 - **User-facing interaction**: Always communicate with the user in Chinese (中文).
