@@ -88,20 +88,20 @@ def test_heartbeats_survive_checkpoints_without_resending(tmp_path):
         handler.send_response(200)
         handler.send_header('Content-Type', 'text/event-stream')
         handler.end_headers()
-        for _ in range(8):
+        for _ in range(20):
             handler.wfile.write(b': keep-alive\n\n')
             handler.wfile.flush()
-            time.sleep(.03)
+            time.sleep(.05)
         event(handler, 'response.failed', {'status': 'failed', 'error': {'code': 'test_stop'}})
     with provider_server(respond) as (url, requests):
-        orch, state = workflow(tmp_path, url, {'inactivity_timeout': .12, 'status_interval': .03})
+        orch, state = workflow(tmp_path, url, {'inactivity_timeout': .5, 'status_interval': .1})
         with pytest.raises(ProviderError, match='stream_failed'):
             orch.advance('start')
         assert len(requests) == 1
         assert requests[0]['stream'] is True
         assert state.calls_used('phase_reasoning') == 1
         snapshot = state.to_dict()['provider_status']['phase_reasoning']
-        assert snapshot['elapsed_seconds'] > .2
+        assert snapshot['elapsed_seconds'] > .8
         assert snapshot['checkpoint'] is True
         assert snapshot['stop_reason'] == 'stream_failed'
 

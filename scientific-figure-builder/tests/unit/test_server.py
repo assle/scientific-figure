@@ -513,13 +513,28 @@ def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "run_dir": str(run_dir),
                 "base_dir": str(ROOT), "action": "approve_style_anchor",
+                "wait_timeout": 0,
             }},
         },
     )
     assert all("result" in item for item in responses), responses
     payloads = [json.loads(item["result"]["content"][0]["text"]) for item in responses]
     assert payloads[0]["next_action"] == "approve_style_anchor"
-    assert payloads[1]["status"] == "completed"
+    completed = payloads[1]
+    assert completed["status"] == "in_progress"
+    deadline = time.monotonic() + 10
+    while completed["status"] == "in_progress" and time.monotonic() < deadline:
+        time.sleep(0.02)
+        response = _rpc(monkeypatch, {
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": {
+                "project_dir": str(tmp_path), "run_dir": str(run_dir),
+                "base_dir": str(ROOT), "operation_id": completed["operation_id"],
+                "wait_timeout": 0.1,
+            }},
+        })[0]
+        completed = json.loads(response["result"]["content"][0]["text"])
+    assert completed["status"] == "completed"
     assert RunState.load(run_dir / "run_state.json").calls_used("generation") == 3
 
 
