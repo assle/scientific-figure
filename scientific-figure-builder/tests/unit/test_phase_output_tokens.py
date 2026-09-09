@@ -67,7 +67,7 @@ def test_usage_is_saved_for_incomplete_and_complete_without_reasoning_text(tmp_p
     with provider_server(respond) as (url, requests):
         client = make_client(tmp_path, url)
         invoke(client, 'planning')
-        saved = json.loads((tmp_path / 'run_state.json').read_text())
+        saved = json.loads((tmp_path / 'run_state.json').read_text(encoding="utf-8"))
         history = [entry['details'] for entry in saved['audit_log'] if entry['event'] == 'provider_attempt_finished']
         assert [entry['output_usage']['output_tokens'] for entry in history] == [8192, 9000]
         assert [entry['output_usage']['reasoning_tokens'] for entry in history] == [7000, 7500]
@@ -84,7 +84,7 @@ def test_budget_does_not_remember_unsent_expansion(tmp_path):
         with pytest.raises(BudgetExceeded):
             invoke(client, 'planning')
         assert [r['max_output_tokens'] for r in requests] == [8192]
-        history = json.loads((tmp_path / 'run_state.json').read_text())['output_token_limits']
+        history = json.loads((tmp_path / 'run_state.json').read_text(encoding="utf-8"))['output_token_limits']
         assert history == [{'phase': 'planning', 'provider': 'local', 'model': 'test', 'max_output_tokens': 8192}]
 
 
@@ -129,7 +129,7 @@ def test_anthropic_phase_allowance_expands_and_reports_usage(tmp_path):
         client = ProviderClient(models, router, state=RunState('run', budget={'phase_reasoning': 3}), output_dir=tmp_path)
         assert invoke(client, 'planning') == {'ok': True}
         assert [r['max_tokens'] for r in requests] == [8192, 16384]
-        state = json.loads((tmp_path / 'run_state.json').read_text())
+        state = json.loads((tmp_path / 'run_state.json').read_text(encoding="utf-8"))
         assert state['provider_status']['phase_reasoning']['output_usage']['output_tokens'] == 9000
 
 

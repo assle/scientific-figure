@@ -107,15 +107,15 @@ def test_execution_accepts_an_approved_plan_without_owning_lifecycle_decisions(t
     assert (run_dir / "plans" / "solved_layout.json").is_file()
     assert (run_dir / "plans" / "figure_blueprint.svg").is_file()
     structure_questions = json.loads(
-        (run_dir / "plans" / "structure_questions.json").read_text()
+        (run_dir / "plans" / "structure_questions.json").read_text(encoding="utf-8")
     )
     assert {item["level"] for item in structure_questions["questions"]} == {
         "component", "local_topology", "phase", "global_semantics",
     }
-    persisted_plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    persisted_plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     assert persisted_plan["figure_graph_ref"]["content_hash"].startswith("sha256:")
     assert persisted_plan["solved_layout_ref"]["content_hash"].startswith("sha256:")
-    final_report = json.loads((run_dir / "validation" / "final.json").read_text())
+    final_report = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     final_checks = {item["check_id"]: item for item in final_report["checks"]}
     assert final_checks["graph_node_recovery"]["status"] == "pass"
     assert final_checks["graph_edge_recovery"]["status"] == "pass"
@@ -198,11 +198,11 @@ def test_execution_compiles_generation_conditions_and_uses_asset_placements(tmp_
         request, config, run_dir, client, base_dir=ROOT,
     ).prepare(plan)
     conditions = json.loads(
-        (run_dir / "plans" / "generation_conditions.json").read_text()
+        (run_dir / "plans" / "generation_conditions.json").read_text(encoding="utf-8")
     )
     paused = module.execute_plan(plan, layout_report=layout)
     pre_rendered = json.loads(
-        (run_dir / "plans" / "pre_rendered_assets.json").read_text()
+        (run_dir / "plans" / "pre_rendered_assets.json").read_text(encoding="utf-8")
     )
     result = module.execute_plan(
         plan,
@@ -291,7 +291,7 @@ def test_approved_style_anchor_conditions_later_assets(tmp_path):
 
     paused = module.execute_plan(plan, layout_report=layout)
     pre_rendered = json.loads(
-        (run_dir / "plans" / "pre_rendered_assets.json").read_text()
+        (run_dir / "plans" / "pre_rendered_assets.json").read_text(encoding="utf-8")
     )
     completed = module.execute_plan(
         plan,
@@ -370,7 +370,7 @@ def test_candidate_selection_rejects_a_blocking_candidate(tmp_path):
 
     result = module.execute_plan(plan, layout_report=layout)
     selection = json.loads(
-        (run_dir / "validation" / "candidate_selection" / "cell.json").read_text()
+        (run_dir / "validation" / "candidate_selection" / "cell.json").read_text(encoding="utf-8")
     )
 
     assert result["paused"] is False

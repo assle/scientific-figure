@@ -184,7 +184,7 @@ def _failed_checks(case, tmp_path):
 
 def test_twenty_offline_mechanism_cases_execute_real_single_axis_validators(tmp_path):
     paths = sorted(CASES.glob("*.json"))
-    cases = [json.loads(path.read_text()) for path in paths]
+    cases = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
 
     assert len(cases) == 20
     assert len({case["case_id"] for case in cases}) == 20

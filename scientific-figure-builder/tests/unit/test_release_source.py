@@ -19,7 +19,7 @@ from tests.support import write_core_wheel
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 VERSION = str(tomllib.loads(
-    (REPOSITORY_ROOT / "scientific-figure-builder" / "pyproject.toml").read_text()
+    (REPOSITORY_ROOT / "scientific-figure-builder" / "pyproject.toml").read_text(encoding="utf-8")
 )["project"]["version"])
 
 

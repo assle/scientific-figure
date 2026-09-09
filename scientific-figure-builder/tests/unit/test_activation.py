@@ -72,6 +72,8 @@ def _bundle(tmp_path: Path) -> Path:
 
 
 def _runtime_sync(runtime: Path, _with_gui: bool) -> Path:
+    if os.name == "nt":
+        pytest.skip("POSIX runtime stub")
     python = runtime / ".venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
     python.write_text(
@@ -136,7 +138,7 @@ def test_activation_installs_exact_bundle_and_preserves_user_configuration(
         "credential_id: keep-me\n"
     )
     active = json.loads(
-        (environment.install_root / "global" / "active-runtime.json").read_text()
+        (environment.install_root / "global" / "active-runtime.json").read_text(encoding="utf-8")
     )
     assert active["version"] == PRODUCT_VERSION
 

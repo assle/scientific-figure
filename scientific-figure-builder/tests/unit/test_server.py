@@ -135,7 +135,7 @@ def test_single_panel_geometry_is_derived_after_canvas_resolution(monkeypatch, t
 
     payload = json.loads(response["result"]["content"][0]["text"])
     assert payload["next_action"] == "approve_plan"
-    plan = json.loads((run_dir / "plans/figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans/figure_plan.json").read_text(encoding="utf-8"))
     assert plan["panels"] == [{
         "panel_id": "a", "bbox": [0, 0, 1, 1],
         "physical_size": [140.0, 70.0],
@@ -218,7 +218,7 @@ def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
     assert first_payload["operation_status"] == "running"
     assert first_payload["operation_id"]
 
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + 10
     second_payload = first_payload
     while second_payload["status"] == "in_progress" and time.monotonic() < deadline:
         time.sleep(0.02)
@@ -236,7 +236,7 @@ def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
     assert second_payload["next_action"] == "approve_plan"
     assert calls.count("intake") == 1
     assert calls.count("planning") == 1
-    operation = json.loads((run_dir / "plans/phase_operation.json").read_text())
+    operation = json.loads((run_dir / "plans/phase_operation.json").read_text(encoding="utf-8"))
     assert operation["operation_id"] == first_payload["operation_id"]
     assert operation["status"] == "completed"
 

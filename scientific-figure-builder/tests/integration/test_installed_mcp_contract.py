@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+from install.install_delivery import runtime_python
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -28,6 +31,11 @@ def test_source_install_exposes_current_panel_and_operation_contracts(tmp_path: 
         "--session-home", str(tmp_path / "session"),
         "--codex-home", str(tmp_path / "codex"),
     ]
+    if os.name == "nt":
+        shell = shutil.which("sh")
+        if shell is None:
+            pytest.skip("POSIX shell is required for the source installer")
+        command.insert(0, shell)
     installed = subprocess.run(
         command, cwd=REPOSITORY_ROOT, check=True,
         capture_output=True, text=True, timeout=180,
@@ -38,7 +46,7 @@ def test_source_install_exposes_current_panel_and_operation_contracts(tmp_path: 
         (install_home / "global/active-runtime.json").read_text(encoding="utf-8")
     )
     runtime = Path(active["runtime_dir"])
-    python = runtime / ".venv/bin/python"
+    python = runtime_python(runtime)
     script = (
         "import json; from figure_tools.server import _tool_list; "
         "tool=_tool_list()[1]; panel=tool['inputSchema']['properties']['request']"

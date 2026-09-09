@@ -231,7 +231,7 @@ def test_user_can_submit_clarifications_and_continue_from_draft_brief(tmp_path: 
     })
 
     assert completed["status"] == "completed"
-    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
+    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text(encoding="utf-8"))
     assert brief["status"] == "ready"
     assert brief["required_clarifications"] == []
     assert brief["delivery"]["figure_width_cm"] == 14.0
@@ -247,7 +247,7 @@ def test_intake_persists_the_phase_worker_artifact(tmp_path: Path):
     result = orchestrator.advance()
 
     assert result["phase"] == "intake"
-    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
+    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text(encoding="utf-8"))
     assert brief["intent"] == "worker-produced"
     assert brief["brief_id"].endswith("brief-worker")
 
@@ -258,8 +258,8 @@ def test_figure_brief_is_schema_valid_and_carries_resolved_delivery(tmp_path: Pa
     result = orchestrator.advance()
 
     assert result["status"] == "completed"
-    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
-    schema = json.loads(schema_path("figure-brief.schema.json").read_text())
+    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("figure-brief.schema.json").read_text(encoding="utf-8"))
     assert schema_error_detail(brief, schema) is None
     assert brief["status"] == "ready"
     assert brief["delivery"] == {"export_target": "general", "figure_width_cm": 14.0}
@@ -274,10 +274,10 @@ def test_figure_plan_is_schema_valid_and_references_the_brief(tmp_path: Path):
     result = orchestrator.advance()
 
     assert result["status"] == "completed"
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    schema = json.loads(schema_path("figure-plan.schema.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("figure-plan.schema.json").read_text(encoding="utf-8"))
     assert schema_error_detail(plan, schema) is None
-    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
+    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text(encoding="utf-8"))
     assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
 
@@ -287,10 +287,10 @@ def test_execution_result_is_schema_valid_and_references_the_plan(tmp_path: Path
     result = orchestrator.advance()
 
     assert result["status"] == "completed"
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    schema = json.loads(schema_path("execution-result.schema.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("execution-result.schema.json").read_text(encoding="utf-8"))
     assert not list(Draft202012Validator(schema).iter_errors(execution))
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     assert execution["plan_ref"]["content_hash"] == hash_json(plan)
     assert execution["assembly"]["content_hash"].startswith("sha256:")
     assert execution["plots"]["content_hash"].startswith("sha256:")
@@ -304,10 +304,10 @@ def test_export_result_is_versioned_and_references_validation_and_assembly(tmp_p
 
     orchestrator.advance()
 
-    export_result = json.loads((run_dir / "plans" / "export_result.json").read_text())
-    schema = json.loads(schema_path("export-result.schema.json").read_text())
+    export_result = json.loads((run_dir / "plans" / "export_result.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("export-result.schema.json").read_text(encoding="utf-8"))
     assert not list(Draft202012Validator(schema).iter_errors(export_result))
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     assert export_result["validation_ref"]["content_hash"] == hash_json(validation)
     assert export_result["assembly_ref"]["content_hash"].startswith("sha256:")
     assert export_result["forced"] is False
@@ -317,14 +317,14 @@ def test_changed_figure_brief_cannot_reuse_an_old_plan(tmp_path: Path):
     orchestrator, run_dir, _ = _orchestrator(tmp_path, _request())
     orchestrator.advance()
     brief_path = run_dir / "plans" / "figure_brief.json"
-    brief = json.loads(brief_path.read_text())
+    brief = json.loads(brief_path.read_text(encoding="utf-8"))
     brief["language"] = "zh"
     brief_path.write_text(json.dumps(brief), encoding="utf-8")
 
     result = orchestrator.advance("resume")
 
     assert result["status"] == "completed"
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     assert plan["brief_ref"]["content_hash"] == hash_json(brief)
 
 
@@ -334,7 +334,7 @@ def test_externally_revised_plan_invalidates_execution_before_resume(tmp_path: P
     generation_calls = client.state.calls_used("generation")
     client.cache = None
     plan_path = run_dir / "plans" / "figure_plan.json"
-    plan = json.loads(plan_path.read_text())
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
     plan["canvas"]["width"] += 1
     plan_path.write_text(json.dumps(plan), encoding="utf-8")
 
@@ -342,11 +342,11 @@ def test_externally_revised_plan_invalidates_execution_before_resume(tmp_path: P
 
     assert resumed["status"] == "completed"
     assert client.state.calls_used("generation") == generation_calls
-    revised_plan = json.loads(plan_path.read_text())
+    revised_plan = json.loads(plan_path.read_text(encoding="utf-8"))
     assert revised_plan["revision"] == 2
     assert (run_dir / "plans" / "figure_plan.v2.json").is_file()
     execution = json.loads(
-        (run_dir / "plans" / "execution_result.json").read_text()
+        (run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8")
     )
     assert execution["plan_ref"]["content_hash"] == hash_json(revised_plan)
 
@@ -452,7 +452,7 @@ def test_run_state_persists_phase_and_artifact_references(tmp_path: Path):
 
     orchestrator.advance()
 
-    state = json.loads((run_dir / "run_state.json").read_text())
+    state = json.loads((run_dir / "run_state.json").read_text(encoding="utf-8"))
     assert state["current_phase"] == "export"
     assert {"figure_brief", "figure_plan", "execution_result",
             "validation_report", "exports"} <= set(state["artifacts"])
@@ -470,8 +470,8 @@ def test_review_writes_schema_valid_repair_plan_on_blocking_validation(tmp_path:
     assert result["phase"] == "review_and_repair"
     assert result["status"] == "paused"
     assert result["next_action"] == "repair_required"
-    repair = json.loads((run_dir / "plans" / "repair_plan.json").read_text())
-    schema = json.loads(schema_path("repair-plan.schema.json").read_text())
+    repair = json.loads((run_dir / "plans" / "repair_plan.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("repair-plan.schema.json").read_text(encoding="utf-8"))
     assert not list(Draft202012Validator(schema).iter_errors(repair))
     assert repair["repairs"][0]["asset_id"] == "curve"
     assert repair["repairs"][0]["route"] == "python"
@@ -508,7 +508,7 @@ def test_deterministic_repair_rerenders_source_and_reaches_export(tmp_path: Path
     assert (run_dir / "exports" / "figure.png").is_file()
     assert not (run_dir / "plans" / "repair_plan.json").exists()
     assert unrelated_marker.read_text(encoding="utf-8") == "preserve"
-    revised_plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    revised_plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     assert revised_plan["revision"] == 2
     assert (run_dir / "plans" / "figure_plan.v1.json").is_file()
     assert (run_dir / "plans" / "figure_plan.v2.json").is_file()
@@ -551,9 +551,9 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
     orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
     completed = orchestrator.advance()
     assert completed["status"] == "completed"
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
@@ -587,7 +587,7 @@ def test_raster_repair_uses_image_edit_and_reuses_edited_asset(tmp_path: Path):
     new_roles = [role for role, _ in client.transport.calls[calls_before:]]
     assert "edits" in new_roles
     assert "generation" not in new_roles
-    manifest = json.loads((run_dir / "asset_manifest.json").read_text())
+    manifest = json.loads((run_dir / "asset_manifest.json").read_text(encoding="utf-8"))
     fiber = next(asset for asset in manifest["assets"] if asset["asset_id"] == "fiber")
     assert fiber["parent_asset_id"] == "fiber"
     assert unrelated_marker.read_text(encoding="utf-8") == "preserve"
@@ -601,9 +601,9 @@ def test_raster_edit_rolls_back_when_the_edited_asset_fails_hard_checks(tmp_path
     assert orchestrator.advance()["status"] == "completed"
     parent_path = run_dir / "assets" / "fiber.png"
     original_hash = hash_json({"bytes": parent_path.read_bytes().hex()})
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
@@ -643,7 +643,7 @@ def test_raster_edit_rolls_back_when_the_edited_asset_fails_hard_checks(tmp_path
     assert client.state.calls_used("generation") == generation_before
     assert hash_json({"bytes": parent_path.read_bytes().hex()}) == original_hash
     outcome = json.loads(
-        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text()
+        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text(encoding="utf-8")
     )
     assert outcome["status"] == "rolled_back"
     assert outcome["reason"] == "edited asset failed Deterministic checks"
@@ -657,9 +657,9 @@ def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path)
     assert orchestrator.advance()["status"] == "completed"
     parent_path = run_dir / "assets" / "fiber.png"
     original_bytes = parent_path.read_bytes()
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     _mark_validation_failed(run_dir, validation, "multimodal_semantic")
     repair_plan = {
         "schema_version": "1.0",
@@ -696,7 +696,7 @@ def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path)
     assert client.state.calls_used("generation") == generation_before
     assert parent_path.read_bytes() == original_bytes
     outcome = json.loads(
-        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text()
+        (run_dir / "validation" / "edit_outcomes" / "fiber.json").read_text(encoding="utf-8")
     )
     assert outcome["status"] == "rolled_back"
     assert outcome["reason"] == "global validation regressed after raster edit"
@@ -705,9 +705,9 @@ def test_raster_edit_rolls_back_when_global_validation_regresses(tmp_path: Path)
 def test_layout_patch_reuses_raster_asset_and_rebuilds_graph_layout(tmp_path: Path):
     orchestrator, run_dir, client = _orchestrator(tmp_path, _request())
     assert orchestrator.advance()["status"] == "completed"
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     repair_plan = {
         "schema_version": "1.0",
         "artifact_type": "repair_plan",
@@ -745,12 +745,12 @@ def test_layout_patch_reuses_raster_asset_and_rebuilds_graph_layout(tmp_path: Pa
 
     assert result["status"] == "completed"
     assert client.state.calls_used("generation") == generation_before
-    revised = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    revised = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     fiber = next(item for item in revised["assets"] if item["asset_id"] == "fiber")
     assert revised["revision"] == 2
     assert fiber["bbox"] == [0.1, 0.1, 0.8, 0.8]
     assert fiber["bbox_space"] == "panel"
-    solved_layout = json.loads((run_dir / "plans" / "solved_layout.json").read_text())
+    solved_layout = json.loads((run_dir / "plans" / "solved_layout.json").read_text(encoding="utf-8"))
     node = next(
         item for item in solved_layout["nodes"] if item["node_id"] == "fiber"
     )
@@ -779,9 +779,9 @@ def test_connector_patch_rebuilds_port_bound_edge_without_regeneration(tmp_path:
     }
     orchestrator, run_dir, client = _orchestrator(tmp_path, request)
     assert orchestrator.advance()["status"] == "completed"
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
-    validation = json.loads((run_dir / "validation" / "final.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    validation = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     repair_plan = {
         "schema_version": "1.0",
         "artifact_type": "repair_plan",
@@ -822,7 +822,7 @@ def test_connector_patch_rebuilds_port_bound_edge_without_regeneration(tmp_path:
 
     assert result["status"] == "completed"
     assert client.state.calls_used("generation") == generation_before
-    graph = json.loads((run_dir / "plans" / "figure_graph.json").read_text())
+    graph = json.loads((run_dir / "plans" / "figure_graph.json").read_text(encoding="utf-8"))
     assert graph["typed_edges"] == [{
         "edge_id": "flow",
         "source_port": "fiber-out",
@@ -831,7 +831,7 @@ def test_connector_patch_rebuilds_port_bound_edge_without_regeneration(tmp_path:
         "semantic_type": "feedback",
     }]
     assembly_layout = json.loads(
-        (run_dir / "assembly" / "layout_manifest.json").read_text()
+        (run_dir / "assembly" / "layout_manifest.json").read_text(encoding="utf-8")
     )
     connector = next(
         item for item in assembly_layout["elements"]
@@ -861,8 +861,8 @@ def test_incomplete_figure_brief_is_schema_valid_draft(tmp_path: Path):
 
     orchestrator.advance()
 
-    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text())
-    schema = json.loads(schema_path("figure-brief.schema.json").read_text())
+    brief = json.loads((run_dir / "plans" / "figure_brief.json").read_text(encoding="utf-8"))
+    schema = json.loads(schema_path("figure-brief.schema.json").read_text(encoding="utf-8"))
     assert schema_error_detail(brief, schema) is None
     assert brief["status"] == "draft"
     assert len(brief["required_clarifications"]) == 4
@@ -883,7 +883,7 @@ def test_approved_hybrid_run_returns_artifacts_through_one_seam(tmp_path: Path):
     assert result["artifacts"]["validation_report"]
     assert result["artifacts"]["exports"]
     assert (run_dir / "exports" / "figure.png").is_file()
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     assert plan["brief_ref"]["artifact"] == "plans/figure_brief.json"
     assert plan["delivery"]["export_target"] == "general"
     assert plan["language"] == "en"
@@ -925,7 +925,7 @@ def test_execution_uses_the_approved_plan_not_mutated_raw_request(tmp_path: Path
 
     assert completed["status"] == "completed"
     assert (run_dir / "plots" / "curve" / "plot.png").is_file()
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     curve = next(asset for asset in plan["assets"] if asset["asset_id"] == "curve")
     fiber = next(asset for asset in plan["assets"] if asset["asset_id"] == "fiber")
     assert curve["source"]["plot_spec"].endswith("plot_spec_line.json")
@@ -948,9 +948,9 @@ def test_worker_contexts_are_phase_scoped(tmp_path: Path):
     }
     assert by_phase["planning"].context["figure_brief"]["schema_version"] == "1.0"
     for phase in ("intake", "planning", "review_and_repair"):
-        prompt_text = (Path(orchestrator.run_dir) / "prompts" / f"{phase}.txt").read_text()
+        prompt_text = (Path(orchestrator.run_dir) / "prompts" / f"{phase}.txt").read_text(encoding="utf-8")
         metadata = json.loads(
-            (Path(orchestrator.run_dir) / "prompts" / f"{phase}.json").read_text()
+            (Path(orchestrator.run_dir) / "prompts" / f"{phase}.json").read_text(encoding="utf-8")
         )
         assert prompt_text
         assert metadata["prompt_version"] == "1.0"
@@ -986,7 +986,7 @@ def test_vector_source_is_rendered_and_recorded(tmp_path):
     }], labels=[])
     orchestrator, run_dir, client = _orchestrator(tmp_path, request)
     orchestrator.advance()
-    manifest = json.loads((run_dir / "asset_manifest.json").read_text())
+    manifest = json.loads((run_dir / "asset_manifest.json").read_text(encoding="utf-8"))
     assert [a["asset_id"] for a in manifest["assets"]] == ["offline_flow"]
     assert (run_dir / "vectors" / "offline_flow.svg").is_file()
     image = Image.open(run_dir / "assembly" / "figure.png").convert("RGB")
@@ -1031,11 +1031,11 @@ def test_missing_assets_block_assembly_with_specific_ids(tmp_path, monkeypatch, 
     orchestrator, run_dir, client = _orchestrator(tmp_path, request)
     result = orchestrator.advance()
     assert result["next_action"] == "repair_required"
-    report = json.loads((run_dir / "validation" / "final.json").read_text())
+    report = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     for i in range(survivors, 3):
         assert any(f"flow-{i}" in c["detail"] for c in report["checks"])
     assert not (run_dir / "assembly" / "figure.png").exists()
     assert not (run_dir / "exports" / "figure.png").exists()
     assert client.state.calls_used("final_validation") == 0
-    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text())
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
     assert execution["status"] == "failed"

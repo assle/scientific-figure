@@ -42,7 +42,7 @@ def test_transaction_rolls_back_replacements_in_reverse(tmp_path: Path) -> None:
             raise RuntimeError("injected")
 
     assert destination.read_text(encoding="utf-8") == "before"
-    log = json.loads(next(paths.transaction_log_dir.glob("*.json")).read_text())
+    log = json.loads(next(paths.transaction_log_dir.glob("*.json")).read_text(encoding="utf-8"))
     assert log["status"] == "rolled_back"
     assert log["rolled_back_paths"] == [str(destination)]
     assert install_lock_status(paths.install_lock_dir) == "missing"

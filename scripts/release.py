@@ -106,6 +106,21 @@ def select_target_version(
     return resolve_target_version(current, selector)
 
 
+def select_base_revision(
+    *,
+    current: str,
+    target: str,
+    origin_version: str | None,
+    prepared_version: str | None,
+    prepared_ref: str,
+) -> str:
+    if prepared_version == target:
+        return prepared_ref
+    if current == target:
+        return "HEAD"
+    return "origin/main" if origin_version == target else "HEAD"
+
+
 def candidate_ref(version: str) -> str:
     return f"refs/heads/codex/release-{version}"
 
@@ -253,10 +268,13 @@ def main(argv: list[str] | None = None) -> int:
     origin_version = _version_at(repository, "origin/main")
     prepared_ref = candidate_ref(target)
     prepared_version = _version_at(repository, prepared_ref)
-    if prepared_version == target:
-        base_revision = prepared_ref
-    else:
-        base_revision = "origin/main" if origin_version == target else "HEAD"
+    base_revision = select_base_revision(
+        current=current,
+        target=target,
+        origin_version=origin_version,
+        prepared_version=prepared_version,
+        prepared_ref=prepared_ref,
+    )
     notes_source = args.notes_file.resolve() if args.notes_file is not None else None
     if args.publish and target != current and notes_source is None:
         raise RuntimeError(

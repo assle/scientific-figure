@@ -30,7 +30,7 @@ def test_whole_flowchart_returns_summary_before_any_image_call(tmp_path):
     assert result['next_action'] == 'resume'
     assert 'diagram' in result['generation_summary']
     assert client.state.calls_used('generation') == 0
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert [(a['asset_id'], a['routing']) for a in plan['assets']] == [('diagram', 'image_model')]
     assert plan['generation_units'][0]['members'] == ['finish', 'start']
     assert plan['generation_summary'] == result['generation_summary']
@@ -39,7 +39,7 @@ def test_whole_flowchart_returns_summary_before_any_image_call(tmp_path):
 def test_whole_flowchart_conditions_allow_text_and_preserve_background(tmp_path):
     orch, run, client = _orchestrator(tmp_path, diagram_request())
     orch.advance('start')
-    condition = json.loads((run / 'plans/generation_conditions.json').read_text())['conditions'][0]
+    condition = json.loads((run / 'plans/generation_conditions.json').read_text(encoding="utf-8"))['conditions'][0]
     assert 'no text' not in condition['negative_constraints']
     assert 'no symbols' not in condition['negative_constraints']
     assert 'transparent background' not in condition['prompt']
@@ -55,8 +55,8 @@ def test_internal_graph_is_preserved_but_not_drawn_over_image(tmp_path):
              'groups': [], 'labels': [], 'constraints': []}
     orch, run, _ = _orchestrator(tmp_path, diagram_request(figure_graph=graph))
     assert orch.advance('start')['next_action'] == 'resume'
-    semantic = json.loads((run / 'plans/semantic_graph.json').read_text())
-    rendered = json.loads((run / 'plans/figure_graph.json').read_text())
+    semantic = json.loads((run / 'plans/semantic_graph.json').read_text(encoding="utf-8"))
+    rendered = json.loads((run / 'plans/figure_graph.json').read_text(encoding="utf-8"))
     assert [e['edge_id'] for e in semantic['typed_edges']] == ['flow']
     assert rendered['typed_edges'] == []
     assert [n['node_id'] for n in rendered['nodes']] == ['diagram']
@@ -67,7 +67,7 @@ def test_image_unit_requires_specific_review_evidence(tmp_path):
     orch.advance('start')
     result = orch.advance('resume')
     assert client.state.calls_used('generation') == 1
-    report = json.loads((run / 'validation/final.json').read_text())
+    report = json.loads((run / 'validation/final.json').read_text(encoding="utf-8"))
     required = [check for check in report['checks'] if check['check_id'].startswith('generation_unit_diagram_')]
     assert len(required) == 3
     assert all(check['status'] == 'fail' for check in required)
@@ -127,7 +127,7 @@ def test_explicit_revision_changes_route_without_reasking_and_keeps_budgets(tmp_
     assert '生图模型' in result['generation_summary']
     assert client.state.calls_used('generation') == 2
     assert client.state.output_tokens_for('planning', 'local', 'model') == 32768
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert plan['revision'] == 2
     assert [asset['routing'] for asset in plan['assets']] == ['image_model']
 
@@ -199,7 +199,7 @@ def test_whole_unit_regeneration_does_not_switch_to_svg(tmp_path):
     result = orch.advance({'action': 'apply_repair', 'repairs': [
         {'asset_id': 'diagram', 'route': 'image_model', 'prompt': 'Correct arrow direction while preserving the complete unit'}]})
     assert client.state.calls_used('generation') == before + 1
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert [a['routing'] for a in plan['assets']] == ['image_model']
     assert plan['generation_units'][0]['members'] == ['finish', 'start']
     assert not list((run / 'vectors').glob('*.svg'))
@@ -219,7 +219,7 @@ def test_module_and_hybrid_ownership_are_explicit(tmp_path):
     request = diagram_request(generation_intent=[{'unit_id': 'one-module', 'method': 'image_model', 'scope': 'module', 'panel_id': 'a', 'members': ['start']}])
     orch, run, _ = _orchestrator(tmp_path, request)
     assert orch.advance('start')['next_action'] == 'resume'
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert {a['asset_id']: a['routing'] for a in plan['assets']} == {'one-module': 'image_model', 'finish': 'svg'}
     other = diagram_request(generation_intent=[{'unit_id': 'mixed', 'method': 'hybrid', 'scope': 'figure',
                                               'ownership': {'start': 'vector', 'finish': 'vector'}}])
@@ -251,7 +251,7 @@ def test_intake_cannot_discard_explicit_selection(tmp_path):
             return result
     orch, run, client = _orchestrator(tmp_path, diagram_request(), worker=WrongIntake())
     assert orch.advance('start')['next_action'] == 'resume'
-    brief = json.loads((run / 'plans/figure_brief.json').read_text())
+    brief = json.loads((run / 'plans/figure_brief.json').read_text(encoding="utf-8"))
     assert brief['request']['generation_intent'][0]['unit_id'] == 'diagram'
     assert (run / 'plans/figure_plan.json').exists()
     assert client.state.calls_used('generation') == 0
@@ -261,7 +261,7 @@ def test_execution_rejects_replaced_plan_route(tmp_path):
     orch, run, client = _orchestrator(tmp_path, diagram_request())
     orch.advance('start')
     path = run / 'plans/figure_plan.json'
-    plan = json.loads(path.read_text()); plan['assets'][0]['routing'] = 'svg'
+    plan = json.loads(path.read_text(encoding="utf-8")); plan['assets'][0]['routing'] = 'svg'
     path.write_text(json.dumps(plan))
     result = orch.advance('resume')
     assert result['next_action'] == 'revise_generation_intent'
@@ -273,10 +273,10 @@ def test_explicit_image_controls_reach_generation_conditions(tmp_path):
         'parameters': {'size': '2048x2048', 'seed': 123}, 'candidate_count': 2}])
     orch, run, _ = _orchestrator(tmp_path, request)
     orch.advance('start')
-    condition = json.loads((run / 'plans/generation_conditions.json').read_text())['conditions'][0]
+    condition = json.loads((run / 'plans/generation_conditions.json').read_text(encoding="utf-8"))['conditions'][0]
     assert condition['parameters']['size'] == '2048x2048'
     assert condition['parameters']['seed'] == 123
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert plan['estimated_paid_calls']['generation'] == 2
 
 
@@ -286,9 +286,9 @@ def test_hybrid_can_assign_a_semantic_component_to_the_image_model(tmp_path):
     orch, run, _ = _orchestrator(tmp_path, request)
     result = orch.advance('start')
     assert result['next_action'] == 'resume', result
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     assert {a['asset_id']: a['routing'] for a in plan['assets']} == {'start': 'image_model', 'finish': 'svg'}
-    condition = json.loads((run / 'plans/generation_conditions.json').read_text())['conditions'][0]
+    condition = json.loads((run / 'plans/generation_conditions.json').read_text(encoding="utf-8"))['conditions'][0]
     assert condition['generation_unit']['requirements']['labels'] == ['Start']
     assert 'no text' not in condition['negative_constraints']
 
@@ -362,7 +362,7 @@ def test_recorded_whole_figure_vector_shape_keeps_ten_members(tmp_path):
     orch, run, _ = _orchestrator(tmp_path, request)
     assert orch.advance("start")["next_action"] == "resume"
 
-    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    plan = json.loads((run / "plans/figure_plan.json").read_text(encoding="utf-8"))
     assert len(plan["generation_units"][0]["members"]) == 10
     assert len(plan["assets"]) == 10
     assert all(asset["generation_unit_id"] == "panorama" for asset in plan["assets"])
@@ -404,8 +404,8 @@ def test_recorded_whole_figure_image_shape_preserves_semantic_graph(tmp_path):
     orch, run, _ = _orchestrator(tmp_path, request)
     assert orch.advance("start")["next_action"] == "resume"
 
-    plan = json.loads((run / "plans/figure_plan.json").read_text())
-    semantic = json.loads((run / "plans/semantic_graph.json").read_text())
+    plan = json.loads((run / "plans/figure_plan.json").read_text(encoding="utf-8"))
+    semantic = json.loads((run / "plans/semantic_graph.json").read_text(encoding="utf-8"))
     assert len(plan["generation_units"][0]["members"]) == 28
     assert [(asset["asset_id"], asset["routing"]) for asset in plan["assets"]] == [
         ("panorama", "image_model")
@@ -437,10 +437,10 @@ def test_inline_style_bible_is_normalized_and_used_end_to_end(tmp_path):
     result = orch.advance("start")
 
     assert result["next_action"] == "resume"
-    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    brief = json.loads((run / "plans/figure_brief.json").read_text(encoding="utf-8"))
     assert brief["style"] == {"kind": "inline", "style_bible": style_bible}
-    assert json.loads((run / "style_bible.json").read_text()) == style_bible
-    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    assert json.loads((run / "style_bible.json").read_text(encoding="utf-8")) == style_bible
+    plan = json.loads((run / "plans/figure_plan.json").read_text(encoding="utf-8"))
     assert plan["style_source"]["kind"] == "inline"
     assert plan["style_source"]["content_hash"].startswith("sha256:")
     assert "orthographic front view" in result["generation_summary"]
@@ -480,9 +480,9 @@ def test_natural_language_style_compiles_without_default_fallback(tmp_path):
     result = orch.advance("start")
 
     assert result["next_action"] == "resume"
-    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    brief = json.loads((run / "plans/figure_brief.json").read_text(encoding="utf-8"))
     assert brief["style"] == {"kind": "description", "description": description}
-    resolved = json.loads((run / "style_bible.json").read_text())
+    resolved = json.loads((run / "style_bible.json").read_text(encoding="utf-8"))
     assert resolved["projection"] == "orthographic front view"
     assert resolved["view"] != "isometric"
     assert resolved["material"] != "matte with subtle specular highlights on glass"
@@ -519,7 +519,7 @@ def test_natural_language_style_can_resolve_to_isometric_glass(tmp_path):
     result = orch.advance("start")
 
     assert result["next_action"] == "resume"
-    resolved = json.loads((run / "style_bible.json").read_text())
+    resolved = json.loads((run / "style_bible.json").read_text(encoding="utf-8"))
     assert resolved["projection"] == "oblique isometric projection"
     assert resolved["material"] == "translucent glass"
     assert resolved["background"] == "black"
@@ -592,7 +592,7 @@ def test_invalid_model_style_advice_pauses_without_changing_brief(tmp_path):
 
     assert result["status"] == "paused"
     assert "style resolution failed" in result["error"]
-    brief = json.loads((run / "plans/figure_brief.json").read_text())
+    brief = json.loads((run / "plans/figure_brief.json").read_text(encoding="utf-8"))
     assert brief["style"] == {"kind": "description", "description": description}
     assert not (run / "plans/figure_plan.json").exists()
     assert client.state.calls_used("generation") == 0
@@ -604,19 +604,19 @@ def test_whole_figure_image_plan_exposes_asset_and_composition_blueprints(tmp_pa
     result = orch.advance("start")
 
     assert result["next_action"] == "resume"
-    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    plan = json.loads((run / "plans/figure_plan.json").read_text(encoding="utf-8"))
     assert plan["asset_blueprint_ref"]["artifact"] == "plans/asset_blueprint.svg"
     assert plan["composition_blueprint_ref"]["artifact"] == "plans/composition_blueprint.svg"
     assert plan["blueprint_ref"] == plan["composition_blueprint_ref"]
-    asset_svg = (run / "plans/asset_blueprint.svg").read_text()
-    composition_svg = (run / "plans/composition_blueprint.svg").read_text()
+    asset_svg = (run / "plans/asset_blueprint.svg").read_text(encoding="utf-8")
+    composition_svg = (run / "plans/composition_blueprint.svg").read_text(encoding="utf-8")
     assert set(part.split('"')[0] for part in asset_svg.split('data-node-id="')[1:]) == {
         "diagram"
     }
     assert composition_svg.count('data-region-id="') >= 2
     assert 'data-node-id="start"' in composition_svg
     assert 'data-node-id="finish"' in composition_svg
-    client_calls = json.loads((run / "run_state.json").read_text())["calls"]["counts"]
+    client_calls = json.loads((run / "run_state.json").read_text(encoding="utf-8"))["calls"]["counts"]
     assert client_calls.get("generation", 0) == 0
 
 
@@ -635,7 +635,7 @@ def test_composition_blueprint_respects_forbidden_cards_and_box_arrows(tmp_path)
     orch, run, _ = _orchestrator(tmp_path, diagram_request(style=style))
     assert orch.advance("start")["next_action"] == "resume"
 
-    composition = (run / "plans/composition_blueprint.svg").read_text()
+    composition = (run / "plans/composition_blueprint.svg").read_text(encoding="utf-8")
     assert 'data-region-id="' in composition
     assert '<rect' not in "\n".join(
         line for line in composition.splitlines() if 'data-region-id="' in line
@@ -667,11 +667,11 @@ def test_model_composition_cannot_drop_style_bible_prohibitions(tmp_path):
     )
     assert orch.advance("start")["next_action"] == "resume"
 
-    plan = json.loads((run / "plans/figure_plan.json").read_text())
+    plan = json.loads((run / "plans/figure_plan.json").read_text(encoding="utf-8"))
     assert set(plan["composition"]["forbidden_patterns"]) >= {
         "watermarks", "card grid", "box-and-arrow flowchart",
     }
-    composition = (run / "plans/composition_blueprint.svg").read_text()
+    composition = (run / "plans/composition_blueprint.svg").read_text(encoding="utf-8")
     assert "marker-end=" not in composition
 
 
@@ -683,7 +683,7 @@ def test_hybrid_top_level_label_can_be_image_owned_with_explicit_placement(tmp_p
     orch, run, _ = _orchestrator(tmp_path, request)
     result = orch.advance('start')
     assert result['next_action'] == 'resume', result
-    plan = json.loads((run / 'plans/figure_plan.json').read_text())
+    plan = json.loads((run / 'plans/figure_plan.json').read_text(encoding="utf-8"))
     caption = next(a for a in plan['assets'] if a['asset_id'] == 'caption')
     assert caption['routing'] == 'image_model'
     assert caption['panel_id'] == 'a'
@@ -713,8 +713,8 @@ def test_regeneration_rolls_back_image_and_conditions_on_global_regression(tmp_p
     orch, run, client = _orchestrator(tmp_path, diagram_request(), transport=Regression())
     orch.advance('start'); assert orch.advance('resume')['next_action'] == 'repair_required'
     original = (run / 'assets/diagram.png').read_bytes()
-    before = json.loads((run / 'plans/generation_conditions.json').read_text())
+    before = json.loads((run / 'plans/generation_conditions.json').read_text(encoding="utf-8"))
     orch.advance({'action': 'apply_repair', 'repairs': [{'asset_id': 'diagram', 'route': 'image_model', 'prompt': 'Repair the connections'}]})
     assert (run / 'assets/diagram.png').read_bytes() == original
-    assert json.loads((run / 'plans/generation_conditions.json').read_text()) == before
+    assert json.loads((run / 'plans/generation_conditions.json').read_text(encoding="utf-8")) == before
     assert client.state.calls_used('generation') == 2

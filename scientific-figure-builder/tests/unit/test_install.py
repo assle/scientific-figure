@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path, PureWindowsPath
@@ -95,8 +96,14 @@ def test_root_installer_requires_release_for_complete_codex_activation(
 
 def test_root_installer_help_explains_complete_release_activation() -> None:
     repository = Path(__file__).resolve().parents[3]
+    command = [str(repository / "install.sh"), "--help"]
+    if os.name == "nt":
+        shell = shutil.which("sh")
+        if shell is None:
+            pytest.skip("POSIX shell is required for the source installer")
+        command.insert(0, shell)
     completed = subprocess.run(
-        [str(repository / "install.sh"), "--help"],
+        command,
         cwd=repository,
         capture_output=True,
         text=True,
@@ -108,6 +115,8 @@ def test_root_installer_help_explains_complete_release_activation() -> None:
 
 
 def _stage_test_python(runtime_dir: Path, with_gui: bool = False) -> Path:
+    if os.name == "nt":
+        pytest.skip("POSIX runtime stub")
     python = runtime_dir / ".venv" / "bin" / "python"
     python.parent.mkdir(parents=True, exist_ok=True)
     gui_probe_status = 0 if with_gui else 1
@@ -152,7 +161,8 @@ def test_delivery_paths_support_global_and_project_scopes(tmp_path: Path):
         tmp_path / "codex" / "skills" / "scientific-figure-builder"
     )
     assert global_paths.codex_config_file == tmp_path / "codex" / "config.toml"
-    assert global_paths.launcher_file == tmp_path / "bin" / "scientific-figure"
+    launcher_name = "scientific-figure.cmd" if os.name == "nt" else "scientific-figure"
+    assert global_paths.launcher_file == tmp_path / "bin" / launcher_name
     assert global_paths.runtime_dir == (
         tmp_path / "install" / "global" / "runtimes" / __version__
     )
@@ -220,15 +230,16 @@ def test_install_delivery_is_discoverable_and_preserves_codex_config(tmp_path: P
 
 def test_unrelated_global_launcher_blocks_install_before_changes(tmp_path: Path):
     source = Path(__file__).resolve().parents[2]
-    launcher = tmp_path / "bin" / "scientific-figure"
-    launcher.parent.mkdir(parents=True)
-    launcher.write_text("#!/bin/sh\necho unrelated\n", encoding="utf-8")
     paths = delivery_paths(
         config_home=tmp_path / "config", data_home=tmp_path / "data",
         install_home=tmp_path / "install",
         state_home=tmp_path / "state",
         codex_home=tmp_path / "codex", bin_dir=tmp_path / "bin",
     )
+    assert paths.launcher_file is not None
+    launcher = paths.launcher_file
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\necho unrelated\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="unrelated launcher"):
         _install(
             source,
@@ -597,7 +608,7 @@ def test_failure_at_every_commit_stage_leaves_no_partial_install(
     assert not paths.install_lock_dir.exists()
     assert not list(paths.staging_parent.glob("*"))
     assert not list(paths.transaction_backup_parent.glob("*"))
-    log = json.loads(next(paths.transaction_log_dir.glob("*.json")).read_text())
+    log = json.loads(next(paths.transaction_log_dir.glob("*.json")).read_text(encoding="utf-8"))
     assert log["status"] == "rolled_back"
 
 

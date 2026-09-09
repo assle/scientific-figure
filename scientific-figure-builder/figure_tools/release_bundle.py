@@ -301,7 +301,7 @@ def _require_component_identity(
     skill = (
         repository / "scientific-figure-builder" / "SKILL.md"
     ).read_text(encoding="utf-8")
-    if re.search(rf'(?m)^  version: "{re.escape(expected)}"$', skill) is None:
+    if re.search(rf'(?m)^  version: "{re.escape(expected)}"\r?$', skill) is None:
         raise ValueError("Workflow Skill version does not match Product version")
     _require_wheel_identity(wheel.read_bytes(), expected)
 
@@ -328,7 +328,7 @@ def _verify_archived_component_identity(
         raise ValueError("Bundled Native plugin version does not match manifest")
     skill = content["skill"].decode("utf-8")
     if re.search(
-        rf'(?m)^  version: "{re.escape(manifest.product_version)}"$', skill,
+        rf'(?m)^  version: "{re.escape(manifest.product_version)}"\r?$', skill,
     ) is None:
         raise ValueError("Bundled Workflow Skill version does not match manifest")
     _require_wheel_identity(content["wheel"], manifest.product_version)

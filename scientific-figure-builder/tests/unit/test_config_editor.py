@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,7 @@ def test_model_id_is_free_text_even_when_it_contains_security_words(tmp_path: Pa
     assert "token-model" in path.read_text(encoding="utf-8")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
 def test_successful_save_preserves_posix_mode(tmp_path: Path):
     path = tmp_path / "config.yaml"
     path.write_text("models: {}\n", encoding="utf-8")

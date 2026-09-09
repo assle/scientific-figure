@@ -45,10 +45,10 @@ def test_release_refuses_to_move_an_existing_tag() -> None:
 
 
 def test_ci_owns_quality_bundle_and_tag_release_workflows() -> None:
-    ci_text = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    ci_text = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     release_text = (
         REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     ci = yaml.safe_load(ci_text)
     release = yaml.safe_load(release_text)
 
@@ -65,7 +65,7 @@ def test_ci_owns_quality_bundle_and_tag_release_workflows() -> None:
     assert "gh release create" in release_commands
     shared_verifier = (
         REPOSITORY_ROOT / "scripts" / "verify_release_candidate.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     assert '"--extra", "gui"' in shared_verifier
 
 
@@ -132,3 +132,14 @@ def test_unfinished_current_version_is_resumed_instead_of_bumped_again() -> None
     assert module.select_target_version(
         "0.6.0", "minor", current_release_complete=True,
     ) == "0.7.0"
+
+
+def test_same_version_local_fix_takes_precedence_over_origin() -> None:
+    module = _module()
+    assert module.select_base_revision(
+        current="0.6.0",
+        target="0.6.0",
+        origin_version="0.6.0",
+        prepared_version=None,
+        prepared_ref="codex/release-0.6.0",
+    ) == "HEAD"

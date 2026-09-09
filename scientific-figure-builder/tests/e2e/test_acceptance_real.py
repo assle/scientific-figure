@@ -160,10 +160,10 @@ def test_case3_hybrid_multipanel(tmp_path: Path):
         assert (run_dir / "exports" / f"figure.{ext}").is_file()
 
     # AI asset is isolated and transparent; data plot from Python.
-    manifest = json.loads((run_dir / "asset_manifest.json").read_text())
+    manifest = json.loads((run_dir / "asset_manifest.json").read_text(encoding="utf-8"))
     fiber = next(a for a in manifest["assets"] if a["asset_id"] == "fiber")
     assert fiber["transparent"] is True
-    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text())
+    plan = json.loads((run_dir / "plans" / "figure_plan.json").read_text(encoding="utf-8"))
     plan_routing = {a["asset_id"]: a["routing"] for a in plan["assets"]}
     assert plan_routing["curve"] == "python"
     assert plan_routing["fiber"] == "image_model"
@@ -174,7 +174,7 @@ def test_case3_hybrid_multipanel(tmp_path: Path):
     # Reports complete.
     assert (run_dir / "generation_report.md").is_file()
     assert (run_dir / "run_state.json").is_file()
-    final = json.loads((run_dir / "validation" / "final.json").read_text())
+    final = json.loads((run_dir / "validation" / "final.json").read_text(encoding="utf-8"))
     # The vision model is non-deterministic, so a blocking final summary is
     # expected on some runs (that's why force_export is used). The acceptance
     # criterion is that the final validation actually ran and produced a

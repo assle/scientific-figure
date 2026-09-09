@@ -14,7 +14,7 @@ FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 
 
 def _load(name):
-    return json.loads((FIXTURES / name).read_text())
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
 def test_graph_structure_requires_every_node_and_directed_edge():
