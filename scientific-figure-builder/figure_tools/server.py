@@ -175,6 +175,12 @@ def _tool_list() -> list[dict[str, Any]]:
 
 
 def serve_stdio() -> int:
+    try:
+        from figure_tools.local_status import cleanup_from_installed_runtime
+
+        cleanup_from_installed_runtime()
+    except (OSError, RuntimeError, ValueError):
+        pass
     messages: queue.Queue = queue.Queue()
     cancellations: dict[Any, threading.Event] = {}
     lock = threading.Lock()

@@ -6,6 +6,8 @@ All tests use temp config files - the real opencode.json is never touched.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
@@ -34,6 +36,71 @@ from install.install_delivery import (
     validate_launcher_target,
     verify_delivery,
 )
+
+
+def test_root_installer_routes_release_activation_through_update_cli(
+    tmp_path: Path,
+) -> None:
+    repository = Path(__file__).resolve().parents[3]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    invocation = tmp_path / "uv-args.txt"
+    uv = fake_bin / "uv"
+    uv.write_text(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$UV_ARGS_FILE\"\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    environment = dict(os.environ)
+    environment["PATH"] = str(fake_bin) + os.pathsep + environment["PATH"]
+    environment["UV_ARGS_FILE"] = str(invocation)
+
+    completed = subprocess.run(
+        [str(repository / "install.sh"), "--codex", "--release", "v0.6.0"],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert invocation.read_text(encoding="utf-8").splitlines() == [
+        "run", "--frozen", "--directory",
+        str(repository / "scientific-figure-builder"),
+        "python", "-m", "figure_tools", "update",
+        "--codex", "--release", "v0.6.0",
+    ]
+
+
+def test_root_installer_requires_release_for_complete_codex_activation(
+    tmp_path: Path,
+) -> None:
+    repository = Path(__file__).resolve().parents[3]
+    environment = dict(os.environ)
+    environment.update({
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        "XDG_RUNTIME_DIR": str(tmp_path / "session"),
+        "SCIENTIFIC_FIGURE_INSTALL_HOME": str(tmp_path / "install"),
+        "SCIENTIFIC_FIGURE_BIN_DIR": str(tmp_path / "bin"),
+        "CODEX_HOME": str(tmp_path / "codex"),
+    })
+
+    completed = subprocess.run(
+        [str(repository / "install.sh"), "--codex"],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "--release" in completed.stderr
+    assert "--runtime-only" in completed.stderr
 from figure_tools.install_paths import activate_runtime, read_active_runtime
 
 MCP_ENTRY = {

@@ -176,15 +176,16 @@ class InstallTransaction:
             key=lambda item: item.stat().st_mtime,
             reverse=True,
         )
-        for expired in logs[20:]:
+        for expired in logs[10:]:
             _remove(expired)
 
 
 def prune_runtime_versions(
     paths: DeliveryPaths,
     previous_runtime: Path | None,
+    protected_runtimes: tuple[Path, ...] = (),
 ) -> list[str]:
-    """Keep the active runtime and at most one previously verified runtime."""
+    """Remove inactive runtimes except an explicit rollback or in-use set."""
 
     runtime_root = paths.runtime_dir.parent
     if not runtime_root.is_dir():
@@ -192,6 +193,11 @@ def prune_runtime_versions(
     keep = {paths.runtime_dir.absolute()}
     if previous_runtime is not None and previous_runtime.is_dir():
         keep.add(previous_runtime.absolute())
+    keep.update(
+        runtime.absolute()
+        for runtime in protected_runtimes
+        if runtime.is_dir()
+    )
     removed: list[str] = []
     for candidate in runtime_root.iterdir():
         if not candidate.is_dir() or candidate.absolute() in keep:

@@ -47,7 +47,8 @@ def test_release_metadata_mirrors_product_version() -> None:
     assert str(citation["version"]) == expected
 
 
-def test_readmes_publish_current_development_version() -> None:
-    expected = _product_version()
+def test_readmes_use_dynamic_latest_release_metadata() -> None:
     for name in ("README.md", "README.zh-CN.md"):
-        assert expected in (REPOSITORY_ROOT / name).read_text(encoding="utf-8")
+        text = (REPOSITORY_ROOT / name).read_text(encoding="utf-8")
+        assert "img.shields.io/github/v/release/assle/scientific-figure" in text
+        assert "https://github.com/assle/scientific-figure/releases/latest" in text

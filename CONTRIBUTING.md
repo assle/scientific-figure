@@ -42,14 +42,16 @@ uv run pytest
 - 1.0 前无法保持兼容的变更使用 minor 版本，并在发布说明中明确迁移方式。
 - 1.0 后不兼容的公开契约变更使用 major 版本。
 
-一次正式发布应完成以下步骤：
+需要发布的功能修改应先正常提交到 `main`，然后运行：
 
-1. 更新 `pyproject.toml` 的 Product version，并同步 `SKILL.md` 与 `CITATION.cff`。
-   运行 `python3 scripts/sync_plugin_bundle.py`，使原生插件 Skill 快照和清单版本同步。
-2. 运行 `uv lock`，使锁文件记录相同的本地包版本。
-3. 运行完整测试，并验证 `scientific-figure --version` 与 MCP `serverInfo.version`。
-4. 创建带 `v` 前缀且与 Product version 一致的不可变 Git tag。
-5. 从该 tag 创建 GitHub Release；在原生插件交付完成后，同一版本也用于插件清单。
+```bash
+python3 scripts/release.py patch --publish
+```
+
+脚本在隔离 worktree 中生成版本提交，推送后等待权威 CI，通过后才创建不可变 tag；tag
+workflow 构建完整 Product bundle、Core wheel、Release manifest 和校验摘要，并创建
+GitHub Release。详细的本地激活、宿主重载、退出码和兼容入口见
+[发布与本地更新](docs/operations/release-and-local-activation.md)。
 
 Schema version、Phase prompt version 和 recipe version 是独立兼容性契约，不能因为
 Product version 变化而自动递增。

@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-可配置-blue" alt="Provider 可配置">
   <img src="https://img.shields.io/badge/图表-可复现-success" alt="图表可复现">
-  <img src="https://img.shields.io/badge/版本-0.5.1-blue" alt="版本 0.5.1">
+  <a href="https://github.com/assle/scientific-figure/releases/latest"><img src="https://img.shields.io/github/v/release/assle/scientific-figure?label=版本" alt="最新版本"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -28,7 +28,7 @@
 Scientific Figure Builder 是完整的开源产品，不等同于其中任一组件。它由工作流
 Skill、本地生命周期 MCP 服务、确定性核心运行时、CLI 和原生配置应用共同组成。
 
-当前 `0.5.1` 版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
+最新固定版本提供 **原生 Codex 插件**、独立 OpenCode Agent 集成和带版本的
 核心运行时。原生插件负责 Codex 中 Workflow Skill 与 MCP 声明的发现、启停、升级和
 移除；独立核心运行时让确定性执行与可选配置应用不进入宿主插件缓存。
 
@@ -195,14 +195,23 @@ Run state 的 `output_token_limits` 保存已发出的阶段额度，尝试记�
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --codex --with-gui
-codex plugin marketplace add .
-codex plugin add scientific-figure-builder@scientific-figure
+./install.sh --codex --release latest --with-gui
 ```
 
-核心命令只安装确定性引擎、生命周期 MCP 服务、CLI 和可选配置应用，不修改 Codex
-配置；repo marketplace 随后让 Codex 原生安装并管理插件。无桌面环境可省略
-`--with-gui`。OpenCode 用户使用独立入口 `./install.sh --opencode`。
+经过验证的 Product bundle 会在一次本地激活中安装 Core、CLI、Native plugin 和可选
+Configuration app。无桌面环境可省略 `--with-gui`；OpenCode 用户把 `--codex` 换成
+`--opencode`。
+
+从旧版本升级时，安装新 Runtime 不会热更新已经运行的 MCP 或 GUI。发布维护者和需要确保
+本机所有进程都切换到新版的用户，请执行[当前发布与本地更新流程](docs/operations/release-and-local-activation.md)，
+其中包含后台组成、版本来源、宿主重启和最终进程核对。
+
+以后更新和检查状态只需要：
+
+```bash
+scientific-figure update --latest
+scientific-figure status
+```
 
 ### 2. 配置 Provider
 
@@ -368,19 +377,16 @@ DashScope Native 会把上述 `compatible-mode/v1` 地址规范化为同地域�
 ## 安装选项
 
 ```bash
-./install.sh                       # 默认：只安装核心运行时与 CLI
-./install.sh --codex              # 显式安装原生 Codex 插件前置运行时
-./install.sh --opencode           # 只安装核心与 OpenCode 集成
-./install.sh --all                # 显式安装旧双宿主集成
-./install.sh --opencode --project /path/to/project
-./install.sh --verify             # 只验证核心并报告 GUI 状态
-./install.sh --verify --opencode  # 验证核心与 OpenCode 集成
-./install.sh --verify --with-gui  # 要求核心与 GUI 都已安装
+./install.sh --codex --release latest --with-gui
+./install.sh --opencode --release vX.Y.Z
+./install.sh --runtime-only --release vX.Y.Z
+scientific-figure update --latest
+scientific-figure update --bundle /path/to/product-bundle.tar.gz
+scientific-figure status --verbose
 ```
 
-迁移期保留兼容别名：`--runtime-only` 等价于默认 Core 目标，`--opencode-only` 等价于
-`--opencode`，`--codex-only` 只安装 deprecated 的手工 Codex Skill/config 集成。正式
-Codex 路径是 `--codex` 后通过 marketplace 安装原生插件。
+`--codex` 表示完整 Codex 激活；`--runtime-only` 是明确的 Core-only 路径。旧的
+`--opencode-only` 和 `--codex-only` 至少保留一个 minor 迁移周期，并输出兼容提示。
 
 OpenCode 配置更新理解 JSONC。安装、升级和定向卸载只编辑
 `mcp.scientific-figure`（缺少时才创建 `mcp`/`$schema` 父节点），无关字段顺序、缩进、
@@ -422,9 +428,10 @@ Product version 和 GUI 选择；Result 报告 committed、retained、pruned 与
 只负责把参数翻译到这个 Interface。OpenCode 与 deprecated 手工 Codex 交付由同一事务
 中的独立 Host delivery Adapter 处理；原生 Codex 插件仍由宿主管理。
 
-保留策略只留下活动 Product version 和至多一个已验证旧运行时。临时事务备份在提交或
-回滚后删除。脱敏事务日志位于对应 XDG state 目录并最多保留 20 条，只记录路径和结果，
-不记录配置正文或凭据。卸载器能够识别活动锁，不会删除正在安装的 runtime。
+激活期间保留上一 Verified Runtime 用于补偿，并保护所有仍被 MCP/GUI 进程引用的 Runtime；
+进程收敛后，按需启动会删除过期 Runtime 和 Plugin cache。临时事务备份在提交或回滚后
+删除。脱敏事务日志位于对应 XDG state 目录并最多保留 10 条，只记录路径和结果，不记录
+配置正文或凭据。卸载器能够识别活动锁，不会删除正在安装的 Runtime。
 
 <details>
 <summary><strong>安全卸载</strong></summary>
@@ -457,7 +464,8 @@ Scientific Figure Builder 遵循[语义化版本](https://semver.org/lang/zh-CN/
 scientific-figure --version
 ```
 
-项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。`v0.5.1` 是最新固定发布。
+项目当前处于 1.0 之前，`0.y.z` 版本仍可能调整公开接口。当前版本见
+[最新固定发布](https://github.com/assle/scientific-figure/releases/latest)。
 只有仓库同时存在不可变的 `vX.Y.Z` Git tag 和对应
 GitHub Release 时，才构成一次正式发布。Schema、Phase prompt 和绘图 recipe 各自
 拥有独立兼容性版本，不随 Product version 自动变化。

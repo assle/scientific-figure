@@ -5,8 +5,15 @@ from __future__ import annotations
 import sys
 from importlib.resources import as_file, files
 
+
 def run_gui(argv: list[str] | None = None) -> int:
     """Start the QML Configuration app without importing Qt on headless paths."""
+    try:
+        from figure_tools.local_status import cleanup_from_installed_runtime
+
+        cleanup_from_installed_runtime()
+    except (OSError, RuntimeError, ValueError):
+        pass
     try:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QGuiApplication, QIcon

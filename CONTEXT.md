@@ -29,12 +29,28 @@ A coordinated but host-managed delivery of the Workflow Skill, Lifecycle MCP ser
 _Avoid_: Native plugin, current Codex delivery, Skill, MCP
 
 **Native plugin**:
-A host-installable package with a standard plugin identity that owns its bundled Skills, MCP servers, resources, and enable, upgrade, and uninstall lifecycle.
+A host-installable package with a standard plugin identity that owns its bundled Skills, MCP declarations and adapters, resources, and enable, upgrade, and uninstall lifecycle.
 _Avoid_: Agent integration bundle, Skill, MCP server
 
 **Product version**:
 The Semantic Version identifying one coordinated Scientific Figure Builder product distribution across its components.
 _Avoid_: schema version, prompt version, recipe version
+
+**Published release**:
+A Product version identified by an immutable Git tag and matching GitHub Release with its installable artifacts.
+_Avoid_: pushed commit, current branch, built wheel
+
+**Product bundle**:
+The complete installable archive for one Published release, containing its bootstrap installer, Native plugin, Core artifact, and Release manifest.
+_Avoid_: Core wheel, source checkout, plugin cache
+
+**Release manifest**:
+The immutable inventory that binds one Product bundle to its Product version, source commit, component compatibility versions, and artifact digests.
+_Avoid_: plugin manifest, package metadata, release notes
+
+**Release artifact**:
+An immutable file attached to one Published release and identified by a digest; a Core wheel is one Release artifact, not the complete product.
+_Avoid_: working tree, build output, Product release
 
 **Schema version**:
 The compatibility version of a persisted artifact contract, independent of the Product version.
@@ -305,7 +321,7 @@ _Avoid_: configured Agent, main model role, Scientific Figure Builder Agent
 ## Delivery
 
 **Global installation**:
-A user-scoped delivery with a version-isolated Core runtime and Agent integrations that can be used across projects.
+A user-scoped delivery with a version-isolated Core runtime that can be used across projects; host-managed Native plugins are installed independently and may select it.
 _Avoid_: Global configuration, system installation, project setup
 
 **Project installation**:
@@ -319,6 +335,54 @@ _Avoid_: runtime directory, virtual environment, project
 **Active runtime**:
 The verified Product-version runtime currently selected by one Runtime scope's Agent integrations.
 _Avoid_: latest version, current branch, running process
+
+**Local activation**:
+The independently retryable delivery step that installs one Published release's local components and selects its Core runtime for subsequently started processes.
+_Avoid_: release, process start, host reload
+
+**Target version**:
+The exact Product version resolved once at the start of a release or Local activation and used unchanged for every later step.
+_Avoid_: latest, current branch, floating version
+
+**Activation transaction**:
+The coordinated, compensating change that either reaches Local version convergence for one Product version or restores the previous converged local state.
+_Avoid_: Install transaction, release, process restart
+
+**Running runtime instance**:
+A live Lifecycle MCP server or Configuration app process executing code from one specific Core runtime.
+_Avoid_: Active runtime, retained runtime, background
+
+**In-use runtime**:
+A non-active Core runtime still referenced by a Running runtime instance and therefore temporarily excluded from pruning.
+_Avoid_: Retained runtime, Legacy runtime, Active runtime
+
+**Local version convergence**:
+The state in which the Native plugin, Active runtime, CLI, and every required Running runtime instance report the target Product version.
+_Avoid_: installed, updated, latest
+
+**Host reload required**:
+The local state in which installation has selected the target Product version but one or more host-owned Running runtime instances still use another version.
+_Avoid_: installation failure, background update, Local version convergence
+
+**Retained runtime**:
+A verified, non-active Product-version runtime kept only as a rollback target within one Runtime scope.
+_Avoid_: Legacy runtime, Active runtime, running process
+
+**Retained release**:
+The previous Product bundle and converged local component state kept temporarily as the recovery target until Local version convergence is confirmed.
+_Avoid_: Retained runtime, release archive, version history
+
+**User-owned state**:
+Provider configuration, Credential references, Project configuration, source data, and run artifacts that installation and update preserve across Product versions.
+_Avoid_: Product payload, installation backup, release artifact
+
+**Product payload**:
+Replaceable versioned program material delivered by a Product bundle, including the Core runtime, Native plugin, Workflow Skill, launchers, Configuration app code, and dependencies.
+_Avoid_: User-owned state, project data, Global configuration
+
+**Clean local state**:
+Local version convergence with no obsolete Product payload outside an In-use runtime and only the bounded sanitized transaction logs retained by policy.
+_Avoid_: fresh install, empty cache, deleted configuration
 
 **Legacy runtime**:
 An installation at the former data-directory location retained only as a recoverable migration source until Global uninstall.

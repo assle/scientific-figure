@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/GUI-Qt_Quick-3B6FF5" alt="Qt Quick GUI">
   <img src="https://img.shields.io/badge/Providers-Configurable-blue" alt="Configurable providers">
   <img src="https://img.shields.io/badge/Plots-Reproducible-success" alt="Reproducible plots">
-  <img src="https://img.shields.io/badge/version-0.5.1-blue" alt="Version 0.5.1">
+  <a href="https://github.com/assle/scientific-figure/releases/latest"><img src="https://img.shields.io/github/v/release/assle/scientific-figure?label=version" alt="Latest release"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License"></a>
 </p>
 
@@ -30,7 +30,7 @@ Scientific Figure Builder is the open-source product, not a synonym for any one
 of its components. It combines a Workflow Skill, a local lifecycle MCP server,
 the deterministic Core runtime, a CLI, and a native Configuration app.
 
-The current `0.5.1` release ships a **Native Codex plugin**, an OpenCode
+The latest fixed release ships a **Native Codex plugin**, an OpenCode
 Agent integration, and an independently versioned Core runtime. The Native plugin
 owns Codex discovery, enablement, upgrade, and removal of its Workflow Skill and
 MCP declaration; the separate Core runtime keeps deterministic execution and the
@@ -214,16 +214,24 @@ unknown, not zero. Older runs without explicit history start from configured def
 ```bash
 git clone https://github.com/assle/scientific-figure.git
 cd scientific-figure
-./install.sh --codex --with-gui
-codex plugin marketplace add .
-codex plugin add scientific-figure-builder@scientific-figure
+./install.sh --codex --release latest --with-gui
 ```
 
-The Core runtime command installs deterministic engines, the lifecycle MCP server,
-the CLI, and the optional Configuration app without editing Codex configuration.
-The repo marketplace then lets Codex install and own the Native plugin. Omit
-`--with-gui` for a headless Core runtime. OpenCode users install its separate
-Agent integration with `./install.sh --opencode`.
+The verified Product bundle installs the Core runtime, CLI, Native plugin, and
+optional Configuration app as one Local activation. Omit `--with-gui` for a
+headless Core runtime. OpenCode users select `--opencode` instead of `--codex`.
+
+Installing a new Runtime does not hot-replace MCP or GUI processes that are already
+running. Maintainers and users who need every local process on the released version
+should follow the [current release and local update runbook](docs/operations/release-and-local-activation.md),
+which explains process ownership, version sources, host restarts, and the final audit.
+
+Later updates and local status use:
+
+```bash
+scientific-figure update --latest
+scientific-figure status
+```
 
 ### 2. Configure Providers
 
@@ -411,20 +419,17 @@ synchronous multimodal-generation API. It cannot serve `phase_reasoning`,
 ## Installation options
 
 ```bash
-./install.sh                       # default: Core runtime and CLI only
-./install.sh --codex              # explicit Native Codex plugin prerequisite
-./install.sh --opencode           # Core plus OpenCode integration only
-./install.sh --all                # explicit legacy two-host integration
-./install.sh --opencode --project /path/to/project
-./install.sh --verify             # verify Core only; report GUI status
-./install.sh --verify --opencode  # verify Core and OpenCode integration
-./install.sh --verify --with-gui  # require Core and GUI
+./install.sh --codex --release latest --with-gui
+./install.sh --opencode --release vX.Y.Z
+./install.sh --runtime-only --release vX.Y.Z
+scientific-figure update --latest
+scientific-figure update --bundle /path/to/product-bundle.tar.gz
+scientific-figure status --verbose
 ```
 
-Compatibility aliases remain during migration: `--runtime-only` maps to the
-default Core target, `--opencode-only` maps to `--opencode`, and
-`--codex-only` installs the deprecated manual Codex Skill/config integration.
-The supported Codex path is `--codex` followed by the Native plugin install.
+`--codex` means complete Codex activation. `--runtime-only` is the explicit
+Core-only path. The older `--opencode-only` and `--codex-only` aliases remain for
+one minor migration cycle and print a compatibility notice.
 
 OpenCode configuration updates are JSONC-aware. Install, upgrade, and targeted
 uninstall edit only `mcp.scientific-figure` (and create the `mcp`/`$schema`
@@ -477,10 +482,12 @@ into this Interface. OpenCode and deprecated manual Codex delivery are separate
 Host delivery Adapters inside the same transaction, while the Native Codex
 plugin remains host-managed.
 
-The retention policy keeps the active Product version and at most one previously
-verified runtime. Temporary transaction backups are deleted after commit or
+During activation, the previous verified Runtime remains available for
+compensation and every Runtime used by a live MCP or GUI is protected. After
+process convergence, on-demand startup removes superseded Runtime and Plugin
+cache versions. Temporary transaction backups are deleted after commit or
 rollback. Sanitized transaction logs are stored below the scope's XDG state
-directory and capped at 20 entries; they record paths and outcomes, never config
+directory and capped at 10 entries; they record paths and outcomes, never config
 contents or credentials. Uninstall recognizes active locks and will not remove a
 runtime while its install transaction is running.
 
@@ -520,7 +527,8 @@ scientific-figure --version
 ```
 
 The project is currently pre-1.0, so `0.y.z` releases may still refine public
-interfaces. `v0.5.1` is the latest fixed release. A release exists only when the repository has an immutable
+interfaces. See the [latest fixed release](https://github.com/assle/scientific-figure/releases/latest).
+A release exists only when the repository has an immutable
 `vX.Y.Z` Git tag and a matching GitHub Release. Schema, prompt, and recipe
 versions are compatibility contracts of their own and do not follow the Product
 version automatically.

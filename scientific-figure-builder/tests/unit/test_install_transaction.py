@@ -109,4 +109,4 @@ def test_transaction_log_retention_is_bounded(tmp_path: Path) -> None:
     for _ in range(22):
         with InstallTransaction(paths) as transaction:
             transaction.commit()
-    assert len(list(paths.transaction_log_dir.glob("*.json"))) == 20
+    assert len(list(paths.transaction_log_dir.glob("*.json"))) == 10

@@ -37,3 +37,45 @@ jobs:
 
       - name: Run test suite
         run: uv run --frozen pytest
+
+  quality:
+    name: Typecheck and Product bundle
+    needs: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scientific-figure-builder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+          working-directory: scientific-figure-builder
+
+      - name: Typecheck
+        run: |
+          uv sync --frozen
+          uvx pyright --pythonpath .venv/bin/python figure_tools install ../scripts
+
+      - name: Build Core wheel and Product bundle
+        run: |
+          uv build --wheel
+          core_wheel=$(find dist -maxdepth 1 -name 'scientific_figure_builder-*.whl' -print -quit)
+          uv run --frozen python -m figure_tools.release_bundle \
+            --repository-root .. \
+            --output-dir dist \
+            --core-wheel "$core_wheel" \
+            --source-commit "$GITHUB_SHA"
+
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: product-bundle-${{ github.sha }}
+          path: |
+            scientific-figure-builder/dist/*.whl
+            scientific-figure-builder/dist/*.tar.gz
+            scientific-figure-builder/dist/SHA256SUMS
