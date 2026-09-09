@@ -9,7 +9,7 @@ from importlib.resources import as_file, files
 def run_gui(argv: list[str] | None = None) -> int:
     """Start the QML Configuration app without importing Qt on headless paths."""
     try:
-        from figure_tools.local_status import cleanup_from_installed_runtime
+        from figure_tools.convergence import cleanup_from_installed_runtime
 
         cleanup_from_installed_runtime()
     except (OSError, RuntimeError, ValueError):

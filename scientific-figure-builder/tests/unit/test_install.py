@@ -38,6 +38,7 @@ from install.install_delivery import (
 )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX bootstrap script")
 def test_root_installer_routes_release_activation_through_update_cli(
     tmp_path: Path,
 ) -> None:
@@ -73,6 +74,7 @@ def test_root_installer_routes_release_activation_through_update_cli(
     ]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX bootstrap script")
 def test_root_installer_requires_release_for_complete_codex_activation(
     tmp_path: Path,
 ) -> None:

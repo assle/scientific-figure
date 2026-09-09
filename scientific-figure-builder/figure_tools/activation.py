@@ -2,32 +2,35 @@
 
 from __future__ import annotations
 
-import tempfile
-import shutil
-import json
 import importlib.util
+import json
 import os
+import shutil
 import subprocess
+import tempfile
 import uuid
 from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
+from figure_tools.convergence import cleanup_local_versions
 from figure_tools.install_paths import (
     PathEnvironment,
+    activation_cache_dir,
     activate_runtime,
+    native_plugin_marketplace_dir,
     read_active_runtime,
     resolve_delivery_paths,
 )
 from figure_tools.local_status import (
-    LocalProcess,
     LocalStatusRequest,
     PluginInstallation,
-    cleanup_local_versions,
+    RunningRuntimeInstance,
     collect_local_status,
-    discover_product_processes,
+    discover_running_runtime_instances,
 )
-from figure_tools.release_bundle import extract_product_bundle
+from figure_tools.release_bundle import extract_product_bundle, verify_detached_checksum
 from install.install_delivery import (
     InstallRequest,
     install,
@@ -45,6 +48,21 @@ class PluginAdapter(Protocol):
     def finalize(self) -> None: ...
 
 
+class HostTarget(str, Enum):
+    RUNTIME = "runtime"
+    CODEX = "codex"
+    OPENCODE = "opencode"
+    ALL = "all"
+
+    @property
+    def includes_codex(self) -> bool:
+        return self in {HostTarget.CODEX, HostTarget.ALL}
+
+    @property
+    def includes_opencode(self) -> bool:
+        return self in {HostTarget.OPENCODE, HostTarget.ALL}
+
+
 class CodexPluginAdapter:
     """Install the bundled Native plugin through Codex's marketplace interface."""
 
@@ -54,7 +72,7 @@ class CodexPluginAdapter:
     def __init__(self, environment: PathEnvironment, *, codex: Path) -> None:
         self.environment = environment
         self.codex = codex
-        self.marketplace = environment.install_root / "marketplace"
+        self.marketplace = native_plugin_marketplace_dir(environment)
         self._backup: Path | None = None
         self._previous_source: str | None = None
         self._previous_version: str | None = None
@@ -159,12 +177,14 @@ class ActivationRequest:
     bundle: Path
     environment: PathEnvironment
     expected_version: str | None = None
-    host: str = "codex"
+    host: HostTarget | str = HostTarget.CODEX
     with_gui: bool = False
 
     def __post_init__(self) -> None:
-        if self.host not in {"runtime", "codex", "opencode", "all"}:
-            raise ValueError(f"unsupported activation host: {self.host}")
+        try:
+            object.__setattr__(self, "host", HostTarget(self.host))
+        except ValueError as exc:
+            raise ValueError(f"unsupported activation host: {self.host}") from exc
 
 
 @dataclass(frozen=True)
@@ -174,7 +194,7 @@ class ActivationResult:
     plugin: PluginInstallation
     conclusion: str
     exit_code: int
-    stale_processes: tuple[int, ...]
+    stale_instances: tuple[int, ...]
     retained_runtimes: tuple[Path, ...]
     transaction_log: Path
 
@@ -185,7 +205,7 @@ class ActivationResult:
             "plugin": asdict(self.plugin),
             "conclusion": self.conclusion,
             "exit_code": self.exit_code,
-            "stale_processes": list(self.stale_processes),
+            "stale_instances": list(self.stale_instances),
             "retained_runtimes": [str(path) for path in self.retained_runtimes],
             "transaction_log": str(self.transaction_log),
         }
@@ -203,20 +223,22 @@ def activate_local(
     *,
     plugin_adapter: PluginAdapter | None = None,
     runtime_sync: Callable[[Path, bool], Path] = sync_runtime,
-    processes: Iterable[LocalProcess] | None = None,
+    running_instances: Iterable[RunningRuntimeInstance] | None = None,
 ) -> ActivationResult:
     """Install one verified bundle and report local version convergence."""
 
-    supplied_processes = tuple(processes) if processes is not None else None
+    target = HostTarget(request.host)
+    supplied_instances = tuple(running_instances) if running_instances is not None else None
     selected_plugin_adapter = plugin_adapter
     if selected_plugin_adapter is None:
         selected_plugin_adapter = (
             CodexPluginAdapter(request.environment, codex=_codex_executable())
-            if request.host in {"codex", "all"}
+            if target.includes_codex
             else NoPluginAdapter()
         )
-    cache_root = request.environment.cache_root / "scientific-figure-builder"
+    cache_root = activation_cache_dir(request.environment)
     cache_root.mkdir(parents=True, exist_ok=True)
+    verify_detached_checksum(request.bundle)
     with tempfile.TemporaryDirectory(dir=cache_root, prefix="activation-") as temporary:
         extraction = Path(temporary) / "product"
         manifest, product_root = extract_product_bundle(
@@ -233,12 +255,12 @@ def activate_local(
                 (paths.skill_dir, paths.command_file, paths.config_file),
                 Path(temporary) / "host-backup",
             )
-            if request.host in {"opencode", "all"}
+            if target.includes_opencode
             else ()
         )
         previous_active = read_active_runtime(paths.active_runtime_file)
         delivery_target = (
-            "opencode" if request.host in {"opencode", "all"} else "runtime"
+            "opencode" if target.includes_opencode else "runtime"
         )
         installed = install(
             InstallRequest(
@@ -254,12 +276,12 @@ def activate_local(
         try:
             plugin = (
                 selected_plugin_adapter.install(product_root, manifest.product_version)
-                if request.host in {"codex", "all"}
+                if target.includes_codex
                 else PluginInstallation(False, False, None)
             )
-            selected_processes = (
-                discover_product_processes(request.environment)
-                if supplied_processes is None else supplied_processes
+            selected_instances = (
+                discover_running_runtime_instances(request.environment)
+                if supplied_instances is None else supplied_instances
             )
             status = collect_local_status(
                 LocalStatusRequest(
@@ -267,10 +289,10 @@ def activate_local(
                     cli_version=manifest.product_version,
                 ),
                 plugin=(
-                    plugin if request.host in {"codex", "all"}
+                    plugin if target.includes_codex
                     else PluginInstallation(True, True, manifest.product_version)
                 ),
-                processes=selected_processes,
+                running_instances=selected_instances,
             )
             selected_plugin_adapter.finalize()
         except Exception:  # noqa: BLE001 - preserve boundary error after compensation
@@ -284,17 +306,17 @@ def activate_local(
             raise
         cleanup_local_versions(
             request.environment,
-            processes=selected_processes,
+            running_instances=selected_instances,
         )
         status = collect_local_status(
             LocalStatusRequest(
                 environment=request.environment,
                 cli_version=manifest.product_version,
             ),
-            plugin=plugin if request.host in {"codex", "all"} else PluginInstallation(
+            plugin=plugin if target.includes_codex else PluginInstallation(
                 True, True, manifest.product_version,
             ),
-            processes=selected_processes,
+            running_instances=selected_instances,
         )
         return ActivationResult(
             product_version=manifest.product_version,
@@ -302,7 +324,7 @@ def activate_local(
             plugin=plugin,
             conclusion=status.conclusion,
             exit_code=status.exit_code,
-            stale_processes=status.stale_processes,
+            stale_instances=status.stale_instances,
             retained_runtimes=status.retained_runtimes,
             transaction_log=installed.transaction_log,
         )
@@ -378,7 +400,7 @@ def _codex_executable() -> Path:
     raise RuntimeError("Codex CLI is required to install the Native plugin")
 
 
-def detect_installed_host(environment: PathEnvironment) -> str:
+def detect_installed_host(environment: PathEnvironment) -> HostTarget:
     """Preserve the currently installed host set for an update."""
 
     codex_config = environment.codex_home / "config.toml"
@@ -400,10 +422,12 @@ def detect_installed_host(environment: PathEnvironment) -> str:
     )
     opencode = opencode_skill.is_file()
     if codex and opencode:
-        return "all"
+        return HostTarget.ALL
     if opencode:
-        return "opencode"
-    return "codex"
+        return HostTarget.OPENCODE
+    if codex:
+        return HostTarget.CODEX
+    return HostTarget.RUNTIME
 
 
 def preserve_gui_selection() -> bool:
@@ -416,6 +440,7 @@ __all__ = [
     "ActivationRequest",
     "ActivationResult",
     "CodexPluginAdapter",
+    "HostTarget",
     "detect_installed_host",
     "preserve_gui_selection",
     "PluginAdapter",

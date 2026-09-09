@@ -118,7 +118,7 @@ def _run_update(argv: list[str]) -> int:
             detect_installed_host,
             preserve_gui_selection,
         )
-        from figure_tools.install_paths import PathEnvironment
+        from figure_tools.install_paths import PathEnvironment, release_cache_dir
         from figure_tools.release_source import resolve_release_bundle
 
         environment = PathEnvironment.from_environ()
@@ -128,9 +128,7 @@ def _run_update(argv: list[str]) -> int:
             selector = "latest" if args.latest else str(args.release)
             resolved = resolve_release_bundle(
                 selector,
-                cache_dir=(
-                    environment.cache_root / "scientific-figure-builder" / "releases"
-                ),
+                cache_dir=release_cache_dir(environment),
             )
             bundle = resolved.bundle
             expected_version = resolved.version

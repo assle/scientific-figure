@@ -24,7 +24,7 @@ scientific-figure update --latest
 scientific-figure status
 ```
 
-`update` 默认保持当前安装形态。已经安装 GUI 就继续更新 GUI，没有安装 GUI 就不会新增；
+`update` 默认保持当前安装形态。已经安装 Configuration app 就继续更新，没有安装就不会新增；
 也可以显式使用 `--with-gui`、`--without-gui`、`--codex`、`--opencode` 或 `--all`。
 
 正式更新从 GitHub Release 下载完整 Product bundle，先验证 `SHA256SUMS`、Release
@@ -34,22 +34,28 @@ manifest 和内部文件摘要，再安装。离线时使用：
 scientific-figure update --bundle ./scientific-figure-builder-X.Y.Z.tar.gz
 ```
 
+离线 bundle 必须与 Release workflow 生成的 `SHA256SUMS` 放在同一目录；缺少或不匹配时
+会在执行任何安装代码前失败。
+
 Provider 配置、Model route、Keyring API Key、环境变量引用、项目数据和运行产物保持不变；
-Core Runtime、Native plugin、Skill、CLI、GUI 和程序依赖替换为目标版本。
+Core runtime、Native plugin、Workflow Skill、CLI、Configuration app 和程序依赖替换为目标版本。
 
 ## 按需运行与重启
 
-MCP 由 Codex/OpenCode 按需启动，GUI 只在运行 `scientific-figure gui` 时启动。未运行表示
+Lifecycle MCP server 由 Codex/OpenCode 按需启动，Configuration app 只在运行
+`scientific-figure gui` 时启动。未运行表示
 正常 idle，不需要 `start-all`，也没有产品 daemon。
 
-若更新时旧 MCP 或 GUI 仍在运行，磁盘安装会完成，但结果返回：
+若更新时旧 Lifecycle MCP server 或 Configuration app 仍在运行，磁盘安装会完成，但结果返回：
 
 ```text
 restart_required
 ```
 
-保存当前任务和未保存的 GUI 配置，完全退出并重新打开 Codex/OpenCode。新 MCP 或 GUI
-首次启动时会清理已经无人使用的旧 Runtime 和 Plugin cache；仍被进程引用的目录不会删除。
+保存当前任务和未保存的 Configuration draft，完全退出并重新打开 Codex/OpenCode。新的
+Lifecycle MCP server 或 Configuration app
+首次启动时会清理已经无人使用的旧 Core runtime 和 Native plugin cache；仍被进程引用的
+目录不会删除。
 
 状态退出码：
 
@@ -70,6 +76,18 @@ restart_required
 python3 scripts/release.py minor --publish
 ```
 
+首次发布新的 Delivery 契约（`0.6.0`）前，还必须安装候选 Product bundle，完全重启
+Codex，在新任务中实际启动 Lifecycle MCP server，并打开 Configuration app。确认本地
+版本收敛后运行：
+
+```bash
+python3 scripts/record_release_acceptance.py --confirm-codex-restarted
+```
+
+该命令从 `scientific-figure status --json` 生成不含配置或凭据的验收证据。将对应 Release
+notes 的 frontmatter 从 `status: draft` 改为 `status: approved` 后，`--publish` 才允许创建
+tag。自动测试不能替代这次真实宿主重载证据。
+
 也可以在发布后接着激活本机：
 
 ```bash
@@ -79,7 +97,7 @@ python3 scripts/release.py minor --publish --activate-local
 Release Pipeline 会：
 
 1. 从 `pyproject.toml` 计算并固定 Target version；
-2. 生成 Skill、Citation、lockfile 和 Native plugin 版本镜像；
+2. 生成 Workflow Skill、Citation、lockfile 和 Native plugin 版本镜像；
 3. 推送 main 并等待该 commit 的 GitHub Actions；
 4. CI 通过后创建不可变 tag；
 5. tag workflow 构建 Product bundle、Core wheel、Release manifest 和 `SHA256SUMS`；

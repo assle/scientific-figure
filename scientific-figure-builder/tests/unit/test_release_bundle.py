@@ -10,6 +10,7 @@ from figure_tools.release_bundle import (
     build_product_bundle,
     verify_product_bundle,
 )
+from tests.support import write_core_wheel
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -21,8 +22,10 @@ VERSION = str(tomllib.loads(
 def test_product_bundle_binds_installer_plugin_and_core_artifact(
     tmp_path: Path,
 ) -> None:
-    wheel = tmp_path / f"scientific_figure_builder-{VERSION}-py3-none-any.whl"
-    wheel.write_bytes(b"core-wheel")
+    wheel = write_core_wheel(
+        tmp_path / f"scientific_figure_builder-{VERSION}-py3-none-any.whl",
+        VERSION,
+    )
 
     result = build_product_bundle(ProductBundleRequest(
         repository_root=REPOSITORY_ROOT,

@@ -11,14 +11,20 @@ permissions:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version:
-          - "3.11"
-          - "3.13"
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
 
     defaults:
       run:
@@ -57,19 +63,7 @@ jobs:
           working-directory: scientific-figure-builder
 
       - name: Typecheck
-        run: |
-          uv sync --frozen
-          uvx pyright --pythonpath .venv/bin/python figure_tools install ../scripts
-
-      - name: Build Core wheel and Product bundle
-        run: |
-          uv build --wheel
-          core_wheel=$(find dist -maxdepth 1 -name 'scientific_figure_builder-*.whl' -print -quit)
-          uv run --frozen python -m figure_tools.release_bundle \
-            --repository-root .. \
-            --output-dir dist \
-            --core-wheel "$core_wheel" \
-            --source-commit "$GITHUB_SHA"
+        run: python ../scripts/verify_release_candidate.py --build
 
       - name: Upload candidate artifacts
         uses: actions/upload-artifact@v6

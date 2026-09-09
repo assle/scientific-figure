@@ -176,7 +176,7 @@ def _tool_list() -> list[dict[str, Any]]:
 
 def serve_stdio() -> int:
     try:
-        from figure_tools.local_status import cleanup_from_installed_runtime
+        from figure_tools.convergence import cleanup_from_installed_runtime
 
         cleanup_from_installed_runtime()
     except (OSError, RuntimeError, ValueError):

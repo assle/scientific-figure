@@ -14,6 +14,7 @@ from figure_tools.release_source import (
     ReleaseDescriptor,
     resolve_release_bundle,
 )
+from tests.support import write_core_wheel
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +32,7 @@ class ReleaseClient:
         self.selectors.append(selector)
         return ReleaseDescriptor(
             tag_name=f"v{VERSION}",
+            source_commit="abc123",
             assets=tuple(
                 ReleaseAsset(name=name, url=f"memory://{name}")
                 for name in self.assets
@@ -42,8 +44,10 @@ class ReleaseClient:
 
 
 def test_latest_is_resolved_once_and_bundle_checksum_is_verified(tmp_path: Path) -> None:
-    wheel = tmp_path / f"scientific_figure_builder-{VERSION}-py3-none-any.whl"
-    wheel.write_bytes(b"wheel")
+    wheel = write_core_wheel(
+        tmp_path / f"scientific_figure_builder-{VERSION}-py3-none-any.whl",
+        VERSION,
+    )
     built = build_product_bundle(ProductBundleRequest(
         repository_root=REPOSITORY_ROOT,
         output_dir=tmp_path / "built",
@@ -77,7 +81,7 @@ def test_checksum_failure_removes_downloaded_release_cache(tmp_path: Path) -> No
         ).encode(),
     }
 
-    with pytest.raises(RuntimeError, match="checksum mismatch"):
+    with pytest.raises(ValueError, match="checksum mismatch"):
         resolve_release_bundle(
             "latest",
             cache_dir=tmp_path / "cache",
@@ -85,3 +89,21 @@ def test_checksum_failure_removes_downloaded_release_cache(tmp_path: Path) -> No
         )
 
     assert not (tmp_path / "cache" / VERSION).exists()
+
+
+def test_release_source_rejects_non_semver_tag_before_using_it_as_a_path(
+    tmp_path: Path,
+) -> None:
+    class UnsafeClient(ReleaseClient):
+        def describe(self, selector: str) -> ReleaseDescriptor:
+            del selector
+            return ReleaseDescriptor(
+                tag_name="v../../escape", source_commit="abc123", assets=(),
+            )
+
+    with pytest.raises(RuntimeError, match="invalid Product tag"):
+        resolve_release_bundle(
+            "latest", cache_dir=tmp_path / "cache", client=UnsafeClient({}),
+        )
+
+    assert not (tmp_path / "escape").exists()

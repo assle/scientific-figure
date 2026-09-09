@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -12,7 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Protocol
 
-from figure_tools.release_bundle import verify_product_bundle
+from figure_tools.release_bundle import (
+    PRODUCT_VERSION_PATTERN,
+    verify_detached_checksum,
+    verify_product_bundle,
+)
 
 
 DEFAULT_REPOSITORY = "assle/scientific-figure"
@@ -27,6 +30,7 @@ class ReleaseAsset:
 @dataclass(frozen=True)
 class ReleaseDescriptor:
     tag_name: str
+    source_commit: str
     assets: tuple[ReleaseAsset, ...]
 
 
@@ -65,8 +69,10 @@ class GitHubReleaseClient:
         assets = payload.get("assets")
         if not isinstance(assets, list):
             raise RuntimeError("GitHub Release has no assets")
+        tag_name = str(payload.get("tag_name") or "")
         return ReleaseDescriptor(
-            tag_name=str(payload.get("tag_name") or ""),
+            tag_name=tag_name,
+            source_commit=self._tag_commit(tag_name),
             assets=tuple(
                 ReleaseAsset(
                     name=str(item.get("name") or ""),
@@ -76,6 +82,26 @@ class GitHubReleaseClient:
                 if isinstance(item, dict)
             ),
         )
+
+    def _tag_commit(self, tag_name: str) -> str:
+        reference = self._read_json(
+            f"https://api.github.com/repos/{self.repository}/git/ref/tags/"
+            + urllib.parse.quote(tag_name, safe="")
+        )
+        target = reference.get("object")
+        if not isinstance(target, dict):
+            raise RuntimeError("GitHub tag has no target")
+        if target.get("type") == "commit":
+            return str(target.get("sha") or "")
+        if target.get("type") == "tag":
+            annotated = self._read_json(
+                f"https://api.github.com/repos/{self.repository}/git/tags/"
+                + urllib.parse.quote(str(target.get("sha") or ""), safe="")
+            )
+            annotated_target = annotated.get("object")
+            if isinstance(annotated_target, dict):
+                return str(annotated_target.get("sha") or "")
+        raise RuntimeError("GitHub tag does not resolve to a commit")
 
     def download(self, asset: ReleaseAsset, destination: Path) -> None:
         request = urllib.request.Request(asset.url, headers=self._headers())
@@ -114,6 +140,8 @@ def resolve_release_bundle(
     if not release.tag_name.startswith("v") or len(release.tag_name) == 1:
         raise RuntimeError("GitHub Release has an invalid Product tag")
     version = release.tag_name[1:]
+    if PRODUCT_VERSION_PATTERN.fullmatch(version) is None:
+        raise RuntimeError("GitHub Release has an invalid Product tag")
     bundle_name = f"scientific-figure-builder-{version}.tar.gz"
     assets = {asset.name: asset for asset in release.assets}
     try:
@@ -129,35 +157,16 @@ def resolve_release_bundle(
     try:
         selected_client.download(bundle_asset, bundle)
         selected_client.download(checksums_asset, checksums)
-        expected = _checksum_for(checksums, bundle_name)
-        actual = _sha256(bundle)
-        if actual != expected:
+        verify_detached_checksum(bundle, checksums)
+        manifest = verify_product_bundle(bundle, expected_version=version)
+        if manifest.source_commit != release.source_commit:
             raise RuntimeError(
-                f"Product bundle checksum mismatch: expected {expected}, got {actual}"
+                "Product bundle source commit does not match the selected tag"
             )
-        verify_product_bundle(bundle, expected_version=version)
     except Exception:
         shutil.rmtree(release_dir, ignore_errors=True)
         raise
     return ResolvedRelease(version=version, bundle=bundle)
-
-
-def _checksum_for(path: Path, name: str) -> str:
-    for line in path.read_text(encoding="utf-8").splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[1].lstrip("*") == name:
-            digest = parts[0].lower()
-            if len(digest) == 64 and all(char in "0123456789abcdef" for char in digest):
-                return digest
-    raise RuntimeError(f"SHA256SUMS has no valid entry for {name}")
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 __all__ = [

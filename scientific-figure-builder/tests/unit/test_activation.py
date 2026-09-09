@@ -16,11 +16,14 @@ from figure_tools.install_paths import (
     activate_runtime,
     read_active_runtime,
     resolve_delivery_paths,
+    native_plugin_cache_dir,
+    native_plugin_marketplace_dir,
 )
 from figure_tools.local_status import PluginInstallation
-from figure_tools.local_status import LocalProcess
+from figure_tools.local_status import RunningRuntimeInstance
 from figure_tools.release_bundle import ProductBundleRequest, build_product_bundle
 from install.install_delivery import install_launcher
+from tests.support import write_core_wheel
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -49,8 +52,10 @@ def _environment(tmp_path: Path) -> PathEnvironment:
 
 
 def _bundle(tmp_path: Path) -> Path:
-    wheel = tmp_path / f"scientific_figure_builder-{PRODUCT_VERSION}-py3-none-any.whl"
-    wheel.write_bytes(b"core-wheel")
+    wheel = write_core_wheel(
+        tmp_path / f"scientific_figure_builder-{PRODUCT_VERSION}-py3-none-any.whl",
+        PRODUCT_VERSION,
+    )
     return build_product_bundle(ProductBundleRequest(
         repository_root=REPOSITORY_ROOT,
         output_dir=tmp_path / "release",
@@ -113,7 +118,7 @@ def test_activation_installs_exact_bundle_and_preserves_user_configuration(
         ),
         plugin_adapter=plugin,
         runtime_sync=_runtime_sync,
-        processes=[],
+        running_instances=[],
     )
 
     assert result.conclusion == "converged"
@@ -164,7 +169,7 @@ def test_activation_restores_previous_converged_version_when_plugin_update_fails
             ),
             plugin_adapter=plugin,
             runtime_sync=_runtime_sync,
-            processes=[],
+            running_instances=[],
         )
 
     active = read_active_runtime(previous.active_runtime_file)
@@ -206,7 +211,7 @@ def test_activation_restores_previous_version_when_plugin_finalize_fails(
             ),
             plugin_adapter=plugin,
             runtime_sync=_runtime_sync,
-            processes=[],
+            running_instances=[],
         )
 
     active = read_active_runtime(previous.active_runtime_file)
@@ -244,7 +249,7 @@ def test_all_host_activation_restores_opencode_files_when_codex_plugin_fails(
             ),
             plugin_adapter=FailingPlugin(),
             runtime_sync=_runtime_sync,
-            processes=[],
+            running_instances=[],
         )
 
     assert (previous.skill_dir / "SKILL.md").read_text() == "old skill"
@@ -268,14 +273,11 @@ def test_activation_prunes_previous_runtime_only_after_process_convergence(
     previous_python = _runtime_sync(previous.runtime_dir, False)
     activate_runtime(previous)
     install_launcher(previous_python, previous.launcher_file)
-    plugin_cache = (
-        environment.codex_home / "plugins" / "cache" / "scientific-figure"
-        / "scientific-figure-builder"
-    )
+    plugin_cache = native_plugin_cache_dir(environment)
     (plugin_cache / "0.5.0").mkdir(parents=True)
     (plugin_cache / PRODUCT_VERSION).mkdir()
-    processes = [
-        LocalProcess(
+    running_instances = [
+        RunningRuntimeInstance(
             pid=pid,
             parent_pid=1,
             kind="mcp",
@@ -294,7 +296,7 @@ def test_activation_prunes_previous_runtime_only_after_process_convergence(
         ),
         plugin_adapter=PluginAdapter(),
         runtime_sync=_runtime_sync,
-        processes=processes,
+        running_instances=running_instances,
     )
 
     assert result.conclusion == expected_conclusion
@@ -307,7 +309,7 @@ def test_codex_plugin_adapter_replaces_and_can_restore_marketplace(
     tmp_path: Path, monkeypatch
 ) -> None:
     environment = _environment(tmp_path)
-    stable = environment.install_root / "marketplace"
+    stable = native_plugin_marketplace_dir(environment)
     stable.mkdir(parents=True)
     (stable / "old.txt").write_text("old", encoding="utf-8")
     product = tmp_path / "product"
@@ -362,6 +364,7 @@ def test_codex_plugin_adapter_replaces_and_can_restore_marketplace(
     assert (stable / "old.txt").read_text(encoding="utf-8") == "old"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX fake Codex and uv adapters")
 def test_update_cli_activates_a_verified_local_bundle(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

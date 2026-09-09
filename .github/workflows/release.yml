@@ -31,32 +31,32 @@ jobs:
           product_version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$GITHUB_REF_NAME" = "v$product_version"
           test -f "../release-notes/$product_version.md"
+          if [ "$product_version" = "0.6.0" ]; then
+            python ../scripts/release.py "$product_version" --check-acceptance
+          fi
+          python ../scripts/release.py "$product_version" --check-notes
 
       - name: Verify release candidate
-        run: |
-          uv run --frozen pytest
-          uvx pyright --pythonpath .venv/bin/python figure_tools install ../scripts
-
-      - name: Build formal artifacts
-        run: |
-          uv build --wheel
-          core_wheel=$(find dist -maxdepth 1 -name 'scientific_figure_builder-*.whl' -print -quit)
-          uv run --frozen python -m figure_tools.release_bundle \
-            --repository-root .. \
-            --output-dir dist \
-            --core-wheel "$core_wheel" \
-            --source-commit "$GITHUB_SHA"
+        run: python ../scripts/verify_release_candidate.py --tests --build
 
       - name: Create immutable GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
           product_version=${GITHUB_REF_NAME#v}
-          gh release create "$GITHUB_REF_NAME" \
-            dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
-            --title "Scientific Figure Builder $product_version" \
-            --notes-file "../release-notes/$product_version.md" \
-            --verify-tag
+          if gh release view "$GITHUB_REF_NAME" --json isDraft >/tmp/release.json 2>/dev/null; then
+            if python -c 'import json,sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["isDraft"] else 1)' /tmp/release.json; then
+              gh release upload "$GITHUB_REF_NAME" \
+                dist/*.whl dist/*.tar.gz dist/SHA256SUMS --clobber
+            else
+              python ../scripts/release.py "$product_version" --check-release
+              exit 0
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+              --title "Scientific Figure Builder $product_version" \
+              --notes-file "../release-notes/$product_version.md" \
+              --verify-tag --draft
+          fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false

@@ -271,6 +271,29 @@ def active_runtime_matches(paths: DeliveryPaths) -> bool:
     )
 
 
+def global_active_runtime_file(environment: PathEnvironment) -> Path:
+    return environment.install_root / "global" / "active-runtime.json"
+
+
+def activation_cache_dir(environment: PathEnvironment) -> Path:
+    return environment.cache_root / APP_NAME / "activation"
+
+
+def release_cache_dir(environment: PathEnvironment) -> Path:
+    return environment.cache_root / APP_NAME / "releases"
+
+
+def native_plugin_marketplace_dir(environment: PathEnvironment) -> Path:
+    return environment.install_root / "global" / "marketplace"
+
+
+def native_plugin_cache_dir(environment: PathEnvironment) -> Path:
+    return (
+        environment.codex_home / "plugins" / "cache" / "scientific-figure"
+        / APP_NAME
+    )
+
+
 def discover_runtime_directory(
     *,
     executable: Path,

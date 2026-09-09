@@ -6,14 +6,16 @@ import json
 import os
 import shutil
 import subprocess
-import sys
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from figure_tools.install_paths import PathEnvironment, read_active_runtime
-from figure_tools.install_paths import resolve_delivery_paths
-from figure_tools.install_transaction import prune_runtime_versions
+from figure_tools.install_paths import (
+    PathEnvironment,
+    global_active_runtime_file,
+    read_active_runtime,
+)
 
 
 @dataclass(frozen=True)
@@ -24,7 +26,7 @@ class PluginInstallation:
 
 
 @dataclass(frozen=True)
-class LocalProcess:
+class RunningRuntimeInstance:
     pid: int
     parent_pid: int
     kind: str
@@ -53,8 +55,8 @@ class LocalStatusResult:
     cli_version: str
     published_version: str | None
     plugin: PluginInstallation
-    processes: tuple[LocalProcess, ...]
-    stale_processes: tuple[int, ...]
+    running_instances: tuple[RunningRuntimeInstance, ...]
+    stale_instances: tuple[int, ...]
     in_use_runtimes: tuple[Path, ...]
     retained_runtimes: tuple[Path, ...]
     error: str | None = None
@@ -66,9 +68,9 @@ class LocalStatusResult:
         )
         payload["in_use_runtimes"] = [str(path) for path in self.in_use_runtimes]
         payload["retained_runtimes"] = [str(path) for path in self.retained_runtimes]
-        payload["processes"] = [
+        payload["running_instances"] = [
             {**asdict(process), "executable": str(process.executable)}
-            for process in self.processes
+            for process in self.running_instances
         ]
         return payload
 
@@ -77,36 +79,36 @@ def collect_local_status(
     request: LocalStatusRequest,
     *,
     plugin: PluginInstallation,
-    processes: Iterable[LocalProcess],
+    running_instances: Iterable[RunningRuntimeInstance],
 ) -> LocalStatusResult:
     """Return one local status result without changing installation state."""
 
     try:
         active = read_active_runtime(
-            request.environment.install_root / "global" / "active-runtime.json"
+            global_active_runtime_file(request.environment)
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        return _broken(request, plugin, tuple(processes), str(exc))
+        return _broken(request, plugin, tuple(running_instances), str(exc))
     if active is None:
-        return _broken(request, plugin, tuple(processes), "active runtime is missing")
+        return _broken(request, plugin, tuple(running_instances), "active runtime is missing")
 
     target_version = active.get("version")
     runtime_text = active.get("runtime_dir")
     if not target_version or not runtime_text:
-        return _broken(request, plugin, tuple(processes), "active runtime is invalid")
+        return _broken(request, plugin, tuple(running_instances), "active runtime is invalid")
     active_runtime = Path(runtime_text)
     if not active_runtime.is_dir():
-        return _broken(request, plugin, tuple(processes), "active runtime is missing")
+        return _broken(request, plugin, tuple(running_instances), "active runtime is missing")
 
-    selected_processes = tuple(processes)
+    selected_instances = tuple(running_instances)
     stale = tuple(
         process.pid
-        for process in selected_processes
+        for process in selected_instances
         if process.version is not None and process.version != target_version
     )
     in_use = tuple(dict.fromkeys(
         process.executable.parents[2]
-        for process in selected_processes
+        for process in selected_instances
         if process.executable.name.startswith("python")
         and len(process.executable.parents) >= 3
         and process.executable.parents[2] != active_runtime
@@ -147,8 +149,8 @@ def collect_local_status(
         cli_version=request.cli_version,
         published_version=request.published_version,
         plugin=plugin,
-        processes=selected_processes,
-        stale_processes=stale,
+        running_instances=selected_instances,
+        stale_instances=stale,
         in_use_runtimes=in_use,
         retained_runtimes=retained,
     )
@@ -165,19 +167,16 @@ def status_from_system(
     environment_values = os.environ if environ is None else environ
     environment = PathEnvironment.from_environ(environment_values)
     plugin = _installed_codex_plugin(environment_values)
-    opencode_skill = (
-        environment.config_root / "opencode" / "skills"
-        / "scientific-figure-builder" / "SKILL.md"
-    )
+    codex_expected = _codex_plugin_expected(environment)
     return collect_local_status(
         LocalStatusRequest(
             environment=environment,
             cli_version=cli_version,
             published_version=published_version,
-            require_plugin=plugin.installed or not opencode_skill.is_file(),
+            require_plugin=codex_expected,
         ),
         plugin=plugin,
-        processes=discover_product_processes(environment),
+        running_instances=discover_running_runtime_instances(environment),
     )
 
 
@@ -193,14 +192,14 @@ def render_human_status(result: LocalStatusResult, *, verbose: bool = False) -> 
         f"  Native plugin:   {plugin_version}",
         f"  Active runtime:  {_display_path(result.active_runtime)}",
         f"  CLI:             {result.cli_version}",
-        f"  Running MCP:     {sum(item.kind == 'mcp' for item in result.processes)}",
-        f"  Running GUI:     {sum(item.kind == 'gui' for item in result.processes)}",
-        f"  Stale processes: {len(result.stale_processes)}",
+        f"  Running MCP:     {sum(item.kind == 'mcp' for item in result.running_instances)}",
+        f"  Running GUI:     {sum(item.kind == 'gui' for item in result.running_instances)}",
+        f"  Stale running_instances: {len(result.stale_instances)}",
     ]
     if result.error:
         lines.append(f"  Error:           {result.error}")
     if verbose:
-        for process in result.processes:
+        for process in result.running_instances:
             lines.append(
                 f"  PID {process.pid}: {process.kind} {process.version or 'unknown'} "
                 f"{_display_path(process.executable)}"
@@ -241,10 +240,24 @@ def _installed_codex_plugin(environ: Mapping[str, str]) -> PluginInstallation:
     return PluginInstallation(False, False, None)
 
 
-def discover_product_processes(environment: PathEnvironment) -> tuple[LocalProcess, ...]:
+def _codex_plugin_expected(environment: PathEnvironment) -> bool:
+    config = environment.codex_home / "config.toml"
+    if not config.is_file():
+        return False
+    try:
+        payload = tomllib.loads(config.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    plugin = (payload.get("plugins") or {}).get(
+        "scientific-figure-builder@scientific-figure"
+    )
+    return isinstance(plugin, dict) and plugin.get("enabled") is True
+
+
+def discover_running_runtime_instances(environment: PathEnvironment) -> tuple[RunningRuntimeInstance, ...]:
     import psutil
 
-    result: list[LocalProcess] = []
+    result: list[RunningRuntimeInstance] = []
     install_root = environment.install_root.resolve()
     for process in psutil.process_iter(("pid", "ppid", "exe", "cmdline")):
         try:
@@ -261,7 +274,7 @@ def discover_product_processes(environment: PathEnvironment) -> tuple[LocalProce
             kind = _process_kind(command)
             if kind is None:
                 continue
-            result.append(LocalProcess(
+            result.append(RunningRuntimeInstance(
                 pid=int(info["pid"]),
                 parent_pid=int(info.get("ppid") or 0),
                 kind=kind,
@@ -271,49 +284,6 @@ def discover_product_processes(environment: PathEnvironment) -> tuple[LocalProce
         except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             continue
     return tuple(sorted(result, key=lambda item: item.pid))
-
-
-def cleanup_local_versions(
-    environment: PathEnvironment,
-    *,
-    processes: Iterable[LocalProcess] | None = None,
-) -> tuple[Path, ...]:
-    """Remove superseded product files only after process convergence."""
-
-    active_file = environment.install_root / "global" / "active-runtime.json"
-    active = read_active_runtime(active_file)
-    if active is None or not active.get("version"):
-        return ()
-    target = active["version"]
-    selected = tuple(
-        discover_product_processes(environment) if processes is None else processes
-    )
-    if any(process.version not in {None, target} for process in selected):
-        return ()
-    paths = resolve_delivery_paths(environment, target)
-    removed = [Path(path) for path in prune_runtime_versions(paths, None)]
-    plugin_root = (
-        environment.codex_home / "plugins" / "cache" / "scientific-figure"
-        / "scientific-figure-builder"
-    )
-    if plugin_root.is_dir():
-        for candidate in plugin_root.iterdir():
-            if candidate.name == target or not candidate.is_dir():
-                continue
-            shutil.rmtree(candidate)
-            removed.append(candidate)
-    return tuple(removed)
-
-
-def cleanup_from_installed_runtime() -> tuple[Path, ...]:
-    """Run convergence cleanup only from an installed product interpreter."""
-
-    environment = PathEnvironment.from_environ()
-    try:
-        Path(sys.executable).resolve().relative_to(environment.install_root.resolve())
-    except (OSError, ValueError):
-        return ()
-    return cleanup_local_versions(environment)
 
 
 def _process_kind(command: list[str]) -> str | None:
@@ -351,7 +321,7 @@ def _display_path(path: Path | None) -> str:
 def _broken(
     request: LocalStatusRequest,
     plugin: PluginInstallation,
-    processes: tuple[LocalProcess, ...],
+    running_instances: tuple[RunningRuntimeInstance, ...],
     error: str,
 ) -> LocalStatusResult:
     return LocalStatusResult(
@@ -362,8 +332,8 @@ def _broken(
         cli_version=request.cli_version,
         published_version=request.published_version,
         plugin=plugin,
-        processes=processes,
-        stale_processes=(),
+        running_instances=running_instances,
+        stale_instances=(),
         in_use_runtimes=(),
         retained_runtimes=(),
         error=error,
@@ -371,14 +341,12 @@ def _broken(
 
 
 __all__ = [
-    "LocalProcess",
+    "RunningRuntimeInstance",
     "LocalStatusRequest",
     "LocalStatusResult",
     "PluginInstallation",
     "collect_local_status",
-    "cleanup_local_versions",
-    "cleanup_from_installed_runtime",
-    "discover_product_processes",
+    "discover_running_runtime_instances",
     "render_human_status",
     "status_from_system",
 ]

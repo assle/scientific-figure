@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
-import gzip
 import argparse
+import gzip
 import hashlib
+import io
 import json
 import re
 import shutil
 import tarfile
 import tempfile
 import tomllib
+import zipfile
 from dataclasses import asdict, dataclass
+from email.parser import Parser
 from pathlib import Path, PurePosixPath
 
 
 MANIFEST_NAME = "release-manifest.json"
 BUNDLE_SCHEMA_VERSION = "1.0"
+PRODUCT_VERSION_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 PRODUCT_SOURCE_ITEMS = (
     "figure_tools",
     "install",
@@ -74,6 +81,7 @@ def build_product_bundle(request: ProductBundleRequest) -> ProductBundleResult:
     _require_version(package, request.product_version)
     if not request.core_wheel.is_file():
         raise ValueError(f"Core wheel is missing: {request.core_wheel}")
+    _require_component_identity(repository, request.core_wheel, request.product_version)
     request.output_dir.mkdir(parents=True, exist_ok=True)
     bundle = request.output_dir / (
         f"scientific-figure-builder-{request.product_version}.tar.gz"
@@ -147,7 +155,13 @@ def verify_product_bundle(
         regular: dict[str, tarfile.TarInfo] = {}
         for member in members:
             path = PurePosixPath(member.name)
-            if path.is_absolute() or ".." in path.parts or member.issym() or member.islnk():
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or "\\" in member.name
+                or member.issym()
+                or member.islnk()
+            ):
                 raise ValueError(f"Unsafe Product bundle member: {member.name}")
             if member.isfile():
                 relative = PurePosixPath(*path.parts[1:]).as_posix()
@@ -163,6 +177,8 @@ def verify_product_bundle(
         manifest = _manifest_from_dict(json.loads(manifest_stream.read()))
         if manifest.schema_version != BUNDLE_SCHEMA_VERSION:
             raise ValueError("Unsupported Release manifest version")
+        if PRODUCT_VERSION_PATTERN.fullmatch(manifest.product_version) is None:
+            raise ValueError("Release manifest has an invalid Product version")
         if expected_version is not None and manifest.product_version != expected_version:
             raise ValueError(
                 f"Product bundle version {manifest.product_version} does not match "
@@ -179,9 +195,37 @@ def verify_product_bundle(
                 raise ValueError(f"Product bundle digest mismatch: {name}")
         if manifest.core_artifact not in manifest.files:
             raise ValueError("Release manifest Core artifact is missing")
+        _verify_archived_component_identity(
+            archive, regular, manifest,
+        )
         if not root.endswith(manifest.product_version):
             raise ValueError("Product bundle root does not match Product version")
         return manifest
+
+
+def verify_detached_checksum(bundle: Path, checksums: Path | None = None) -> None:
+    """Verify a Product bundle against its detached SHA256SUMS entry."""
+
+    checksum_file = checksums or bundle.with_name("SHA256SUMS")
+    if not checksum_file.is_file():
+        raise ValueError(f"Detached checksums are missing: {checksum_file}")
+    expected = None
+    for line in checksum_file.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1].lstrip("*") == bundle.name:
+            expected = parts[0].lower()
+            break
+    if (
+        expected is None
+        or len(expected) != 64
+        or any(char not in "0123456789abcdef" for char in expected)
+    ):
+        raise ValueError(f"Detached checksums have no valid entry for {bundle.name}")
+    actual = _sha256(bundle)
+    if actual != expected:
+        raise ValueError(
+            f"Product bundle checksum mismatch: expected {expected}, got {actual}"
+        )
 
 
 def extract_product_bundle(
@@ -242,6 +286,73 @@ def _require_version(package: Path, expected: str) -> None:
     actual = str(project["project"]["version"])
     if actual != expected:
         raise ValueError(f"Product source version {actual} does not match {expected}")
+
+
+def _require_component_identity(
+    repository: Path,
+    wheel: Path,
+    expected: str,
+) -> None:
+    plugin = json.loads(
+        (repository / "plugins" / "scientific-figure-builder" / ".codex-plugin"
+         / "plugin.json").read_text(encoding="utf-8")
+    )
+    if str(plugin.get("version")) != expected:
+        raise ValueError("Native plugin version does not match Product version")
+    skill = (
+        repository / "scientific-figure-builder" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    if re.search(rf'(?m)^  version: "{re.escape(expected)}"$', skill) is None:
+        raise ValueError("Workflow Skill version does not match Product version")
+    _require_wheel_identity(wheel.read_bytes(), expected)
+
+
+def _verify_archived_component_identity(
+    archive: tarfile.TarFile,
+    regular: dict[str, tarfile.TarInfo],
+    manifest: ReleaseManifest,
+) -> None:
+    required = {
+        "plugin": "plugins/scientific-figure-builder/.codex-plugin/plugin.json",
+        "skill": "scientific-figure-builder/SKILL.md",
+        "wheel": manifest.core_artifact,
+    }
+    content: dict[str, bytes] = {}
+    for key, name in required.items():
+        member = regular.get(name)
+        stream = archive.extractfile(member) if member is not None else None
+        if stream is None:
+            raise ValueError(f"Product bundle is missing {name}")
+        content[key] = stream.read()
+    plugin = json.loads(content["plugin"])
+    if str(plugin.get("version")) != manifest.product_version:
+        raise ValueError("Bundled Native plugin version does not match manifest")
+    skill = content["skill"].decode("utf-8")
+    if re.search(
+        rf'(?m)^  version: "{re.escape(manifest.product_version)}"$', skill,
+    ) is None:
+        raise ValueError("Bundled Workflow Skill version does not match manifest")
+    _require_wheel_identity(content["wheel"], manifest.product_version)
+
+
+def _require_wheel_identity(content: bytes, expected: str) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            metadata_names = [
+                name for name in archive.namelist()
+                if name.endswith(".dist-info/METADATA")
+            ]
+            if len(metadata_names) != 1:
+                raise ValueError("Core wheel must contain one METADATA file")
+            metadata = Parser().parsestr(
+                archive.read(metadata_names[0]).decode("utf-8")
+            )
+    except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
+        raise ValueError("Core artifact is not a valid wheel") from exc
+    if metadata.get("Name") != "scientific-figure-builder":
+        raise ValueError("Core wheel has the wrong distribution name")
+    if metadata.get("Version") != expected:
+        raise ValueError("Core wheel version does not match Product version")
 
 
 def _write_reproducible_tar(source: Path, destination: Path) -> None:
@@ -360,6 +471,7 @@ __all__ = [
     "build_product_bundle",
     "extract_product_bundle",
     "verify_product_bundle",
+    "verify_detached_checksum",
 ]
 
 
