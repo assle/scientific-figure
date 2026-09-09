@@ -17,7 +17,8 @@ The file contains no credentials, Provider configuration, prompts, or user data:
   "cli_version": "0.6.0",
   "mcp_version": "0.6.0",
   "configuration_app_version": "0.6.0",
-  "old_processes": 0
+  "old_processes": 0,
+  "clean": true
 }
 ```
 

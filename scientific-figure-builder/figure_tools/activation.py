@@ -209,6 +209,8 @@ class ActivationResult:
     stale_instances: tuple[int, ...]
     retained_runtimes: tuple[Path, ...]
     transaction_log: Path
+    clean: bool
+    cleanup_error: str | None = None
 
     @property
     def exit_code(self) -> int:
@@ -224,6 +226,8 @@ class ActivationResult:
             "stale_instances": list(self.stale_instances),
             "retained_runtimes": [str(path) for path in self.retained_runtimes],
             "transaction_log": str(self.transaction_log),
+            "clean": self.clean,
+            "cleanup_error": self.cleanup_error,
         }
 
 
@@ -328,10 +332,14 @@ def activate_local(
             )
             _restore_paths(host_snapshot)
             raise
-        cleanup_local_versions(
-            request.environment,
-            running_instances=selected_instances,
-        )
+        cleanup_error = None
+        try:
+            cleanup_local_versions(
+                request.environment,
+                running_instances=selected_instances,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            cleanup_error = str(exc)
         status = collect_local_status(
             LocalStatusRequest(
                 environment=request.environment,
@@ -350,6 +358,8 @@ def activate_local(
             stale_instances=status.stale_instances,
             retained_runtimes=status.retained_runtimes,
             transaction_log=installed.transaction_log,
+            clean=status.clean,
+            cleanup_error=cleanup_error,
         )
 
 

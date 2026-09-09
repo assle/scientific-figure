@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         published_version = None
         if "--remote" in options:
             try:
-                from figure_tools.release_source import GitHubReleaseClient
+                from figure_tools.providers.github_releases import GitHubReleaseClient
 
                 tag = GitHubReleaseClient().describe("latest").tag_name
                 published_version = tag[1:] if tag.startswith("v") else tag
@@ -154,7 +154,10 @@ def _run_update(argv: list[str]) -> int:
     else:
         print(f"Scientific Figure Builder {result.product_version} activated.")
         print(f"  Active runtime: {result.active_runtime}")
-        print(f"  Status:         {result.conclusion}")
+        print(f"  Status:         {result.conclusion.value}")
+        print(f"  Clean files:    {'yes' if result.clean else 'no'}")
+        if result.cleanup_error:
+            print(f"  Cleanup warning: {result.cleanup_error}")
         if result.conclusion == "restart_required":
             print("  Next action:    restart Codex/OpenCode after saving active work")
     return result.exit_code

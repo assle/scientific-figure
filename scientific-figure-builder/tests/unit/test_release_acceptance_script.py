@@ -26,6 +26,7 @@ def test_acceptance_requires_observed_new_task_mcp_and_configuration_app() -> No
         "cli_version": "0.6.0",
         "plugin": {"version": "0.6.0", "installed": True, "enabled": True},
         "stale_instances": [],
+        "clean": True,
         "running_instances": [
             {"kind": "mcp", "version": "0.6.0"},
             {"kind": "gui", "version": "0.6.0"},

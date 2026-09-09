@@ -59,6 +59,7 @@ def require_release_acceptance(repository: Path, version: str) -> None:
         and evidence.get("codex_restart_verified") is True
         and evidence.get("new_task_mcp_verified") is True
         and evidence.get("old_processes") == 0
+        and evidence.get("clean") is True
     )
     if not valid:
         raise RuntimeError(f"release acceptance evidence is incomplete: {path}")

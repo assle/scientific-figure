@@ -18,7 +18,7 @@ def test_source_install_exposes_current_panel_and_operation_contracts(tmp_path: 
         pytest.skip("uv is required for installed-runtime verification")
     install_home = tmp_path / "install"
     command = [
-        str(REPOSITORY_ROOT / "install.sh"), "--codex",
+        str(REPOSITORY_ROOT / "install.sh"), "--runtime-only",
         "--install-home", str(install_home),
         "--bin-dir", str(tmp_path / "bin"),
         "--config-home", str(tmp_path / "config"),

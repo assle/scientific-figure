@@ -79,6 +79,7 @@ def test_publish_requires_real_local_convergence_acceptance(tmp_path: Path) -> N
         "mcp_version": "0.6.0",
         "configuration_app_version": "0.6.0",
         "old_processes": 0,
+        "clean": True,
     }))
 
     module.require_release_acceptance(tmp_path, "0.6.0")

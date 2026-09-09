@@ -20,6 +20,8 @@ def acceptance_from_status(
         raise RuntimeError("Codex restart must be explicitly confirmed")
     if not isinstance(status, dict) or status.get("conclusion") != "converged":
         raise RuntimeError("local status is not converged")
+    if status.get("clean") is not True:
+        raise RuntimeError("local product files are not clean")
     version = status.get("target_version")
     plugin = status.get("plugin")
     if not isinstance(version, str) or not isinstance(plugin, dict):
@@ -57,6 +59,7 @@ def acceptance_from_status(
         "mcp_version": versions["mcp"],
         "configuration_app_version": versions["gui"],
         "old_processes": 0,
+        "clean": True,
     }
 
 
