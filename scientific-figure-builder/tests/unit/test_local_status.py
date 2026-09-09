@@ -14,6 +14,7 @@ from figure_tools.convergence import cleanup_local_versions
 from figure_tools.install_paths import (
     PathEnvironment,
     native_plugin_cache_dir,
+    release_cache_dir,
     resolve_delivery_paths,
 )
 from figure_tools.local_status import (
@@ -21,6 +22,7 @@ from figure_tools.local_status import (
     LocalStatusRequest,
     PluginInstallation,
     collect_local_status,
+    discover_running_runtime_instances,
     status_from_system,
 )
 
@@ -243,3 +245,61 @@ def test_on_demand_cleanup_removes_only_versions_without_running_processes(
     removed = cleanup_local_versions(environment, running_instances=[])
     assert old_runtime in removed
     assert not (plugin_cache / "0.5.1").exists()
+
+
+def test_process_discovery_uses_invoked_venv_path_instead_of_symlink_target(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import psutil
+
+    environment, runtime = _active_install(tmp_path, "0.6.0")
+    invoked = runtime / ".venv" / "bin" / "python"
+    invoked.parent.mkdir(parents=True)
+    invoked.write_text("", encoding="utf-8")
+
+    class Process:
+        info = {
+            "pid": 42,
+            "ppid": 1,
+            "exe": "/shared/uv/python",
+            "cmdline": [str(invoked), "-m", "figure_tools.server"],
+        }
+
+    monkeypatch.setattr(psutil, "process_iter", lambda _fields: [Process()])
+
+    instances = discover_running_runtime_instances(environment)
+
+    assert len(instances) == 1
+    assert instances[0].version == "0.6.0"
+    assert instances[0].executable == invoked
+
+
+def test_status_reports_cleanup_state_without_mutating_it(tmp_path: Path) -> None:
+    environment, active_runtime = _active_install(tmp_path, "0.6.0")
+    paths = resolve_delivery_paths(environment, "0.6.0")
+    old_runtime = active_runtime.parent / "0.5.1"
+    old_runtime.mkdir()
+    old_plugin = native_plugin_cache_dir(environment) / "0.5.1"
+    old_plugin.mkdir(parents=True)
+    staging = paths.staging_parent / "unfinished"
+    staging.mkdir(parents=True)
+    backup = paths.transaction_backup_parent / "unfinished"
+    backup.mkdir(parents=True)
+    download = release_cache_dir(environment) / "0.6.0"
+    download.mkdir(parents=True)
+
+    result = collect_local_status(
+        LocalStatusRequest(
+            environment=environment, cli_version="0.6.0", require_plugin=False,
+        ),
+        plugin=PluginInstallation(False, False, None),
+        running_instances=[],
+    )
+
+    assert result.clean is False
+    assert result.retained_runtimes == (old_runtime,)
+    assert result.superseded_plugin_caches == (old_plugin,)
+    assert result.staging_paths == (staging,)
+    assert result.transaction_backup_paths == (backup,)
+    assert result.release_cache_paths == (download,)
+    assert old_runtime.is_dir()

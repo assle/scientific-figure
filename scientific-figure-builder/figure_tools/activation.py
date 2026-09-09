@@ -14,6 +14,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Iterable, Protocol
 
+from figure_tools.codex_plugin import (
+    MARKETPLACE_NAME,
+    PLUGIN_NAME,
+    PLUGIN_SELECTOR,
+    find_codex_executable,
+    native_plugin_configured,
+)
 from figure_tools.convergence import cleanup_local_versions
 from figure_tools.install_paths import (
     PathEnvironment,
@@ -24,6 +31,7 @@ from figure_tools.install_paths import (
     resolve_delivery_paths,
 )
 from figure_tools.local_status import (
+    LocalConclusion,
     LocalStatusRequest,
     PluginInstallation,
     RunningRuntimeInstance,
@@ -66,8 +74,8 @@ class HostTarget(str, Enum):
 class CodexPluginAdapter:
     """Install the bundled Native plugin through Codex's marketplace interface."""
 
-    marketplace_name = "scientific-figure"
-    plugin_selector = "scientific-figure-builder@scientific-figure"
+    marketplace_name = MARKETPLACE_NAME
+    plugin_selector = PLUGIN_SELECTOR
 
     def __init__(self, environment: PathEnvironment, *, codex: Path) -> None:
         self.environment = environment
@@ -98,7 +106,7 @@ class CodexPluginAdapter:
             "plugin", "list", "--marketplace", self.marketplace_name, "--json",
         ))
         for item in plugins.get("installed", []):
-            if item.get("name") == "scientific-figure-builder":
+            if item.get("name") == PLUGIN_NAME:
                 self._previous_version = (
                     str(item["version"]) if item.get("version") is not None else None
                 )
@@ -134,6 +142,11 @@ class CodexPluginAdapter:
         )
 
     def restore(self, version: str | None) -> None:
+        if version is None:
+            try:
+                self._json(("plugin", "remove", self.plugin_selector, "--json"))
+            except RuntimeError:
+                pass
         try:
             self._json(("plugin", "marketplace", "remove", self.marketplace_name, "--json"))
         except RuntimeError:
@@ -192,11 +205,14 @@ class ActivationResult:
     product_version: str
     active_runtime: Path
     plugin: PluginInstallation
-    conclusion: str
-    exit_code: int
+    conclusion: LocalConclusion
     stale_instances: tuple[int, ...]
     retained_runtimes: tuple[Path, ...]
     transaction_log: Path
+
+    @property
+    def exit_code(self) -> int:
+        return self.conclusion.exit_code
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -232,7 +248,7 @@ def activate_local(
     selected_plugin_adapter = plugin_adapter
     if selected_plugin_adapter is None:
         selected_plugin_adapter = (
-            CodexPluginAdapter(request.environment, codex=_codex_executable())
+            CodexPluginAdapter(request.environment, codex=find_codex_executable())
             if target.includes_codex
             else NoPluginAdapter()
         )
@@ -270,6 +286,7 @@ def activate_local(
                 scope="global",
                 product_version=manifest.product_version,
                 with_gui=request.with_gui,
+                defer_runtime_pruning=True,
             ),
             runtime_sync=runtime_sync,
         )
@@ -294,6 +311,13 @@ def activate_local(
                 ),
                 running_instances=selected_instances,
             )
+            if status.conclusion not in {
+                LocalConclusion.CONVERGED,
+                LocalConclusion.RESTART_REQUIRED,
+            }:
+                raise RuntimeError(
+                    f"Local activation did not converge: {status.conclusion}"
+                )
             selected_plugin_adapter.finalize()
         except Exception:  # noqa: BLE001 - preserve boundary error after compensation
             _restore_previous_installation(
@@ -323,7 +347,6 @@ def activate_local(
             active_runtime=paths.runtime_dir,
             plugin=plugin,
             conclusion=status.conclusion,
-            exit_code=status.exit_code,
             stale_instances=status.stale_instances,
             retained_runtimes=status.retained_runtimes,
             transaction_log=installed.transaction_log,
@@ -390,32 +413,10 @@ class NoPluginAdapter:
         return None
 
 
-def _codex_executable() -> Path:
-    located = shutil.which("codex")
-    if located:
-        return Path(located)
-    macos = Path("/Applications/ChatGPT.app/Contents/Resources/codex")
-    if macos.is_file():
-        return macos
-    raise RuntimeError("Codex CLI is required to install the Native plugin")
-
-
 def detect_installed_host(environment: PathEnvironment) -> HostTarget:
     """Preserve the currently installed host set for an update."""
 
-    codex_config = environment.codex_home / "config.toml"
-    codex = False
-    if codex_config.is_file():
-        try:
-            import tomllib
-
-            data = tomllib.loads(codex_config.read_text(encoding="utf-8"))
-            plugin = (data.get("plugins") or {}).get(
-                "scientific-figure-builder@scientific-figure"
-            )
-            codex = isinstance(plugin, dict) and plugin.get("enabled") is True
-        except (OSError, ValueError):
-            codex = False
+    codex = native_plugin_configured(environment)
     opencode_skill = (
         environment.config_root / "opencode" / "skills"
         / "scientific-figure-builder" / "SKILL.md"

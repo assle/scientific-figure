@@ -9,7 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from figure_tools.activation import ActivationRequest, CodexPluginAdapter, activate_local
+from figure_tools.activation import (
+    ActivationRequest,
+    CodexPluginAdapter,
+    HostTarget,
+    activate_local,
+    detect_installed_host,
+)
 from figure_tools.__main__ import main
 from figure_tools.install_paths import (
     PathEnvironment,
@@ -219,6 +225,35 @@ def test_activation_restores_previous_version_when_plugin_finalize_fails(
     assert plugin.restored == ["0.5.0"]
 
 
+def test_activation_compensates_when_plugin_result_is_not_converged(
+    tmp_path: Path,
+) -> None:
+    environment = _environment(tmp_path)
+    previous = resolve_delivery_paths(environment, "0.5.0")
+    previous.runtime_dir.mkdir(parents=True)
+    _runtime_sync(previous.runtime_dir, False)
+    activate_runtime(previous)
+
+    class DisabledPlugin(PluginAdapter):
+        def install(self, product_root: Path, version: str) -> PluginInstallation:
+            del product_root
+            return PluginInstallation(True, False, version)
+
+    with pytest.raises(RuntimeError, match="did not converge"):
+        activate_local(
+            ActivationRequest(
+                bundle=_bundle(tmp_path), environment=environment,
+                expected_version=PRODUCT_VERSION, host="codex",
+            ),
+            plugin_adapter=DisabledPlugin(),
+            runtime_sync=_runtime_sync,
+            running_instances=[],
+        )
+
+    active = read_active_runtime(previous.active_runtime_file)
+    assert active is not None and active["version"] == "0.5.0"
+
+
 def test_all_host_activation_restores_opencode_files_when_codex_plugin_fails(
     tmp_path: Path,
 ) -> None:
@@ -303,6 +338,35 @@ def test_activation_prunes_previous_runtime_only_after_process_convergence(
     assert previous.runtime_dir.exists() is previous_exists
     assert (plugin_cache / "0.5.0").exists() is previous_exists
     assert (plugin_cache / PRODUCT_VERSION).is_dir()
+
+
+def test_activation_never_prunes_an_older_runtime_used_by_a_live_instance(
+    tmp_path: Path,
+) -> None:
+    environment = _environment(tmp_path)
+    previous = resolve_delivery_paths(environment, "0.5.0")
+    older = resolve_delivery_paths(environment, "0.4.0")
+    previous.runtime_dir.mkdir(parents=True)
+    older.runtime_dir.mkdir(parents=True)
+    _runtime_sync(previous.runtime_dir, False)
+    older_python = _runtime_sync(older.runtime_dir, False)
+    activate_runtime(previous)
+
+    result = activate_local(
+        ActivationRequest(
+            bundle=_bundle(tmp_path), environment=environment,
+            expected_version=PRODUCT_VERSION, host="codex",
+        ),
+        plugin_adapter=PluginAdapter(),
+        runtime_sync=_runtime_sync,
+        running_instances=[RunningRuntimeInstance(
+            pid=42, parent_pid=1, kind="mcp", version="0.4.0",
+            executable=older_python,
+        )],
+    )
+
+    assert result.conclusion == "restart_required"
+    assert older.runtime_dir.is_dir()
 
 
 def test_codex_plugin_adapter_replaces_and_can_restore_marketplace(
@@ -433,3 +497,17 @@ def test_update_cli_activates_a_verified_local_bundle(
     assert payload["product_version"] == PRODUCT_VERSION
     assert payload["conclusion"] == "converged"
     assert Path(payload["active_runtime"]).is_dir()
+
+
+def test_disabled_codex_plugin_is_still_part_of_installed_shape(
+    tmp_path: Path,
+) -> None:
+    environment = _environment(tmp_path)
+    environment.codex_home.mkdir(parents=True)
+    (environment.codex_home / "config.toml").write_text(
+        '[plugins."scientific-figure-builder@scientific-figure"]\n'
+        'enabled = false\n',
+        encoding="utf-8",
+    )
+
+    assert detect_installed_host(environment) is HostTarget.CODEX

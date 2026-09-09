@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -62,18 +63,16 @@ def acceptance_from_status(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Record release acceptance")
     parser.add_argument("--repository-root", type=Path, default=Path(__file__).parents[1])
-    parser.add_argument(
-        "--launcher", type=Path,
-        default=Path.home() / ".local/bin/scientific-figure",
-    )
+    parser.add_argument("--launcher", type=Path)
     parser.add_argument("--status-json", type=Path)
     parser.add_argument("--confirm-codex-restarted", action="store_true")
     args = parser.parse_args(argv)
     if args.status_json is not None:
         status: Any = json.loads(args.status_json.read_text(encoding="utf-8"))
     else:
+        launcher = args.launcher or _default_launcher()
         completed = subprocess.run(
-            [str(args.launcher), "status", "--json"],
+            [str(launcher), "status", "--json"],
             check=True,
             capture_output=True,
             text=True,
@@ -94,6 +93,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(destination)
     return 0
+
+
+def _default_launcher() -> Path:
+    package_source = Path(__file__).resolve().parents[1] / "scientific-figure-builder"
+    if str(package_source) not in sys.path:
+        sys.path.insert(0, str(package_source))
+    from figure_tools.install_paths import PathEnvironment, resolve_delivery_paths
+
+    launcher = resolve_delivery_paths(
+        PathEnvironment.from_environ(), "launcher-resolution",
+    ).launcher_file
+    if launcher is None:
+        raise RuntimeError("Global scientific-figure launcher is unavailable")
+    return launcher
 
 
 if __name__ == "__main__":

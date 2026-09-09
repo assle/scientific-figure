@@ -51,7 +51,7 @@ def cleanup_from_installed_runtime() -> tuple[Path, ...]:
 
     environment = PathEnvironment.from_environ()
     try:
-        Path(sys.executable).resolve().relative_to(environment.install_root.resolve())
+        Path(sys.executable).absolute().relative_to(environment.install_root.absolute())
     except (OSError, ValueError):
         return ()
     return cleanup_local_versions(environment)

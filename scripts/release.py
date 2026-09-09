@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -102,6 +103,10 @@ def select_target_version(
     if not current_release_complete:
         return current
     return resolve_target_version(current, selector)
+
+
+def candidate_ref(version: str) -> str:
+    return f"refs/heads/codex/release-{version}"
 
 
 def read_product_version(repository: Path) -> str:
@@ -232,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if _run(("git", "branch", "--show-current"), cwd=repository) != "main":
         raise RuntimeError("releases must start from main")
+    _report("Inspecting main, tags, and existing GitHub Release state")
     _run(("git", "fetch", "origin", "--tags", "--prune"), cwd=repository)
     _run(("git", "merge-base", "--is-ancestor", "origin/main", "HEAD"), cwd=repository)
 
@@ -244,7 +250,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     origin_version = _version_at(repository, "origin/main")
-    base_revision = "origin/main" if origin_version == target else "HEAD"
+    prepared_ref = candidate_ref(target)
+    prepared_version = _version_at(repository, prepared_ref)
+    if prepared_version == target:
+        base_revision = prepared_ref
+    else:
+        base_revision = "origin/main" if origin_version == target else "HEAD"
     notes_source = args.notes_file.resolve() if args.notes_file is not None else None
     if args.publish and target != current and notes_source is None:
         raise RuntimeError(
@@ -256,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         _run(("git", "worktree", "add", "--detach", str(worktree), base_revision),
              cwd=repository)
         try:
+            _report(f"Preparing Product version {target} in an isolated worktree")
             version, commit = prepare_release(
                 worktree, target, notes_source=notes_source,
             )
@@ -266,9 +278,11 @@ def main(argv: list[str] | None = None) -> int:
             }
             activation_exit_code = 0
             if args.publish:
+                _report("Publishing the release commit and waiting for authoritative CI")
                 payload["release_url"] = publish_release(worktree, version, commit)
                 payload["published"] = True
                 if args.activate_local:
+                    _report("Activating the published Product bundle locally")
                     completed = subprocess.run(
                         [str(worktree / "install.sh"), "--codex", "--release",
                          f"v{version}"],
@@ -277,6 +291,14 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     activation_exit_code = completed.returncode
                     payload["local_activation_exit_code"] = activation_exit_code
+                _run(
+                    ("git", "update-ref", "-d", prepared_ref, commit),
+                    cwd=repository,
+                    allow_failure=True,
+                )
+            else:
+                _run(("git", "update-ref", prepared_ref, commit), cwd=repository)
+                payload["candidate_ref"] = prepared_ref
             print(json.dumps(payload, indent=2))
             return activation_exit_code
         finally:
@@ -304,6 +326,7 @@ def _release_notes(repository: Path, version: str) -> str:
 
 
 def _wait_for_main_ci(repository: Path, commit: str) -> None:
+    _report(f"Waiting for Tests workflow on {commit[:12]}")
     deadline = time.monotonic() + 20 * 60
     while time.monotonic() < deadline:
         text = _run(
@@ -323,6 +346,7 @@ def _wait_for_main_ci(repository: Path, commit: str) -> None:
 
 
 def _wait_for_release(repository: Path, tag: str) -> str:
+    _report(f"Waiting for the tag workflow to publish {tag}")
     version = tag.removeprefix("v")
     deadline = time.monotonic() + 20 * 60
     while time.monotonic() < deadline:
@@ -349,6 +373,10 @@ def _replace(path: Path, pattern: str, replacement: str) -> None:
     if count != 1:
         raise RuntimeError(f"could not update version metadata in {path}")
     path.write_text(updated, encoding="utf-8")
+
+
+def _report(message: str) -> None:
+    print(f"[release] {message}", file=sys.stderr, flush=True)
 
 
 def _run(

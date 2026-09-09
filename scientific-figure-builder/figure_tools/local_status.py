@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
-import tomllib
 from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Iterable, Mapping
 
+from figure_tools.codex_plugin import (
+    MARKETPLACE_NAME,
+    PLUGIN_NAME,
+    find_codex_executable,
+    native_plugin_configured,
+)
 from figure_tools.install_paths import (
     PathEnvironment,
     global_active_runtime_file,
+    native_plugin_cache_dir,
     read_active_runtime,
+    release_cache_dir,
+    resolve_delivery_paths,
 )
 
 
@@ -23,6 +31,24 @@ class PluginInstallation:
     installed: bool
     enabled: bool
     version: str | None
+
+
+class LocalConclusion(str, Enum):
+    CONVERGED = "converged"
+    RESTART_REQUIRED = "restart_required"
+    UPDATE_AVAILABLE = "update_available"
+    INCONSISTENT = "inconsistent"
+    BROKEN = "broken"
+
+    @property
+    def exit_code(self) -> int:
+        return {
+            LocalConclusion.CONVERGED: 0,
+            LocalConclusion.RESTART_REQUIRED: 2,
+            LocalConclusion.UPDATE_AVAILABLE: 3,
+            LocalConclusion.INCONSISTENT: 3,
+            LocalConclusion.BROKEN: 4,
+        }[self]
 
 
 @dataclass(frozen=True)
@@ -42,14 +68,9 @@ class LocalStatusRequest:
     require_plugin: bool = True
 
 
-PLUGIN_NAME = "scientific-figure-builder"
-PLUGIN_MARKETPLACE = "scientific-figure"
-
-
 @dataclass(frozen=True)
 class LocalStatusResult:
-    conclusion: str
-    exit_code: int
+    conclusion: LocalConclusion
     target_version: str | None
     active_runtime: Path | None
     cli_version: str
@@ -59,7 +80,17 @@ class LocalStatusResult:
     stale_instances: tuple[int, ...]
     in_use_runtimes: tuple[Path, ...]
     retained_runtimes: tuple[Path, ...]
+    superseded_plugin_caches: tuple[Path, ...]
+    staging_paths: tuple[Path, ...]
+    transaction_backup_paths: tuple[Path, ...]
+    release_cache_paths: tuple[Path, ...]
+    transaction_log_count: int
+    clean: bool
     error: str | None = None
+
+    @property
+    def exit_code(self) -> int:
+        return self.conclusion.exit_code
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -68,6 +99,12 @@ class LocalStatusResult:
         )
         payload["in_use_runtimes"] = [str(path) for path in self.in_use_runtimes]
         payload["retained_runtimes"] = [str(path) for path in self.retained_runtimes]
+        for key in (
+            "superseded_plugin_caches", "staging_paths",
+            "transaction_backup_paths", "release_cache_paths",
+        ):
+            payload[key] = [str(path) for path in getattr(self, key)]
+        payload["exit_code"] = self.exit_code
         payload["running_instances"] = [
             {**asdict(process), "executable": str(process.executable)}
             for process in self.running_instances
@@ -118,6 +155,14 @@ def collect_local_status(
         path for path in sorted(runtime_root.iterdir())
         if path.is_dir() and path != active_runtime
     ) if runtime_root.is_dir() else ()
+    delivery = resolve_delivery_paths(request.environment, target_version)
+    superseded_plugin_caches = _child_directories(
+        native_plugin_cache_dir(request.environment), exclude=target_version,
+    )
+    staging_paths = _children(delivery.staging_parent)
+    transaction_backup_paths = _children(delivery.transaction_backup_parent)
+    release_cache_paths = _children(release_cache_dir(request.environment))
+    transaction_log_count = len(_children(delivery.transaction_log_dir))
 
     inconsistent = (
         request.cli_version != target_version
@@ -131,19 +176,25 @@ def collect_local_status(
         )
     )
     if inconsistent:
-        conclusion, exit_code = "inconsistent", 3
+        conclusion = LocalConclusion.INCONSISTENT
     elif stale:
-        conclusion, exit_code = "restart_required", 2
+        conclusion = LocalConclusion.RESTART_REQUIRED
     elif (
         request.published_version is not None
         and request.published_version != target_version
     ):
-        conclusion, exit_code = "update_available", 3
+        conclusion = LocalConclusion.UPDATE_AVAILABLE
     else:
-        conclusion, exit_code = "converged", 0
+        conclusion = LocalConclusion.CONVERGED
+    clean = not any((
+        retained,
+        superseded_plugin_caches,
+        staging_paths,
+        transaction_backup_paths,
+        release_cache_paths,
+    ))
     return LocalStatusResult(
         conclusion=conclusion,
-        exit_code=exit_code,
         target_version=target_version,
         active_runtime=active_runtime,
         cli_version=request.cli_version,
@@ -153,6 +204,12 @@ def collect_local_status(
         stale_instances=stale,
         in_use_runtimes=in_use,
         retained_runtimes=retained,
+        superseded_plugin_caches=superseded_plugin_caches,
+        staging_paths=staging_paths,
+        transaction_backup_paths=transaction_backup_paths,
+        release_cache_paths=release_cache_paths,
+        transaction_log_count=transaction_log_count,
+        clean=clean,
     )
 
 
@@ -167,7 +224,7 @@ def status_from_system(
     environment_values = os.environ if environ is None else environ
     environment = PathEnvironment.from_environ(environment_values)
     plugin = _installed_codex_plugin(environment_values)
-    codex_expected = _codex_plugin_expected(environment)
+    codex_expected = native_plugin_configured(environment)
     return collect_local_status(
         LocalStatusRequest(
             environment=environment,
@@ -186,15 +243,16 @@ def render_human_status(result: LocalStatusResult, *, verbose: bool = False) -> 
     plugin_version = result.plugin.version or "not installed"
     lines = [
         "Scientific Figure Builder local status",
-        f"  Conclusion:      {result.conclusion}",
+        f"  Conclusion:      {result.conclusion.value}",
         f"  Target version:  {result.target_version or 'unknown'}",
         f"  Latest release:  {result.published_version or 'not checked'}",
         f"  Native plugin:   {plugin_version}",
         f"  Active runtime:  {_display_path(result.active_runtime)}",
         f"  CLI:             {result.cli_version}",
         f"  Running MCP:     {sum(item.kind == 'mcp' for item in result.running_instances)}",
-        f"  Running GUI:     {sum(item.kind == 'gui' for item in result.running_instances)}",
-        f"  Stale running_instances: {len(result.stale_instances)}",
+        f"  Configuration app: {sum(item.kind == 'gui' for item in result.running_instances)} running",
+        f"  Running runtime instances needing reload: {len(result.stale_instances)}",
+        f"  Clean files:     {'yes' if result.clean else 'no'}",
     ]
     if result.error:
         lines.append(f"  Error:           {result.error}")
@@ -209,15 +267,24 @@ def render_human_status(result: LocalStatusResult, *, verbose: bool = False) -> 
     return "\n".join(lines)
 
 
+def _children(path: Path) -> tuple[Path, ...]:
+    return tuple(sorted(path.iterdir())) if path.is_dir() else ()
+
+
+def _child_directories(path: Path, *, exclude: str) -> tuple[Path, ...]:
+    return tuple(
+        child for child in _children(path)
+        if child.is_dir() and child.name != exclude
+    )
+
+
 def _installed_codex_plugin(environ: Mapping[str, str]) -> PluginInstallation:
-    codex = shutil.which("codex", path=environ.get("PATH"))
-    if codex is None:
-        macos = Path("/Applications/ChatGPT.app/Contents/Resources/codex")
-        codex = str(macos) if macos.is_file() else None
-    if codex is None:
+    try:
+        codex = find_codex_executable(environ)
+    except RuntimeError:
         return PluginInstallation(False, False, None)
     completed = subprocess.run(
-        [codex, "plugin", "list", "--marketplace", PLUGIN_MARKETPLACE, "--json"],
+        [str(codex), "plugin", "list", "--marketplace", MARKETPLACE_NAME, "--json"],
         capture_output=True,
         text=True,
         timeout=15,
@@ -240,33 +307,18 @@ def _installed_codex_plugin(environ: Mapping[str, str]) -> PluginInstallation:
     return PluginInstallation(False, False, None)
 
 
-def _codex_plugin_expected(environment: PathEnvironment) -> bool:
-    config = environment.codex_home / "config.toml"
-    if not config.is_file():
-        return False
-    try:
-        payload = tomllib.loads(config.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
-    plugin = (payload.get("plugins") or {}).get(
-        "scientific-figure-builder@scientific-figure"
-    )
-    return isinstance(plugin, dict) and plugin.get("enabled") is True
-
-
 def discover_running_runtime_instances(environment: PathEnvironment) -> tuple[RunningRuntimeInstance, ...]:
     import psutil
 
     result: list[RunningRuntimeInstance] = []
-    install_root = environment.install_root.resolve()
+    install_root = environment.install_root.absolute()
     for process in psutil.process_iter(("pid", "ppid", "exe", "cmdline")):
         try:
             info = process.info
-            executable_text = info.get("exe")
             command = [str(item) for item in (info.get("cmdline") or [])]
-            if not executable_text:
+            if not command or not Path(command[0]).is_absolute():
                 continue
-            executable = Path(str(executable_text)).resolve()
+            executable = Path(command[0]).absolute()
             try:
                 executable.relative_to(install_root)
             except ValueError:
@@ -325,8 +377,7 @@ def _broken(
     error: str,
 ) -> LocalStatusResult:
     return LocalStatusResult(
-        conclusion="broken",
-        exit_code=4,
+        conclusion=LocalConclusion.BROKEN,
         target_version=None,
         active_runtime=None,
         cli_version=request.cli_version,
@@ -336,6 +387,12 @@ def _broken(
         stale_instances=(),
         in_use_runtimes=(),
         retained_runtimes=(),
+        superseded_plugin_caches=(),
+        staging_paths=(),
+        transaction_backup_paths=(),
+        release_cache_paths=(),
+        transaction_log_count=0,
+        clean=False,
         error=error,
     )
 
@@ -344,6 +401,7 @@ __all__ = [
     "RunningRuntimeInstance",
     "LocalStatusRequest",
     "LocalStatusResult",
+    "LocalConclusion",
     "PluginInstallation",
     "collect_local_status",
     "discover_running_runtime_instances",

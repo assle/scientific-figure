@@ -78,6 +78,7 @@ class InstallRequest:
     scope: str
     product_version: str
     with_gui: bool = False
+    defer_runtime_pruning: bool = False
 
     def __post_init__(self) -> None:
         if self.target not in {"runtime", "opencode", "codex-legacy", "both"}:
@@ -564,7 +565,10 @@ def install(
         committed_paths = transaction.committed_paths
         transaction_id = transaction.transaction_id
 
-    pruned_runtimes = prune_runtime_versions(paths, previous_runtime)
+    pruned_runtimes = (
+        [] if request.defer_runtime_pruning
+        else prune_runtime_versions(paths, previous_runtime)
+    )
     runtime_python_path = runtime_python(paths.runtime_dir)
     launcher = paths.launcher_file if paths.launcher_file is not None else None
     launcher_warning = None
