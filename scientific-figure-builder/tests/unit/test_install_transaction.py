@@ -29,6 +29,19 @@ def _paths(tmp_path: Path, version: str = "0.2.0"):
     )
 
 
+def test_process_probe_does_not_signal_the_process(monkeypatch) -> None:
+    import figure_tools.install_transaction as transaction_module
+
+    def fail_if_signalled(_pid: int, _signal: int) -> None:
+        raise AssertionError("process liveness checks must not send a signal")
+
+    monkeypatch.setattr(transaction_module.os, "kill", fail_if_signalled)
+    monkeypatch.setattr(transaction_module.psutil, "pid_exists", lambda pid: pid == 42)
+
+    assert transaction_module._process_alive(42) is True
+    assert transaction_module._process_alive(43) is False
+
+
 def test_transaction_rolls_back_replacements_in_reverse(tmp_path: Path) -> None:
     paths = _paths(tmp_path)
     destination = tmp_path / "destination.txt"

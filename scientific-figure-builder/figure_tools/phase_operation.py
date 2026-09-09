@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from figure_tools.run_store import RunStore
 
 
@@ -30,11 +32,7 @@ def _now() -> str:
 
 
 def _process_exists(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except (OSError, ValueError):
-        return False
-    return True
+    return psutil.pid_exists(pid)
 
 
 class LocalPhaseOperationManager:

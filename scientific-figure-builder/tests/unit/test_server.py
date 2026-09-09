@@ -353,6 +353,19 @@ def test_orphaned_phase_operation_is_not_resubmitted(monkeypatch, tmp_path):
     assert "Do not resubmit automatically" in payload["recovery"]
 
 
+def test_phase_operation_process_probe_does_not_signal_the_process(monkeypatch) -> None:
+    import figure_tools.phase_operation as operation_module
+
+    def fail_if_signalled(_pid: int, _signal: int) -> None:
+        raise AssertionError("process liveness checks must not send a signal")
+
+    monkeypatch.setattr(operation_module.os, "kill", fail_if_signalled)
+    monkeypatch.setattr(operation_module.psutil, "pid_exists", lambda pid: pid == 42)
+
+    assert operation_module._process_exists(42) is True
+    assert operation_module._process_exists(43) is False
+
+
 def test_public_initialize_call_and_hidden_tool_rejection(monkeypatch, tmp_path):
     responses = _rpc(
         monkeypatch,

@@ -10,6 +10,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
 from figure_tools.install_paths import DeliveryPaths
 
 
@@ -23,13 +25,7 @@ def _remove(path: Path) -> None:
 
 
 def _process_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return psutil.pid_exists(pid)
 
 
 def install_lock_status(lock: Path) -> str:
