@@ -178,11 +178,12 @@ class LocalPhaseOperationManager:
         context: Any,
         cancelled: threading.Event,
     ) -> None:
+        terminal: dict[str, Any] | None = None
         try:
             value = context.run(operation) if context is not None else operation()
             result = dict(value)
             current = store.load_json("plans/phase_operation.json")
-            completed = {
+            terminal = {
                 **current,
                 "phase": str(result.get("phase") or current["phase"]),
                 "status": "completed",
@@ -190,10 +191,6 @@ class LocalPhaseOperationManager:
                 "result": result,
                 "error": None,
             }
-            store.commit_json(
-                "plans/phase_operation.json", completed,
-                schema="phase-operation.schema.json",
-            )
         except BaseException as exc:  # error is already sanitized by the MCP Adapter
             current = store.load_optional_json("plans/phase_operation.json") or {
                 "schema_version": "1.0", "operation_id": operation_id,
@@ -202,20 +199,25 @@ class LocalPhaseOperationManager:
                 "provider_invocation_id": None,
             }
             was_cancelled = cancelled.is_set() or current.get("status") == "cancellation_requested"
-            failed = {
+            terminal = {
                 **current,
                 "status": "cancelled" if was_cancelled else "failed",
                 "updated_at": _now(),
                 "result": None,
                 "error": str(exc),
             }
-            store.commit_json(
-                "plans/phase_operation.json", failed,
-                schema="phase-operation.schema.json",
-            )
         finally:
             store.release_claim("plans/.phase-operation.lock", operation_id)
             with _ACTIVE_LOCK:
+                # Observers read, update, and write this file while holding
+                # this lock. Committing the terminal state inside the same
+                # critical section keeps a concurrent observation from
+                # restoring the running status after the operation finished.
+                if terminal is not None:
+                    store.commit_json(
+                        "plans/phase_operation.json", terminal,
+                        schema="phase-operation.schema.json",
+                    )
                 active = _ACTIVE.get(key)
                 if active is not None and active.operation_id == operation_id:
                     _ACTIVE.pop(key, None)
