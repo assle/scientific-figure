@@ -22,9 +22,8 @@ from figure_tools.providers.auth import (
     sanitize_error,
 )
 from figure_tools.providers.generic_transport import (
-    AnthropicTransport,
-    DashScopeNativeTransport,
-    OpenAICompatibleTransport,
+    TRANSPORT_TYPES,
+    build_transport,
 )
 from figure_tools.providers.transport import ProviderTransport
 
@@ -90,22 +89,13 @@ class ConnectionTestService:
             return self.transport_factory(
                 provider_id, provider, credential=credential,
             )
-        provider_type = str(provider.get("type", ""))
-        kwargs: dict[str, Any] = {
-            "credential": credential,
-            "redactor": redactor,
-            "timeout": self.timeout,
-        }
-        if self.opener is not None:
-            kwargs["opener"] = self.opener
-        if provider_type == "openai":
-            return OpenAICompatibleTransport(provider_id, dict(provider), **kwargs)
-        if provider_type == "dashscope":
-            return DashScopeNativeTransport(provider_id, dict(provider), **kwargs)
-        if provider_type == "anthropic":
-            return AnthropicTransport(provider_id, dict(provider), **kwargs)
-        raise ConnectionTestError(
-            "Provider type 必须是 openai、anthropic 或 dashscope"
+        if str(provider.get("type", "")) not in TRANSPORT_TYPES:
+            raise ConnectionTestError(
+                "Provider type 必须是 openai、anthropic 或 dashscope"
+            )
+        return build_transport(
+            provider_id, provider, credential=credential,
+            redactor=redactor, timeout=self.timeout, opener=self.opener,
         )
 
     def run(

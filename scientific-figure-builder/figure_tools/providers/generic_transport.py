@@ -8,6 +8,7 @@ import mimetypes
 import urllib.error
 import urllib.request
 import urllib.parse
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
@@ -649,6 +650,39 @@ class AnthropicTransport(ProviderTransport):
         return extract_json(text, redactor=self.redactor)
 
 
+TRANSPORT_TYPES: dict[str, Callable[..., ProviderTransport]] = {
+    "openai": OpenAICompatibleTransport,
+    "anthropic": AnthropicTransport,
+    "dashscope": DashScopeNativeTransport,
+}
+
+
+def build_transport(
+    provider_id: str,
+    provider: Mapping[str, Any],
+    *,
+    credential: str | ResolvedCredential | None = None,
+    redactor: SecretRedactor | None = None,
+    timeout: float = 30.0,
+    opener: HTTP_OPENER | None = None,
+) -> ProviderTransport:
+    """Build the transport that speaks one Provider type's wire dialect."""
+    provider_type = str(provider.get("type", ""))
+    factory = TRANSPORT_TYPES.get(provider_type)
+    if factory is None:
+        raise ProviderError(
+            f"provider {provider_id!r} has unsupported type {provider_type!r}"
+        )
+    kwargs: dict[str, Any] = {
+        "credential": credential,
+        "redactor": redactor,
+        "timeout": timeout,
+    }
+    if opener is not None:
+        kwargs["opener"] = opener
+    return factory(provider_id, dict(provider), **kwargs)
+
+
 class ProviderRouter(ProviderTransport):
     """Select a transport from each model role's provider reference."""
 
@@ -727,30 +761,10 @@ class ProviderRouter(ProviderTransport):
         current_value = credential.value if isinstance(credential, ResolvedCredential) else credential
         if transport is not None and getattr(transport, "api_key", None) == current_value:
             return transport
-        provider_type = provider["type"]
-        if provider_type == "openai":
-            transport = OpenAICompatibleTransport(
-                provider_name, provider, credential=credential,
-                redactor=self._redactor, opener=self._opener,
-                timeout=self._timeout,
-            )
-        elif provider_type == "dashscope":
-            transport = DashScopeNativeTransport(
-                provider_name, provider, credential=credential,
-                redactor=self._redactor, opener=self._opener,
-                timeout=self._timeout,
-            )
-        elif provider_type == "anthropic":
-            transport = AnthropicTransport(
-                provider_name, provider, credential=credential,
-                redactor=self._redactor, opener=self._opener,
-                timeout=self._timeout,
-            )
-        else:
-            raise ProviderError(
-                f"provider {provider_name!r} has unsupported type "
-                f"{provider_type!r}"
-            )
+        transport = build_transport(
+            provider_name, provider, credential=credential,
+            redactor=self._redactor, timeout=self._timeout, opener=self._opener,
+        )
         self._transports[provider_name] = transport
         return transport
 
