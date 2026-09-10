@@ -165,7 +165,7 @@ class FigurePlanningArtifacts:
         style_anchors: Mapping[str, Mapping[str, Any]] | None = None,
         persist: bool = True,
     ) -> dict[str, Any]:
-        style_path = self.run_dir / "style_bible.json"
+        style_path = self.store.path("style_bible.json")
         style_bible = json.loads(style_path.read_text(encoding="utf-8"))
         profile_id = str(
             self.request.get("publication_profile")
@@ -275,7 +275,7 @@ class FigurePlanningArtifacts:
         )
 
     def _copy_inputs(self) -> None:
-        inputs = self.run_dir / "inputs"
+        inputs = self.store.path("inputs")
         inputs.mkdir(parents=True, exist_ok=True)
         references = [*self.request.get("reference_figures", [])]
         references.extend(

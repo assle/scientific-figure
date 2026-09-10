@@ -92,7 +92,7 @@ class FigureExecution:
             if len(members) < 2:
                 continue
             anchor_id = members[0][1]["element_id"]
-            anchor_path = self.run_dir / "assets" / f"{anchor_id}.png"
+            anchor_path = self.store.asset_path(f"{anchor_id}.png")
             anchor_meta = reusable.get(anchor_id)
             if (
                 anchor_meta is None
@@ -173,7 +173,7 @@ class FigureExecution:
                     "validation_reports": validation_reports, "assembly_result": {},
                     "placements": placements, "text_placements": text_placements}
 
-        assembly_dir = self.run_dir / "assembly"
+        assembly_dir = self.store.path("assembly")
         solved_layout = self.store.load_optional_json("plans/solved_layout.json") or {}
         source_layouts = {
             p["asset_id"]: p["layout_manifest"]
@@ -203,7 +203,7 @@ class FigureExecution:
                                   if p.get("asset_id")},
             ),
             run_id=self.state.run_id,
-            evidence_dir=self.run_dir / "validation" / "evidence",
+            evidence_dir=self.store.path("validation/evidence"),
         )
         validation_reports.append(final)
         self.store.commit_json("validation/validation_report.json", final)
@@ -293,9 +293,9 @@ class FigureExecution:
         force_export_reason: str | None = None,
     ) -> dict[str, Any]:
         """Apply the Export gate and write the generation report."""
-        assembly_dir = self.run_dir / "assembly"
+        assembly_dir = self.store.path("assembly")
         validation_reports = execution["validation_reports"]
-        if not (assembly_dir / "figure.png").is_file():
+        if not self.store.composed_figure_path().is_file():
             return {"exported": False, "files": {},
                     "export_blocked_reason": "Required assets must be repaired before assembly and export.",
                     "report_path": None}
@@ -303,7 +303,7 @@ class FigureExecution:
         export_result = export_figure(
             validation_reports,
             source_dir=assembly_dir,
-            output_dir=self.run_dir / "exports",
+            output_dir=self.store.path("exports"),
             force_export=force_export,
         )
         exported = bool(export_result["files"])
@@ -393,7 +393,7 @@ class FigureExecution:
                 asset_id = el["element_id"]
                 try:
                     spec = load_plot_spec(el["plot_spec"])
-                    out = self.run_dir / "plots" / asset_id
+                    out = self.store.path(Path("plots", asset_id))
                     path = out / "plot.png"
                     if not path.is_file():
                         render_plot(
@@ -434,7 +434,7 @@ class FigureExecution:
                     bbox = self._placement_bbox(asset_id, plan, panel)
                     width = max(1, round(self._canvas_mm()[0] * bbox[2] / 25.4 * self.compose_dpi))
                     png = svg_to_bytes(svg_string=svg.decode("utf-8"), width=width)
-                    svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
+                    svg_path = self.store.path(Path("vectors", f"{asset_id}.svg"))
                     png_path = svg_path.with_suffix(".png")
                     self.store.commit_text(f"vectors/{asset_id}.svg", svg.decode("utf-8"))
                     png_path.write_bytes(png)
@@ -482,7 +482,7 @@ class FigureExecution:
 
     def _safe_gen_ai(self, panel, el, condition, pre_rendered_meta=None):
         try:
-            path = self.run_dir / "assets" / f"{el['element_id']}.png"
+            path = self.store.asset_path(f"{el['element_id']}.png")
             reusable_path = (
                 Path(pre_rendered_meta["path"])
                 if pre_rendered_meta is not None and pre_rendered_meta.get("path")
@@ -534,8 +534,8 @@ class FigureExecution:
         candidates: list[tuple[tuple[int | float, ...], dict, dict, Path]] = []
         records = []
         for index in range(1, candidate_count + 1):
-            candidate_path = (
-                self.run_dir / "assets" / "candidates" / f"{asset_id}-{index}.png"
+            candidate_path = self.store.asset_path(
+                "candidates", f"{asset_id}-{index}.png"
             )
             candidate_path.parent.mkdir(parents=True, exist_ok=True)
             candidate_condition = copy.deepcopy(condition)
@@ -660,7 +660,7 @@ class FigureExecution:
                 if label.get("kind", "label") == "label"
                 else float((profile.get("ordinary_text_pt") or [7, 9])[-1])
             )
-            svg_path = self.run_dir / "vectors" / f"{asset_id}.svg"
+            svg_path = self.store.path(Path("vectors", f"{asset_id}.svg"))
             if not svg_path.is_file():
                 canvas = SvgCanvas(width=200, height=40)
                 canvas.text(
