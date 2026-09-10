@@ -37,6 +37,14 @@ do not silently expand the scope, rewrite the requirement, or turn them into a c
 This is the default for non-trivial coding work. If the user explicitly requests end-to-end
 implementation or invokes a workflow skill, follow that requested scope or workflow instead.
 
+## Problem Diagnosis
+
+When diagnosing a problem, explain the evidence chain to the user: state where each relevant log
+or error was observed, what the exact signal means, which clue points to the corresponding code or
+configuration path, and which file, symbol, or runtime component was inspected to confirm the
+cause. Keep observations, interpretations, and confirmed conclusions distinct; a diagnosis is not
+complete until the reported cause is traceable through this chain.
+
 ## Language
 
 - **User-facing interaction**: Always communicate with the user in Chinese (中文).
