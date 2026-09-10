@@ -370,13 +370,23 @@ class OpenAICompatibleTransport(ProviderTransport):
         max_output_tokens = int(
             payload.get("max_output_tokens", DEFAULT_PHASE_OUTPUT_TOKENS)
         )
+        output_schema = payload.get("output_schema")
+        output_format = (
+            {
+                "type": "json_schema",
+                "name": payload["output_schema_name"],
+                "schema": output_schema,
+            }
+            if isinstance(output_schema, dict)
+            else {"type": "json_object"}
+        )
         response = self._post("/responses", {
             "model": model,
             "input": [{"role": "user", "content": [
                 {"type": "input_text", "text": prompt},
             ]}],
             "max_output_tokens": max_output_tokens,
-            "text": {"format": {"type": "json_object"}},
+            "text": {"format": output_format},
         })
         _require_complete_response(response, max_output_tokens)
         return extract_json(_responses_text(response), redactor=self.redactor)

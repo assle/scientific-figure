@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from xml.etree import ElementTree as ET
+
+from resvg_py import svg_to_bytes
+
 from figure_tools.vector.latex import latex_to_svg
 from figure_tools.vector.primitives import SvgCanvas
+from figure_tools.vector.svg_normalize import normalize_svg_bytes
 
 
 def test_svg_canvas_renders_document() -> None:
@@ -49,6 +54,27 @@ def test_latex_to_svg_returns_svg() -> None:
     assert "<svg" in svg
     assert "</svg>" in svg
     assert len(svg) > 100
+
+
+def test_svg_normalization_converts_root_points_to_pixels() -> None:
+    source = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="72pt" '
+        b'height="36pt" viewBox="0 0 72 36"><rect width="72" height="36"/></svg>'
+    )
+
+    root = ET.fromstring(normalize_svg_bytes(source))
+
+    assert root.get("width") == "96px"
+    assert root.get("height") == "48px"
+    assert root.get("viewBox") == "0 0 72 36"
+
+
+def test_latex_svg_can_be_rendered_by_resvg() -> None:
+    svg = latex_to_svg(r"f=-a_{-1}", export_target="ppt")
+
+    png = svg_to_bytes(svg_string=svg, width=1200)
+
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_latex_to_svg_is_deterministic() -> None:

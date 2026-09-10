@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any, Mapping
 
+from figure_tools._resources import schema_path
 from figure_tools.provenance import hash_json
+
+
 class StructuredPhaseWorker:
     """Offline production worker for deterministic phase reasoning.
 
@@ -151,10 +155,31 @@ class ProviderPhaseWorker:
 
     def run(self, invocation: Any) -> Mapping[str, Any]:
         candidate = dict(self.fallback.run(invocation))
+        output_schema_name = None
+        output_schema = None
+        if invocation.phase == "planning":
+            output_schema_name = "planning_advice"
+            output_schema = json.loads(
+                schema_path("planning-advice.schema.json").read_text(
+                    encoding="utf-8",
+                )
+            )
+            style_schema = json.loads(
+                schema_path("style-bible.schema.json").read_text(
+                    encoding="utf-8",
+                )
+            )
+            style_schema.pop("$schema", None)
+            style_schema.pop("$id", None)
+            output_schema["properties"]["style_bible"]["oneOf"][1] = (
+                style_schema
+            )
         return self.provider_client.run_phase_worker(
             phase=invocation.phase,
             prompt=invocation.prompt,
             context=dict(invocation.context),
             allowed_tools=list(invocation.allowed_tools),
             fallback_artifact=candidate,
+            output_schema_name=output_schema_name,
+            output_schema=output_schema,
         )

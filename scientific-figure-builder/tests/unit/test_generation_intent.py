@@ -591,7 +591,7 @@ def test_invalid_model_style_advice_pauses_without_changing_brief(tmp_path):
     result = orch.advance("start")
 
     assert result["status"] == "paused"
-    assert "style resolution failed" in result["error"]
+    assert "invalid Planning Advice" in result["error"]
     brief = json.loads((run / "plans/figure_brief.json").read_text(encoding="utf-8"))
     assert brief["style"] == {"kind": "description", "description": description}
     assert not (run / "plans/figure_plan.json").exists()

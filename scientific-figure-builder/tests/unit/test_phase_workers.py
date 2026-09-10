@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from figure_tools.orchestrator import PhaseInvocation
+from figure_tools._resources import schema_path
 from figure_tools.phase_workers import ProviderPhaseWorker, StructuredPhaseWorker
 from figure_tools.providers.client import ProviderClient
 from figure_tools.providers.transport import MockProviderTransport
@@ -49,7 +52,7 @@ def test_planning_worker_returns_advice_without_generation_invariants():
             ],
         }],
         "generation_intent": [{
-            "unit_id": "whole", "method": "image_model", "scope": "figure",
+            "unit_id": "whole", "method": "vector", "scope": "figure",
         }],
         "export_target": "general", "figure_width_cm": 14,
         "language": "en", "style": "default",
@@ -76,3 +79,32 @@ def test_planning_worker_returns_advice_without_generation_invariants():
     } & set(artifact))
     fallback = transport.requests[-1]["payload"]["fallback_artifact"]
     assert fallback == artifact
+    assert fallback["composition"]["regions"] == []
+    assert transport.requests[-1]["payload"]["output_schema_name"] == (
+        "planning_advice"
+    )
+    output_schema = transport.requests[-1]["payload"]["output_schema"]
+    canonical_schema = json.loads(
+        schema_path("planning-advice.schema.json").read_text(encoding="utf-8")
+    )
+    assert canonical_schema["properties"]["style_bible"] == {
+        "oneOf": [
+            {"type": "null"},
+            {
+                "$ref": (
+                    "https://scientific-figure-builder/schemas/"
+                    "style-bible.schema.json"
+                )
+            },
+        ]
+    }
+    assert output_schema["properties"]["style_bible"]["oneOf"][1][
+        "required"
+    ] == json.loads(
+        schema_path("style-bible.schema.json").read_text(encoding="utf-8")
+    )["required"]
+    assert output_schema["properties"]["composition"]["properties"][
+        "regions"
+    ]["items"]["required"] == [
+        "region_id", "label", "bbox", "node_ids", "emphasis",
+    ]

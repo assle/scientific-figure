@@ -155,6 +155,52 @@ def test_openai_vision_starts_with_small_structured_output_budget(
     assert json.loads(requests[0].data)["max_output_tokens"] == 4096
 
 
+def test_openai_phase_reasoning_uses_supplied_json_schema(monkeypatch):
+    requests = []
+    output_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["artifact_type"],
+        "properties": {
+            "artifact_type": {"const": "planning_advice"},
+        },
+    }
+
+    def opener(request):
+        requests.append(request)
+        return _FakeResponse({
+            "output_text": '{"artifact_type":"planning_advice"}',
+        })
+
+    monkeypatch.setenv("CUSTOM_API_KEY", "test-key")
+    transport = OpenAICompatibleTransport(
+        "custom",
+        {
+            "type": "openai",
+            "base_url": "https://models.example/v1",
+            "key_env": "CUSTOM_API_KEY",
+        },
+        opener=opener,
+    )
+
+    result = transport.post("phase_reasoning", "reasoning-model", {
+        "phase": "planning",
+        "prompt": "Return Planning Advice.",
+        "context": {},
+        "allowed_tools": [],
+        "fallback_artifact": {"artifact_type": "planning_advice"},
+        "output_schema_name": "planning_advice",
+        "output_schema": output_schema,
+    })
+
+    assert result == {"artifact_type": "planning_advice"}
+    assert json.loads(requests[0].data)["text"]["format"] == {
+        "type": "json_schema",
+        "name": "planning_advice",
+        "schema": output_schema,
+    }
+
+
 def test_openai_vision_surfaces_incomplete_response_reason(tmp_path: Path, monkeypatch):
     image = tmp_path / "multi-panel.png"
     _png(image)

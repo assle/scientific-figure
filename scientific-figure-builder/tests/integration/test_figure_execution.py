@@ -132,6 +132,53 @@ def test_execution_accepts_an_approved_plan_without_owning_lifecycle_decisions(t
     assert published["exported"] is True
 
 
+def test_execution_renders_equation_svg_and_preview(tmp_path):
+    run_dir = RunDirectory(tmp_path).create("equation-figure")
+    state = RunState("equation-run", budget={})
+    client = ProviderClient(
+        {"vision_validate": {"model": "mock"}},
+        MockProviderTransport(),
+        state=state,
+        cache=Cache(tmp_path / "cache"),
+        output_dir=run_dir,
+    )
+    request = _request()
+    request["figure_id"] = "equation-figure"
+    request["run_id"] = "equation-run"
+    request["export_target"] = "ppt"
+    request["labels"] = []
+    request["panels"] = [{
+        "panel_id": "a",
+        "bbox": [0, 0, 1, 1],
+        "physical_size": [180, 112.5],
+        "elements": [{
+            "element_id": "fitness",
+            "type": "equation",
+            "content": r"f=-a_{-1}",
+        }],
+    }]
+    plan = create_figure_plan(request)
+    execution = FigureExecution(
+        request, {}, run_dir, client, state, base_dir=ROOT,
+    )
+
+    layout = FigurePlanningArtifacts(
+        request, {}, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
+    result = execution.execute_plan(plan, layout_report=layout)
+
+    assert (run_dir / "vectors" / "fitness.svg").is_file()
+    assert (run_dir / "vectors" / "fitness.png").is_file()
+    assert {asset["asset_id"] for asset in result["manifest"]["assets"]} == {
+        "fitness"
+    }
+    assert not any(
+        check.get("detail") == "SVG has an invalid size"
+        for report in result["validation_reports"]
+        for check in report.get("checks", [])
+    )
+
+
 def test_execution_compiles_generation_conditions_and_uses_asset_placements(tmp_path):
     run_dir = RunDirectory(tmp_path).create("mechanism-figure")
     state = RunState("mechanism-run", budget={})
