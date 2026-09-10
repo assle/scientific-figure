@@ -192,11 +192,7 @@ unless `--all` or `--config` is explicit.
 
 - [User guide](docs/user-guide.md): installation, configuration, workflow, updates,
   and removal.
-- [Release and local activation](docs/operations/release-and-local-activation.md):
-  maintainer release gates and runtime activation semantics.
-- [Product vocabulary](CONTEXT.md): canonical domain and lifecycle terms.
 - [Contributing](CONTRIBUTING.md) and [security policy](SECURITY.md).
-- [Architecture decisions](docs/adr/).
 
 ## Development
 

@@ -52,8 +52,8 @@ python3 scripts/release.py patch
 `python3 scripts/release.py patch --publish --notes-file FILE`。发布流程在隔离 worktree
 中生成版本提交，推送后等待权威 CI，通过后才创建不可变 tag。Tag workflow 构建完整
 Product bundle、Core wheel、Release manifest 和校验摘要，并创建 GitHub Release。
-详细的本地激活、宿主重载、退出码和兼容入口见
-[发布与本地更新](docs/operations/release-and-local-activation.md)。
+发布成功后如需在本机试用，用 `./install.sh --codex --release vVERSION` 激活，保存工作后
+完全重启 Codex，再运行 `scientific-figure status --verbose` 直到状态为 `converged`。
 
 Schema version、Phase prompt version 和 recipe version 是独立兼容性契约，不能因为
 Product version 变化而自动递增。

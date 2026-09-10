@@ -177,10 +177,7 @@ codex plugin remove scientific-figure-builder@scientific-figure
 ## 文档
 
 - [用户指南](docs/user-guide.zh-CN.md)：安装、配置、工作流、更新与卸载。
-- [发布与本地激活](docs/operations/release-and-local-activation.md)：维护者发布门禁与运行时激活语义。
-- [产品术语](CONTEXT.md)：领域和生命周期的权威定义。
 - [贡献指南](CONTRIBUTING.md)与[安全策略](SECURITY.md)。
-- [架构决策](docs/adr/)。
 
 ## 开发
 

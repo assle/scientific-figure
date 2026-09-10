@@ -5,3 +5,9 @@ __pycache__/
 .DS_Store
 /AGENTS.md
 /AGENTS.md.bak-*
+
+# Repository-private documentation
+/docs/*
+!/docs/user-guide.md
+!/docs/user-guide.zh-CN.md
+/CONTEXT.md
