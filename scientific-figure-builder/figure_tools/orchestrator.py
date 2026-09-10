@@ -30,7 +30,6 @@ from figure_tools.run_invalidator import RunInvalidator
 from figure_tools.run_store import RunStore
 
 
-PHASES = ("intake", "planning", "execution", "review_and_repair", "export")
 STRING_ACTIONS = frozenset({"start", "resume", "approve_plan", "approve_style_anchor"})
 OBJECT_ACTIONS = frozenset({"submit_clarifications", "apply_repair", "force_export", "revise_generation_intent"})
 

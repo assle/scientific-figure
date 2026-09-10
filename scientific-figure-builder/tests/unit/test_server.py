@@ -317,6 +317,38 @@ def test_background_lifecycle_operation_can_be_cancelled_explicitly(
     assert final_payload["operation_status"] == "cancelled"
 
 
+def test_unstarted_run_state_does_not_break_the_operation_record(monkeypatch, tmp_path):
+    """A run whose state still reads ``init`` must be recorded as Intake."""
+    run_dir = tmp_path / "unstarted-run"
+    RunStore(run_dir).ensure_structure()
+    (run_dir / "run_state.json").write_text(
+        json.dumps({
+            "schema_version": "1.0",
+            "run_id": "unstarted",
+            "current_step": "init",
+            "current_phase": "init",
+        }),
+        encoding="utf-8",
+    )
+
+    class MustNotStart:
+        def create(self, *_args):
+            raise AssertionError("the run must not reach Provider work")
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", MustNotStart)
+    _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "run_dir": str(run_dir), "action": "resume",
+        }},
+    }, continue_summaries=False)
+
+    operation = json.loads(
+        (run_dir / "plans/phase_operation.json").read_text(encoding="utf-8")
+    )
+    assert operation["phase"] == "intake"
+
+
 def test_orphaned_phase_operation_is_not_resubmitted(monkeypatch, tmp_path):
     run_dir = tmp_path / "orphaned-run"
     store = RunStore(run_dir)

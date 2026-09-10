@@ -87,10 +87,7 @@ def _advance_durably(arguments: dict[str, Any]) -> dict[str, Any]:
         return manager.cancel(
             run_dir, str(action["operation_id"]), str(action["reason"]),
         )
-    state = RunStore(run_dir).load_optional_json("run_state.json") or {}
-    phase = str(state.get("current_phase") or (
-        "planning" if (run_dir / "plans/figure_brief.json").is_file() else "intake"
-    ))
+    phase = RunStore(run_dir).current_phase()
     timeout = float(arguments.get("wait_timeout", 2.0))
     operation_arguments = dict(arguments)
     operation_arguments.pop("wait_timeout", None)

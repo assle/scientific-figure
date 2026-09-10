@@ -281,14 +281,7 @@ class LocalPhaseOperationManager:
         statuses = run_state.get("provider_status") or {}
         provider_status = statuses.get("phase_reasoning") or {}
         invocation_id = provider_status.get("invocation_id")
-        candidate_phase = run_state.get("current_phase")
-        phase = (
-            candidate_phase
-            if candidate_phase in {
-                "intake", "planning", "execution", "review_and_repair", "export",
-            }
-            else operation.get("phase")
-        )
+        phase = store.current_phase()
         if (
             invocation_id == operation.get("provider_invocation_id")
             and phase == operation.get("phase")

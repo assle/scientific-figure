@@ -29,6 +29,8 @@ RUN_SUBDIRECTORIES = (
     "exports",
 )
 
+PHASES = ("intake", "planning", "execution", "review_and_repair", "export")
+
 
 class RunStoreError(RuntimeError):
     """Base class for observable Run Store failures."""
@@ -85,6 +87,21 @@ class RunStore:
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError("run artifact paths must stay inside the run directory")
         return self.run_dir / relative
+
+    def current_phase(self) -> str:
+        """Read the Lifecycle phase this run is in.
+
+        A run that has not persisted a valid phase is reported as the phase it
+        is about to enter: Planning once the Figure brief exists, otherwise
+        Intake. ``RunState`` writes ``"init"`` before any phase is marked and
+        ``run-state.schema.json`` accepts any non-empty string, so an
+        unrecognized value means "not started" rather than a phase.
+        """
+        state = self.load_optional_json("run_state.json") or {}
+        phase = state.get("current_phase")
+        if phase in PHASES:
+            return str(phase)
+        return "planning" if self.path("plans/figure_brief.json").is_file() else "intake"
 
     @staticmethod
     def hash_json(value: Any) -> str:
