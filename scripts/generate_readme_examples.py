@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Literal
 
 import matplotlib
 
@@ -14,7 +15,9 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.figure import Figure
 
 REPOSITORY_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = REPOSITORY_DIR / "assets"
@@ -67,7 +70,7 @@ def _configure_style() -> None:
     )
 
 
-def _finish_axes(ax: plt.Axes, *, grid_axis: str = "y") -> None:
+def _finish_axes(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None:
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color(BORDER)
@@ -76,11 +79,11 @@ def _finish_axes(ax: plt.Axes, *, grid_axis: str = "y") -> None:
     ax.set_axisbelow(True)
 
 
-def _panel_title(ax: plt.Axes, text: str) -> None:
+def _panel_title(ax: Axes, text: str) -> None:
     ax.set_title(text, loc="left", pad=10)
 
 
-def _save(fig: plt.Figure, destination: Path, *, dpi: int = 140) -> None:
+def _save(fig: Figure, destination: Path, *, dpi: int = 140) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(destination, dpi=dpi, bbox_inches="tight", pad_inches=0.22)
     plt.close(fig)
@@ -143,7 +146,7 @@ def _write_compound(output_dir: Path) -> None:
         landscape,
         origin="lower",
         aspect="auto",
-        extent=[periods.min(), periods.max(), heights.min(), heights.max()],
+        extent=(periods.min(), periods.max(), heights.min(), heights.max()),
         cmap=LANDSCAPE,
         interpolation="bilinear",
     )
@@ -341,7 +344,7 @@ def _write_heatmap(output_dir: Path) -> None:
         efficiency,
         origin="lower",
         aspect="auto",
-        extent=[periods.min(), periods.max(), heights.min(), heights.max()],
+        extent=(periods.min(), periods.max(), heights.min(), heights.max()),
         cmap=LANDSCAPE,
         interpolation="bilinear",
     )
