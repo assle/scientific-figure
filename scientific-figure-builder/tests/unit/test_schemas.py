@@ -98,6 +98,17 @@ def test_every_schema_has_a_validating_document(schema_name: str) -> None:
         assert detail is None, f"{doc_name} failed {schema_name}: {detail}"
 
 
+def test_planning_advice_requires_a_canonical_style_bible() -> None:
+    schema = _load_json(SCHEMA_DIR / "planning-advice.schema.json")
+    advice = _load_json(FIXTURE_DIR / "planning_advice.json")
+    advice["style_bible"] = {}
+
+    assert schema_error_detail(advice, schema) is not None
+
+    advice["style_bible"] = _load_json(FIXTURE_DIR / "style_bible.json")
+    assert schema_error_detail(advice, schema) is None
+
+
 def test_default_project_yaml_is_valid_and_non_secret() -> None:
     project_yaml = TEMPLATE_DIR / "default-project.yaml"
     assert project_yaml.is_file(), "default-project.yaml template missing"

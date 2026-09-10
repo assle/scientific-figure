@@ -55,7 +55,12 @@
         }
       }
     },
-    "style_bible": {"type": ["object", "null"]}
+    "style_bible": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "https://scientific-figure-builder/schemas/style-bible.schema.json"}
+      ]
+    }
   },
   "$defs": {
     "bbox": {

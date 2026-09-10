@@ -13,6 +13,7 @@ _XLINK_NS = "http://www.w3.org/1999/xlink"
 _EXPORT_TARGETS = {"general", "ppt"}
 _PPT_FONT_FAMILY = "Arial, SimSun, sans-serif"
 _PPT_DEFAULT_FONT_SIZE_PT = "7.5"
+_POINTS_TO_PIXELS = 96 / 72
 _PRESENTATION_PROPERTIES = {
     "fill",
     "stroke",
@@ -82,6 +83,21 @@ def _is_identity_text_transform(transform: str | None) -> bool:
     return False
 
 
+def _normalize_root_size_units(data: bytes) -> bytes:
+    root = ET.fromstring(data)
+    changed = False
+    for name in ("width", "height"):
+        value = root.get(name)
+        if value is None or not value.endswith("pt"):
+            continue
+        pixels = float(value[:-2]) * _POINTS_TO_PIXELS
+        root.set(name, f"{pixels:.12g}px")
+        changed = True
+    if not changed:
+        return data
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 def normalize_ppt_svg_bytes(data: bytes) -> bytes:
     """Make matplotlib SVG output friendlier to Microsoft Office import.
 
@@ -134,6 +150,7 @@ def normalize_svg_bytes(data: bytes, export_target: str = "general") -> bytes:
     """Strip non-deterministic metadata and optionally apply PPT normalization."""
     data = _COMMENT_RE.sub(b"", data)
     data = _DATE_RE.sub(b"", data)
+    data = _normalize_root_size_units(data)
     if resolve_export_target(export_target) == "ppt":
         data = normalize_ppt_svg_bytes(data)
     return data

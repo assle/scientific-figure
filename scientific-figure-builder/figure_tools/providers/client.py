@@ -274,17 +274,23 @@ class ProviderClient:
         context: dict[str, Any],
         allowed_tools: list[str],
         fallback_artifact: dict[str, Any],
+        output_schema_name: str | None = None,
+        output_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Run one isolated reasoning phase and return its JSON artifact."""
         role = "phase_reasoning"
         self._log_prompt(f"phase_{phase}", prompt)
-        result = self._post(role, {
+        payload = {
             "phase": phase,
             "prompt": prompt,
             "context": context,
             "allowed_tools": allowed_tools,
             "fallback_artifact": fallback_artifact,
-        })
+        }
+        if output_schema_name is not None and output_schema is not None:
+            payload["output_schema_name"] = output_schema_name
+            payload["output_schema"] = output_schema
+        result = self._post(role, payload)
         if not isinstance(result, dict):
             raise ProviderError("phase worker response must be a JSON object")
         return result
