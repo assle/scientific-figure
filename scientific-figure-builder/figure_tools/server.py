@@ -94,20 +94,16 @@ def _advance_durably(arguments: dict[str, Any]) -> dict[str, Any]:
     requested_operation_id = operation_arguments.pop("operation_id", None)
     control = _CALL_CONTROL.get()
     cancel_event = control[0] if control is not None else threading.Event()
-    if control is None:
-        operation_context = contextvars.copy_context()
+    operation_context = contextvars.copy_context()
 
-        def invoke() -> dict[str, Any]:
-            token = _CALL_CONTROL.set((cancel_event, lambda _snapshot: None))
-            try:
-                return _advance(operation_arguments)
-            finally:
-                _CALL_CONTROL.reset(token)
-    else:
-        operation_context = contextvars.copy_context()
-
-        def invoke() -> dict[str, Any]:
+    def invoke() -> dict[str, Any]:
+        if control is not None:
             return _advance(operation_arguments)
+        token = _CALL_CONTROL.set((cancel_event, lambda _snapshot: None))
+        try:
+            return _advance(operation_arguments)
+        finally:
+            _CALL_CONTROL.reset(token)
     return manager.start_or_observe(
         run_dir,
         invoke,

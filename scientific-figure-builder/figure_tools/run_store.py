@@ -103,6 +103,32 @@ class RunStore:
             return str(phase)
         return "planning" if self.path("plans/figure_brief.json").is_file() else "intake"
 
+    def relative(self, path: str | Path) -> str:
+        """Return one run-relative path, rejecting paths outside the run."""
+        return str(Path(path).relative_to(self.run_dir))
+
+    def asset_path(self, *parts: str) -> Path:
+        """Return a path inside the run's asset directory."""
+        return self.path(Path("assets", *parts))
+
+    def composed_figure_path(self) -> Path:
+        """Return the composed figure written by assembly."""
+        return self.path("assembly/figure.png")
+
+    def layout_manifests(self) -> list[str]:
+        """Return run-relative panel Layout manifest paths, sorted."""
+        return [
+            self.relative(path)
+            for path in sorted(self.run_dir.rglob("layout_manifest.json"))
+        ]
+
+    def plan_snapshots(self) -> list[str]:
+        """Return run-relative versioned Figure plan paths, sorted."""
+        return [
+            self.relative(path)
+            for path in sorted(self.path("plans").glob("figure_plan.v*.json"))
+        ]
+
     @staticmethod
     def hash_json(value: Any) -> str:
         return hash_json(value)
