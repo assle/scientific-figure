@@ -29,6 +29,13 @@ activate a local Product bundle. A local bundle requires the release-generated
 The default Unix launcher is `~/.local/bin/scientific-figure`. Installation does
 not modify shell startup files, so add that directory to `PATH` if necessary.
 
+Command context is part of the instructions:
+
+- run `./install.sh` and `./uninstall.sh` from the repository root;
+- run installed `scientific-figure` commands from any directory;
+- run source-checkout commands from `scientific-figure-builder/`, the folder
+  containing `pyproject.toml`.
+
 ## Configuration
 
 ### Configuration layers
@@ -57,6 +64,14 @@ Install the app later if it was omitted initially:
 ```bash
 scientific-figure install-gui
 scientific-figure gui
+```
+
+For a source checkout, run the app from `scientific-figure-builder/`:
+
+```bash
+cd scientific-figure-builder
+uv sync --extra gui
+uv run --extra gui python -m figure_tools gui
 ```
 
 In the app:

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Scientific Figure Builder" width="720">
+  <img src="assets/banner.svg" alt="Scientific Figure Builder" width="820">
 </p>
 
 <p align="center">
@@ -14,16 +14,23 @@
 </p>
 
 <p align="center">
-  通过一条受控工作流构建可复现、可投稿的科研配图。
+  <strong>从澄清后的科研需求，到经过验证、可直接投稿的导出文件。</strong>
 </p>
 
 <p align="center">
-  <img src="assets/example_compound.png" alt="发表级复合科研图" width="820">
+  <img src="assets/example_compound.png" alt="发表级复合科研图" width="820"><br>
+  <sub>确定性绘图、结构化组装、分层验证与投稿导出。</sub>
 </p>
 
 Scientific Figure Builder 帮助 Agent 将澄清后的需求转化为有来源的图表和素材、
 完成组装的科研图、验证证据及可交付文件。测量数据由确定性的 Python/SVG 路径处理；
 配置好的模型 Provider 只负责适合的图像生成与视觉分析任务。
+
+## 环境要求
+
+- Python 3.11 或更高版本。
+- [`uv`](https://docs.astral.sh/uv/)。
+- 使用原生 Agent 工作流时需要 Codex；也可以只安装核心运行时。
 
 ## 主要能力
 
@@ -34,47 +41,78 @@ Scientific Figure Builder 帮助 Agent 将澄清后的需求转化为有来源�
 - 导出 PNG、SVG、PDF，以及可选的 PowerPoint 友好 SVG/PPTX。
 - 原生 Codex 插件、本地运行时、CLI 和可选配置应用。
 
-## 环境要求
+## 快速开始
 
-- Python 3.11 或更高版本。
-- [`uv`](https://docs.astral.sh/uv/)。
-- 使用原生 Agent 工作流时需要 Codex；也可以只安装核心运行时。
+下面每条命令都标明了应运行的位置。安装脚本和源码命令对当前目录有要求，安装后的
+CLI 则可在任意目录运行。
 
-## 安装
+### 1. 安装正式版本
 
-克隆仓库并激活最新正式 Codex 版本：
+克隆后，在仓库根目录运行：
 
 ```bash
 git clone https://github.com/assle/scientific-figure.git
-cd scientific-figure
+cd scientific-figure          # 仓库根目录，包含 ./install.sh
 ./install.sh --codex --release latest --with-gui
 ```
 
-无桌面环境时省略 `--with-gui`。如果只需要核心运行时和 CLI：
+`./install.sh` 是仓库内脚本，必须在包含它的目录运行。无桌面环境时省略
+`--with-gui`。如果只需要核心运行时和 CLI：
 
 ```bash
 ./install.sh --runtime-only --release latest
 ```
 
-如果当前 Shell 找不到启动器，请使用 `~/.local/bin/scientific-figure`，或把
-`~/.local/bin` 加入 `PATH`。
+### 2. 在任意目录使用已安装的 CLI
 
-## 配置
-
-打开可选配置应用：
+安装完成后，`scientific-figure` 启动器不依赖仓库位置，以下命令可在任意项目目录运行：
 
 ```bash
+scientific-figure status
 scientific-figure gui
+scientific-figure update --latest
 ```
 
-先创建 Provider，再绑定需要的模型角色。应用保存的 API Key 会进入操作系统凭据存储，
-不会写入 YAML。无桌面环境可在 Provider 中设置 `key_env`，再通过环境变量提供凭据。
+如果当前 Shell 找不到启动器，请使用 `~/.local/bin/scientific-figure`，或把
+`~/.local/bin` 加入 `PATH`。运行这些已安装命令时不需要 `cd` 回仓库。
 
-需要覆盖全局默认值时，在项目中初始化本地配置：
+### 3. 从源码启动 GUI
+
+开发时应进入 `scientific-figure-builder/`，即包含 `pyproject.toml` 的目录，再运行：
 
 ```bash
-scientific-figure init /path/to/project
+cd scientific-figure-builder
+uv sync --extra gui
+uv run --extra gui python -m figure_tools gui
 ```
+
+源码目录不会自动安装 `scientific-figure` 启动器。要运行当前源码，请使用上面的命令；
+要运行已安装版本，请先完成第 1 步，再在任意目录执行 `scientific-figure gui`。
+
+## 配置应用
+
+原生 Qt Quick 应用用于管理 Provider、模型路由和系统凭据。它不会打开浏览器、监听端口，
+打开或保存配置时也不会访问 Provider。
+
+<p align="center">
+  <img src="assets/gui-model-routes.png" alt="模型角色路由界面" width="920">
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/gui-providers.png" alt="Provider 端点和能力配置"></td>
+    <td width="50%"><img src="assets/gui-credentials.png" alt="Keyring 凭据和连接测试"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>端点、协议与显式声明的能力</sub></td>
+    <td align="center"><sub>系统凭据与主动连接测试</sub></td>
+  </tr>
+</table>
+
+- 先创建 Provider，再绑定需要的模型角色。
+- 应用保存的 API Key 会进入操作系统凭据存储，不会写入 YAML。
+- 无桌面环境可通过 Provider 的 `key_env` 指定环境变量来提供凭据。
+- 需要项目级覆盖时运行 `scientific-figure init /path/to/project`。
 
 配置优先级为：内置默认值 → 全局配置 → 项目配置 → 单次运行覆盖。Provider 类型、模型
 角色、文件位置和最小 YAML 示例见[用户指南](docs/user-guide.zh-CN.md)。
@@ -88,16 +126,17 @@ scientific-figure init /path/to/project
 导出 PNG、SVG 和 PDF，并让 SVG 适合在 PowerPoint 中继续编辑。
 ```
 
-工作流依次经过：
+<p align="center">
+  <img src="assets/workflow.svg" alt="需求澄清、规划、审批、执行、审核与修复、导出" width="900">
+</p>
 
-```text
-需求澄清 → 规划 → 审批 → 执行 → 审核与修复 → 导出
-```
+测量数据和定量图表始终走确定性的 Python/SVG 路径；非定量的图形单元可以使用已配置的
+Provider 路由。最终组装、验证、修复和导出在本地确定性完成。只有需要补充信息、确认计划、
+选择修复或确认生成摘要时，工作流才会暂停。
 
-只有需要补充信息、确认计划、选择修复或确认生成摘要时才会暂停。摘要和预览不代表成品；
-最终文件必须经过验证和导出后才会报告。
+## 更新、状态与卸载
 
-## 更新与状态
+安装后可在任意目录运行：
 
 ```bash
 scientific-figure update --latest
@@ -106,22 +145,13 @@ scientific-figure status
 
 更新会保留 Provider 配置、凭据引用、项目数据和运行产物。如果 `status` 返回
 `restart_required`，请先保存当前工作，再完全退出并重新打开 Codex，让新的 MCP/GUI
-进程加载已激活的运行时。
+进程加载已激活的运行时。只有需要主动查询 GitHub 最新版本时才使用
+`scientific-figure status --remote`。
 
-只有需要主动查询 GitHub 最新版本时才使用 `scientific-figure status --remote`；普通状态
-检查完全在本地完成。
-
-## 卸载
-
-先预览源码卸载器将删除的内容：
+先回到仓库根目录预览卸载内容，再选择所需范围：
 
 ```bash
 ./uninstall.sh --dry-run
-```
-
-再选择所需范围：
-
-```bash
 codex plugin remove scientific-figure-builder@scientific-figure
 ./uninstall.sh              # 删除核心运行时和 CLI，保留配置
 ./uninstall.sh --all        # 同时删除全局配置及其引用的凭据
@@ -132,13 +162,15 @@ codex plugin remove scientific-figure-builder@scientific-figure
 
 ## 文档
 
-- [用户指南](docs/user-guide.zh-CN.md)：配置、工作流、更新与卸载。
+- [用户指南](docs/user-guide.zh-CN.md)：安装、配置、工作流、更新与卸载。
 - [发布与本地激活](docs/operations/release-and-local-activation.md)：维护者发布门禁与运行时激活语义。
 - [产品术语](CONTEXT.md)：领域和生命周期的权威定义。
 - [贡献指南](CONTRIBUTING.md)与[安全策略](SECURITY.md)。
 - [架构决策](docs/adr/)。
 
 ## 开发
+
+开发命令应在 `scientific-figure-builder/` 中运行：
 
 ```bash
 cd scientific-figure-builder
@@ -147,8 +179,18 @@ uv run --extra gui pytest -q
 uvx pyright --pythonpath .venv/bin/python figure_tools install
 ```
 
-权威 Skill 位于 `scientific-figure-builder/SKILL.md`。修改后运行
-`python3 scripts/sync_plugin_bundle.py`；不要直接编辑自动生成的插件副本。
+权威 Skill 位于 `scientific-figure-builder/SKILL.md`。修改后回到仓库根目录运行：
+
+```bash
+python3 scripts/sync_plugin_bundle.py
+```
+
+配置应用界面发生变化后，在仓库根目录重新生成 README 截图：
+
+```bash
+uv run --frozen --directory scientific-figure-builder --extra gui \
+  python ../scripts/capture_readme_screenshots.py
+```
 
 ## 许可
 

@@ -4,8 +4,8 @@ Rectangle {
     id: root
     default property alias content: contentItem.data
     color: "#FFFFFF"
-    radius: 12
-    border.color: "#E3E6EA"
+    radius: 14
+    border.color: "#DCE4EF"
     border.width: 1
     Item {
         id: contentItem

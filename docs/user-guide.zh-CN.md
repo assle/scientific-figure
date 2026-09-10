@@ -26,6 +26,12 @@ bundle。本地 bundle 旁必须有 Release 生成的 `SHA256SUMS`。
 Unix 默认启动器位于 `~/.local/bin/scientific-figure`。安装器不会修改 Shell 启动文件，
 因此必要时需要自行把 `~/.local/bin` 加入 `PATH`。
 
+命令的目录条件如下：
+
+- `./install.sh` 和 `./uninstall.sh` 在仓库根目录运行；
+- 安装后的 `scientific-figure` 命令可在任意目录运行；
+- 源码命令在 `scientific-figure-builder/` 中运行，即包含 `pyproject.toml` 的目录。
+
 ## 配置
 
 ### 配置层级
@@ -51,6 +57,14 @@ Unix 默认启动器位于 `~/.local/bin/scientific-figure`。安装器不会修
 ```bash
 scientific-figure install-gui
 scientific-figure gui
+```
+
+从源码运行时，进入 `scientific-figure-builder/` 后启动：
+
+```bash
+cd scientific-figure-builder
+uv sync --extra gui
+uv run --extra gui python -m figure_tools gui
 ```
 
 在应用中依次完成：

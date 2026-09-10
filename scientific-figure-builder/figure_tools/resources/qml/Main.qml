@@ -33,8 +33,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.left: parent.left
-        color: theme.surface
-        border.color: theme.border
+        color: theme.sidebar
 
         ColumnLayout {
             anchors.fill: parent
@@ -47,6 +46,10 @@ ApplicationWindow {
                 spacing: 11
                 Rectangle {
                     width: 38; height: 38; radius: 10; color: theme.primary
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#38BDF8" }
+                        GradientStop { position: 1.0; color: theme.primary }
+                    }
                     Text {
                         anchors.centerIn: parent
                         text: "SF"
@@ -58,8 +61,8 @@ ApplicationWindow {
                 Column {
                     Layout.fillWidth: true
                     spacing: 2
-                    Text { text: "Scientific Figure"; color: theme.text; font.pixelSize: 14; font.bold: true }
-                    Text { text: "全局配置"; color: theme.textMuted; font.pixelSize: 12 }
+                    Text { text: "Scientific Figure"; color: theme.sidebarText; font.pixelSize: 14; font.bold: true }
+                    Text { text: "全局配置"; color: theme.sidebarMuted; font.pixelSize: 12 }
                 }
             }
 
@@ -67,32 +70,36 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 text: "模型路由"
                 active: appController.page === "models"
+                onDark: true
                 onClicked: appController.setPage("models")
             }
             NavButton {
                 Layout.fillWidth: true
                 text: "Providers"
                 active: appController.page === "providers"
+                onDark: true
                 onClicked: appController.setPage("providers")
             }
             NavButton {
                 Layout.fillWidth: true
                 text: "凭据与连接"
                 active: appController.page === "credentials"
+                onDark: true
                 onClicked: appController.setPage("credentials")
             }
             NavButton {
                 Layout.fillWidth: true
                 text: "关于"
                 active: appController.page === "about"
+                onDark: true
                 onClicked: appController.setPage("about")
             }
             Item { Layout.fillHeight: true }
-            Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
+            Rectangle { Layout.fillWidth: true; height: 1; color: theme.sidebarBorder }
             Text {
                 Layout.fillWidth: true
                 text: "配置文件\n" + appController.configPath
-                color: theme.textMuted
+                color: theme.sidebarMuted
                 font.pixelSize: 11
                 wrapMode: Text.WrapAnywhere
                 lineHeight: 1.35
@@ -111,6 +118,13 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 82
             color: theme.canvas
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: theme.border
+            }
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 32
@@ -247,15 +261,21 @@ ApplicationWindow {
                                     placeholderText: "输入固定模型或 Endpoint ID"
                                     onEditingFinished: appController.updateRole(modelData.role, "model", text)
                                 }
-                                RequestPolicyEditor {
-                                    role: modelData.role
-                                    policy: modelData.request_policy || ({})
-                                    enabled: !modelData.inherit
-                                }
-                                OutputTokenEditor {
-                                    visible: modelData.role === "phase_reasoning"
-                                    role: modelData.role
-                                    policy: modelData.output_tokens || ({})
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 12
+                                    RequestPolicyEditor {
+                                        Layout.fillWidth: true
+                                        role: modelData.role
+                                        policy: modelData.request_policy || ({})
+                                        enabled: !modelData.inherit
+                                    }
+                                    OutputTokenEditor {
+                                        Layout.fillWidth: true
+                                        visible: modelData.role === "phase_reasoning"
+                                        role: modelData.role
+                                        policy: modelData.output_tokens || ({})
+                                    }
                                 }
                             }
                         }
@@ -468,13 +488,17 @@ ApplicationWindow {
                                     wrapMode: Text.Wrap
                                 }
                             }
-                            ColumnLayout {
+                            GridLayout {
                                 objectName: "openaiCapabilities"
                                 Layout.fillWidth: true
-                                spacing: 10
+                                columns: 2
+                                columnSpacing: 24
+                                rowSpacing: 6
                                 visible: appController.selectedProvider.type === "openai"
                                          || appController.selectedProvider.type === "dashscope"
                                 Text {
+                                    Layout.columnSpan: 2
+                                    Layout.fillWidth: true
                                     text: appController.selectedProvider.type === "dashscope"
                                           ? "DashScope Native 图像能力"
                                           : "OpenAI Compatible Provider 能力"
@@ -483,49 +507,58 @@ ApplicationWindow {
                                     font.bold: true
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持参考图编辑"
                                     checked: appController.selectedProvider.supports_image_edit || false
                                     onToggled: appController.updateProviderBool("supports_image_edit", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持生成参考图"
                                     checked: appController.selectedProvider.supports_reference_image || false
                                     onToggled: appController.updateProviderBool("supports_reference_image", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持多参考图"
                                     checked: appController.selectedProvider.supports_multi_reference || false
                                     onToggled: appController.updateProviderBool("supports_multi_reference", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持遮罩编辑"
                                     visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_mask_edit || false
                                     onToggled: appController.updateProviderBool("supports_mask_edit", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持结构控制"
                                     visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_structure_control || false
                                     onToggled: appController.updateProviderBool("supports_structure_control", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持原生透明通道"
                                     visible: appController.selectedProvider.type === "openai"
                                     checked: appController.selectedProvider.supports_native_alpha || false
                                     onToggled: appController.updateProviderBool("supports_native_alpha", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持固定 Seed"
                                     checked: appController.selectedProvider.supports_seed || false
                                     onToggled: appController.updateProviderBool("supports_seed", checked)
                                 }
                                 Switch {
+                                    Layout.fillWidth: true
                                     text: "支持批量候选"
                                     checked: appController.selectedProvider.supports_candidate_batch || false
                                     onToggled: appController.updateProviderBool("supports_candidate_batch", checked)
                                 }
                                 Text {
+                                    Layout.columnSpan: 2
                                     Layout.fillWidth: true
                                     text: appController.selectedProvider.type === "dashscope"
                                           ? "Qwen Image 3.0 支持一至三张参考图；遮罩、结构控制与原生透明通道不在当前原生协议契约内。"

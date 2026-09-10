@@ -1,18 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="720" height="120" viewBox="0 0 720 120">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" role="img" aria-labelledby="title desc">
+  <title id="title">Scientific Figure Builder</title>
+  <desc id="desc">A governed workflow from scientific request to validated publication-ready figures.</desc>
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0F172A;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#1E3A5F;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#0F172A;stop-opacity:1" />
+    <linearGradient id="background" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#08111F"/>
+      <stop offset="55%" stop-color="#10233E"/>
+      <stop offset="100%" stop-color="#0B1628"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#38BDF8;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#818CF8;stop-opacity:1" />
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#6366F1"/>
     </linearGradient>
+    <linearGradient id="line" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#A5B4FC"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#FFFFFF" stroke-opacity="0.045"/>
+    </pattern>
+    <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
   </defs>
-  <rect width="720" height="120" rx="12" fill="url(#bg)"/>
-  <rect x="0" y="0" width="720" height="4" rx="2" fill="url(#accent)"/>
-  <text x="360" y="50" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="26" font-weight="bold" fill="#F1F5F9">Scientific Figure Builder</text>
-  <text x="360" y="78" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="13" fill="#94A3B8">From natural language to publication-ready figures</text>
-  <text x="360" y="98" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="11" fill="#64748B">Python Plots &#xb7; SVG Geometry &#xb7; Ark Vision Models &#xb7; Deterministic Validation</text>
+
+  <rect width="960" height="240" rx="24" fill="url(#background)"/>
+  <rect width="960" height="240" rx="24" fill="url(#grid)"/>
+  <circle cx="812" cy="54" r="92" fill="#2563EB" fill-opacity="0.24" filter="url(#softGlow)"/>
+  <circle cx="898" cy="204" r="74" fill="#06B6D4" fill-opacity="0.16" filter="url(#softGlow)"/>
+  <rect x="0" y="0" width="960" height="5" rx="2.5" fill="url(#accent)"/>
+
+  <rect x="56" y="52" width="72" height="72" rx="20" fill="url(#accent)"/>
+  <text x="92" y="99" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="23" font-weight="700" fill="#FFFFFF">SF</text>
+  <text x="151" y="88" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="34" font-weight="700" fill="#F8FAFC">Scientific Figure Builder</text>
+  <text x="152" y="123" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" fill="#B8C6DA">Governed, reproducible scientific figures</text>
+
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" font-weight="600">
+    <rect x="152" y="153" width="155" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="229.5" y="175" text-anchor="middle" fill="#DCE8F8">Deterministic plots</text>
+    <rect x="319" y="153" width="190" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="414" y="175" text-anchor="middle" fill="#DCE8F8">Provider-routed assets</text>
+    <rect x="521" y="153" width="153" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <text x="597.5" y="175" text-anchor="middle" fill="#DCE8F8">Validated exports</text>
+  </g>
+
+  <g transform="translate(742 42)">
+    <rect x="0" y="0" width="166" height="156" rx="20" fill="#F8FAFC" fill-opacity="0.98"/>
+    <rect x="18" y="18" width="130" height="79" rx="12" fill="#EEF4FF"/>
+    <path d="M29 78C43 74 47 49 61 55s20-25 34-14 17 20 31 8 18-20 27-24" fill="none" stroke="url(#line)" stroke-width="5" stroke-linecap="round"/>
+    <g fill="#2563EB">
+      <circle cx="29" cy="78" r="4"/>
+      <circle cx="61" cy="55" r="4"/>
+      <circle cx="95" cy="41" r="4"/>
+      <circle cx="126" cy="49" r="4"/>
+      <circle cx="153" cy="27" r="4"/>
+    </g>
+    <rect x="18" y="109" width="70" height="29" rx="8" fill="#DBEAFE"/>
+    <rect x="18" y="124" width="12" height="14" rx="4" fill="#2563EB"/>
+    <rect x="36" y="117" width="12" height="21" rx="4" fill="#38BDF8"/>
+    <rect x="54" y="112" width="12" height="26" rx="4" fill="#6366F1"/>
+    <rect x="76" y="120" width="12" height="18" rx="4" fill="#0EA5E9"/>
+    <circle cx="121" cy="124" r="15" fill="#E0F2FE" stroke="#38BDF8" stroke-width="2"/>
+    <circle cx="145" cy="124" r="15" fill="#EEF2FF" stroke="#818CF8" stroke-width="2"/>
+    <path d="M116 124h-8m49 0h-8m-31-1-11-17m29 17 11-17" stroke="#64748B" stroke-width="2" stroke-linecap="round"/>
+  </g>
 </svg>

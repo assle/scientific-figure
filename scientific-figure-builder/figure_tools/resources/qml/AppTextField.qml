@@ -8,14 +8,14 @@ TextField {
     topPadding: 9
     bottomPadding: 9
     font.pixelSize: 13
-    color: "#25282D"
-    placeholderTextColor: "#9AA0A8"
-    selectionColor: "#BFD0FF"
-    selectedTextColor: "#17191C"
+    color: "#1D2939"
+    placeholderTextColor: "#98A2B3"
+    selectionColor: "#BFD3FF"
+    selectedTextColor: "#101828"
     background: Rectangle {
-        radius: 8
-        color: control.enabled ? "#FFFFFF" : "#F0F2F4"
+        radius: 9
+        color: control.enabled ? "#FFFFFF" : "#EEF2F7"
         border.width: control.activeFocus ? 2 : 1
-        border.color: control.activeFocus ? "#3B6FF5" : "#D9DDE2"
+        border.color: control.activeFocus ? "#2563EB" : "#D7DEE8"
     }
 }

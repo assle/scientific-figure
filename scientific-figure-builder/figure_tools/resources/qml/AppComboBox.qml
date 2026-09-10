@@ -12,7 +12,7 @@ ComboBox {
         leftPadding: 0
         rightPadding: 0
         text: control.displayText
-        color: control.enabled ? "#25282D" : "#9AA0A8"
+        color: control.enabled ? "#1D2939" : "#98A2B3"
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
         font: control.font
@@ -21,13 +21,13 @@ ComboBox {
         x: control.width - width - 12
         y: (control.height - height) / 2 - 1
         text: "⌄"
-        color: "#666C74"
+        color: "#667085"
         font.pixelSize: 17
     }
     background: Rectangle {
-        radius: 8
-        color: control.enabled ? "#FFFFFF" : "#F0F2F4"
+        radius: 9
+        color: control.enabled ? "#FFFFFF" : "#EEF2F7"
         border.width: control.activeFocus ? 2 : 1
-        border.color: control.activeFocus ? "#3B6FF5" : "#D9DDE2"
+        border.color: control.activeFocus ? "#2563EB" : "#D7DEE8"
     }
 }
