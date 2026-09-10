@@ -299,6 +299,19 @@ def test_execution_result_is_schema_valid_and_references_the_plan(tmp_path: Path
     assert execution["call_provenance"]["counts"]["generation"] == 1
 
 
+def test_data_plot_is_validated_against_its_source(tmp_path: Path):
+    orchestrator, run_dir, _ = _orchestrator(tmp_path, _request())
+
+    orchestrator.advance()
+
+    execution = json.loads((run_dir / "plans" / "execution_result.json").read_text(encoding="utf-8"))
+    checks = [c for r in execution["validation_reports"] for c in r.get("checks", [])]
+    mapping = [c for c in checks if c.get("check_id") == "rendered_data_mapping"]
+    assert mapping, "the rendered plot data must be checked against its source"
+    assert mapping[0]["status"] == "pass"
+    assert not [c for c in checks if c.get("level") == "error" and c.get("status") == "fail"]
+
+
 def test_export_result_is_versioned_and_references_validation_and_assembly(tmp_path: Path):
     orchestrator, run_dir, _ = _orchestrator(tmp_path, _request())
 

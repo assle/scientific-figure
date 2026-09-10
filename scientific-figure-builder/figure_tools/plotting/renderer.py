@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 
@@ -10,6 +11,7 @@ from figure_tools.export.exporters import save_figure
 from figure_tools.plotting.data import build_data_used, load_source_data
 from figure_tools.plotting.recipes import render
 from figure_tools.plotting.spec import PlotSpec
+from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.vector.svg_normalize import resolve_export_target
 
 
@@ -19,7 +21,8 @@ def render_plot(
     base_dir: str | Path | None = None,
     basename: str = "plot",
     export_target: str | None = None,
-) -> dict[str, dict[str, str]]:
+    run_id: str | None = None,
+) -> dict[str, Any]:
     base = Path(base_dir) if base_dir else Path.cwd()
     src_path = base / spec.source_data["path"]
     source = load_source_data(src_path)
@@ -55,7 +58,13 @@ def render_plot(
         data_used.to_csv(data_used_path, index=False)
         files["data_used.csv"] = data_used_path
         files["layout_manifest.json"] = layout_path
+        validation_report = validate_plot_data(
+            spec, source, data_used, source_path=src_path, run_id=run_id,
+        )
     finally:
         plt.close(fig)
 
-    return {"files": {k: str(v) for k, v in files.items()}}
+    return {
+        "files": {k: str(v) for k, v in files.items()},
+        "validation_report": validation_report,
+    }

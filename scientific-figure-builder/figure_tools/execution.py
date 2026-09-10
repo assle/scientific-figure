@@ -396,12 +396,14 @@ class FigureExecution:
                     out = self.store.path(Path("plots", asset_id))
                     path = out / "plot.png"
                     if not path.is_file():
-                        render_plot(
+                        rendered = render_plot(
                             spec,
                             output_dir=out,
                             base_dir=self.base_dir,
                             export_target=export_target,
+                            run_id=self.state.run_id,
                         )
+                        validation_reports.append(rendered["validation_report"])
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
