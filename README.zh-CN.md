@@ -19,7 +19,7 @@
 
 <p align="center">
   <img src="assets/example_compound.png" alt="发表级复合科研图" width="820"><br>
-  <sub>确定性绘图、结构化组装、分层验证与投稿导出。</sub>
+  <sub>使用合成演示数据生成的示意性复合输出。</sub>
 </p>
 
 Scientific Figure Builder 帮助 Agent 将澄清后的需求转化为有来源的图表和素材、
@@ -40,6 +40,20 @@ Scientific Figure Builder 帮助 Agent 将澄清后的需求转化为有来源�
 - 确定性组装、分层验证、局部修复和中断恢复。
 - 导出 PNG、SVG、PDF，以及可选的 PowerPoint 友好 SVG/PPTX。
 - 原生 Codex 插件、本地运行时、CLI 和可选配置应用。
+
+<p align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="assets/example_line_plot.png" width="250"><br><sub>带误差范围的折线图</sub></td>
+      <td align="center"><img src="assets/example_heatmap.png" width="250"><br><sub>效率参数空间</sub></td>
+      <td align="center"><img src="assets/example_multipanel.png" width="330"><br><sub>多面板组合</sub></td>
+    </tr>
+  </table>
+</p>
+
+<p align="center">
+  <sub>以上插图由合成演示数据生成，仅用于展示输出效果，不代表科研证据。</sub>
+</p>
 
 ## 快速开始
 
@@ -190,6 +204,13 @@ python3 scripts/sync_plugin_bundle.py
 ```bash
 uv run --frozen --directory scientific-figure-builder --extra gui \
   python ../scripts/capture_readme_screenshots.py
+```
+
+示例配图使用同一套合成演示数据，可独立重新生成：
+
+```bash
+uv run --frozen --directory scientific-figure-builder \
+  python ../scripts/generate_readme_examples.py
 ```
 
 ## 许可

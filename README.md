@@ -19,7 +19,7 @@
 
 <p align="center">
   <img src="assets/example_compound.png" alt="Publication-ready compound scientific figure" width="820"><br>
-  <sub>Deterministic plots, structured assembly, layered validation, and publication export.</sub>
+  <sub>Illustrative composite output from synthetic demonstration data.</sub>
 </p>
 
 Scientific Figure Builder helps an agent turn a clarified request into source-backed
@@ -41,6 +41,20 @@ handle eligible image generation and visual analysis.
 - Deterministic assembly, layered validation, targeted repair, and resumable runs.
 - PNG, SVG, and PDF export, with optional PowerPoint-friendly SVG/PPTX output.
 - A native Codex plugin, local runtime, CLI, and optional configuration app.
+
+<p align="center">
+  <table>
+    <tr>
+      <td align="center"><img src="assets/example_line_plot.png" width="250"><br><sub>Error-aware line plot</sub></td>
+      <td align="center"><img src="assets/example_heatmap.png" width="250"><br><sub>Efficiency landscape</sub></td>
+      <td align="center"><img src="assets/example_multipanel.png" width="330"><br><sub>Multipanel composition</sub></td>
+    </tr>
+  </table>
+</p>
+
+<p align="center">
+  <sub>Illustrative outputs generated from synthetic demonstration data; they are not scientific evidence.</sub>
+</p>
 
 ## Quick start
 
@@ -208,6 +222,14 @@ repository root:
 ```bash
 uv run --frozen --directory scientific-figure-builder --extra gui \
   python ../scripts/capture_readme_screenshots.py
+```
+
+The example figures can be regenerated independently with the same synthetic demo
+data:
+
+```bash
+uv run --frozen --directory scientific-figure-builder \
+  python ../scripts/generate_readme_examples.py
 ```
 
 ## License
