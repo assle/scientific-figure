@@ -44,7 +44,7 @@ def _rpc(monkeypatch, *messages, continue_summaries=True):
     return [json.loads(line) for line in outgoing.getvalue().splitlines()]
 
 
-def _await_operation(monkeypatch, arguments, first_payload, timeout=120.0):
+def _await_operation(monkeypatch, arguments, first_payload, timeout=60.0):
     """轮询一次后台 Lifecycle 操作，直到它不再处于进行中状态。
 
     该操作运行在工作线程上，因此负载高时可能远超固定的等待预算。这里直接
@@ -545,7 +545,8 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
     assert payloads[3]["status"] == "completed"
     assert payloads[4]["status"] == "completed"
 
-
+# 这个测试走一遍“风格锚点”审批流程：先提交作图请求，系统要求用户先确认风格锚点；
+# 确认后操作变成“进行中”，要再等它跑完才算完成。等待过程中不会重复执行已经付费的生成步骤。
 def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation(
     monkeypatch, tmp_path
 ):
