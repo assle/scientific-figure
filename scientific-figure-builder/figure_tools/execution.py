@@ -9,6 +9,7 @@ from typing import Any
 
 from figure_tools.assembly.compositor import compose_assets
 from figure_tools.export.publish import export_figure
+from figure_tools.plotting.data import load_source_data
 from figure_tools.plotting.renderer import render_plot
 from figure_tools.plotting.spec import load_plot_spec
 from figure_tools.planning.geometry import resolve_asset_bbox
@@ -20,6 +21,7 @@ from figure_tools.report import write_generation_report
 from figure_tools.run_store import RunStore
 from figure_tools.validation.engine import FigureQAEngine
 from figure_tools.validation.models import AssembledFigure
+from figure_tools.validation.plot_checks import validate_plot_data
 from figure_tools.validation.root_cause import analyze_root_causes
 from figure_tools.vector.primitives import SvgCanvas
 from figure_tools.vector.source import svg_source, validate_vector_inputs
@@ -379,6 +381,33 @@ class FigureExecution:
         return {"schema_version": "1.0", "run_id": asset_id,
                 "checks": checks, "summary": summarize_checks(checks)}
 
+    def _plot_data_report(self, spec, out_dir: Path) -> dict:
+        """Check one data plot's rendered data against its source data.
+
+        Execution runs this on every pass, including a plot reused from an
+        earlier pass, because the Plot spec or its source data may have changed
+        after the render. A plot without a persisted ``data_used.csv`` reports a
+        skipped check instead of comparing the source against itself.
+        """
+        from figure_tools.validation.summary import make_check, summarize_checks
+
+        src_path = self.base_dir / spec.source_data["path"]
+        rendered_data = out_dir / "data_used.csv"
+        if not rendered_data.is_file():
+            checks = [make_check(
+                "rendered_data_mapping", "plot", "warning", "skipped",
+                "no data_used.csv next to the rendered plot",
+            )]
+            return {"schema_version": "1.0", "run_id": self.state.run_id,
+                    "checks": checks, "summary": summarize_checks(checks)}
+        return validate_plot_data(
+            spec,
+            load_source_data(src_path),
+            load_source_data(rendered_data),
+            source_path=src_path,
+            run_id=self.state.run_id,
+        )
+
     def _render_assets(self, plan, ai_elements, export_target: str, conditions,
                        pre_rendered_assets: dict[str, dict[str, Any]] | None = None):
         manifest_assets: list[dict] = []
@@ -396,14 +425,13 @@ class FigureExecution:
                     out = self.store.path(Path("plots", asset_id))
                     path = out / "plot.png"
                     if not path.is_file():
-                        rendered = render_plot(
+                        render_plot(
                             spec,
                             output_dir=out,
                             base_dir=self.base_dir,
                             export_target=export_target,
-                            run_id=self.state.run_id,
                         )
-                        validation_reports.append(rendered["validation_report"])
+                    validation_reports.append(self._plot_data_report(spec, out))
                     manifest_assets.append(
                         self._local_meta(asset_id, "data_plot", path, plan, transparent=False))
                     placements.append({"asset_id": asset_id, "path": str(path),
