@@ -87,30 +87,23 @@ def _advance_durably(arguments: dict[str, Any]) -> dict[str, Any]:
         return manager.cancel(
             run_dir, str(action["operation_id"]), str(action["reason"]),
         )
-    state = RunStore(run_dir).load_optional_json("run_state.json") or {}
-    phase = str(state.get("current_phase") or (
-        "planning" if (run_dir / "plans/figure_brief.json").is_file() else "intake"
-    ))
+    phase = RunStore(run_dir).current_phase()
     timeout = float(arguments.get("wait_timeout", 2.0))
     operation_arguments = dict(arguments)
     operation_arguments.pop("wait_timeout", None)
     requested_operation_id = operation_arguments.pop("operation_id", None)
     control = _CALL_CONTROL.get()
     cancel_event = control[0] if control is not None else threading.Event()
-    if control is None:
-        operation_context = contextvars.copy_context()
+    operation_context = contextvars.copy_context()
 
-        def invoke() -> dict[str, Any]:
-            token = _CALL_CONTROL.set((cancel_event, lambda _snapshot: None))
-            try:
-                return _advance(operation_arguments)
-            finally:
-                _CALL_CONTROL.reset(token)
-    else:
-        operation_context = contextvars.copy_context()
-
-        def invoke() -> dict[str, Any]:
+    def invoke() -> dict[str, Any]:
+        if control is not None:
             return _advance(operation_arguments)
+        token = _CALL_CONTROL.set((cancel_event, lambda _snapshot: None))
+        try:
+            return _advance(operation_arguments)
+        finally:
+            _CALL_CONTROL.reset(token)
     return manager.start_or_observe(
         run_dir,
         invoke,

@@ -20,6 +20,12 @@ FIXTURES = ROOT / "tests" / "fixtures"
 
 
 def _rpc(monkeypatch, *messages, continue_summaries=True):
+    """在进程内跑一轮 stdio JSON-RPC，并返回解析后的响应列表。
+
+    把 messages 拼成按行分隔的 JSON 写入伪 stdin，再调用 server.serve_stdio()，
+    最后从伪 stdout 里逐行解析出响应。continue_summaries 为真时，会在返回
+    "resume" 的规划响应后自动补一次恢复调用，让测试拿到收尾后的结果。
+    """
     incoming = io.StringIO("".join(json.dumps(message) + "\n" for message in messages))
     outgoing = io.StringIO()
     monkeypatch.setattr(server.sys, "stdin", incoming)
@@ -36,6 +42,31 @@ def _rpc(monkeypatch, *messages, continue_summaries=True):
             scoped.setattr(server, "_call_tool", continue_plan)
         assert server.serve_stdio() == 0
     return [json.loads(line) for line in outgoing.getvalue().splitlines()]
+
+
+def _await_operation(monkeypatch, arguments, first_payload, timeout=60.0):
+    """轮询一次后台 Lifecycle 操作，直到它不再处于进行中状态。
+
+    该操作运行在工作线程上，因此负载高时可能远超固定的等待预算。这里直接
+    等待操作状态本身，并在真正超时后报告最后一次观察到的 payload。
+    """
+    payload = first_payload
+    deadline = time.monotonic() + timeout
+    interval = 0.02
+    while payload["status"] == "in_progress":
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"Lifecycle operation did not finish within {timeout}s: {payload}"
+            )
+        time.sleep(interval)
+        # Back off so polling stops competing with the operation it waits for.
+        interval = min(interval * 1.5, 0.25)
+        response = _rpc(monkeypatch, {
+            "jsonrpc": "2.0", "id": 99, "method": "tools/call",
+            "params": {"name": "advance_figure_workflow", "arguments": arguments},
+        })[0]
+        payload = json.loads(response["result"]["content"][0]["text"])
+    return payload
 
 
 def _request():
@@ -218,21 +249,17 @@ def test_long_lifecycle_operation_is_observed_without_duplicate_phase_work(
     assert first_payload["operation_status"] == "running"
     assert first_payload["operation_id"]
 
-    deadline = time.monotonic() + 10
-    second_payload = first_payload
-    while second_payload["status"] == "in_progress" and time.monotonic() < deadline:
-        time.sleep(0.02)
-        second = _rpc(monkeypatch, {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "advance_figure_workflow", "arguments": {
-                "project_dir": str(tmp_path), "base_dir": str(ROOT),
-                "run_dir": str(run_dir), "action": "resume",
-                "operation_id": first_payload["operation_id"],
-                "wait_timeout": 0.005,
-            }},
-        })[0]
-        second_payload = json.loads(second["result"]["content"][0]["text"])
-    assert second_payload["status"] == "paused"
+    second_payload = _await_operation(
+        monkeypatch,
+        {
+            "project_dir": str(tmp_path), "base_dir": str(ROOT),
+            "run_dir": str(run_dir), "action": "resume",
+            "operation_id": first_payload["operation_id"],
+            "wait_timeout": 0.005,
+        },
+        first_payload,
+    )
+    assert second_payload["status"] == "paused", second_payload
     assert second_payload["next_action"] == "approve_plan"
     assert calls.count("intake") == 1
     assert calls.count("planning") == 1
@@ -302,19 +329,45 @@ def test_background_lifecycle_operation_can_be_cancelled_explicitly(
     cancelled_payload = json.loads(cancelled["result"]["content"][0]["text"])
     assert cancelled_payload["operation_status"] == "cancellation_requested"
 
-    deadline = time.monotonic() + 2
-    final_payload = cancelled_payload
-    while final_payload["status"] == "in_progress" and time.monotonic() < deadline:
-        time.sleep(0.02)
-        response = _rpc(monkeypatch, {
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "advance_figure_workflow", "arguments": {
-                "run_dir": str(run_dir), "operation_id": operation_id,
-            }},
-        })[0]
-        final_payload = json.loads(response["result"]["content"][0]["text"])
-    assert final_payload["status"] == "paused"
-    assert final_payload["operation_status"] == "cancelled"
+    final_payload = _await_operation(
+        monkeypatch,
+        {"run_dir": str(run_dir), "operation_id": operation_id},
+        cancelled_payload,
+    )
+    assert final_payload["status"] == "paused", final_payload
+    assert final_payload["operation_status"] == "cancelled", final_payload
+
+
+def test_unstarted_run_state_does_not_break_the_operation_record(monkeypatch, tmp_path):
+    """A run whose state still reads ``init`` must be recorded as Intake."""
+    run_dir = tmp_path / "unstarted-run"
+    RunStore(run_dir).ensure_structure()
+    (run_dir / "run_state.json").write_text(
+        json.dumps({
+            "schema_version": "1.0",
+            "run_id": "unstarted",
+            "current_step": "init",
+            "current_phase": "init",
+        }),
+        encoding="utf-8",
+    )
+
+    class MustNotStart:
+        def create(self, *_args):
+            raise AssertionError("the run must not reach Provider work")
+
+    monkeypatch.setattr(server, "RuntimeContextFactory", MustNotStart)
+    _rpc(monkeypatch, {
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": "advance_figure_workflow", "arguments": {
+            "run_dir": str(run_dir), "action": "resume",
+        }},
+    }, continue_summaries=False)
+
+    operation = json.loads(
+        (run_dir / "plans/phase_operation.json").read_text(encoding="utf-8")
+    )
+    assert operation["phase"] == "intake"
 
 
 def test_orphaned_phase_operation_is_not_resubmitted(monkeypatch, tmp_path):
@@ -492,7 +545,8 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
     assert payloads[3]["status"] == "completed"
     assert payloads[4]["status"] == "completed"
 
-
+# 这个测试走一遍“风格锚点”审批流程：先提交作图请求，系统要求用户先确认风格锚点；
+# 确认后操作变成“进行中”，要再等它跑完才算完成。等待过程中不会重复执行已经付费的生成步骤。
 def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation(
     monkeypatch, tmp_path
 ):
@@ -535,19 +589,16 @@ def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation
     assert payloads[0]["next_action"] == "approve_style_anchor"
     completed = payloads[1]
     assert completed["status"] == "in_progress"
-    deadline = time.monotonic() + 10
-    while completed["status"] == "in_progress" and time.monotonic() < deadline:
-        time.sleep(0.02)
-        response = _rpc(monkeypatch, {
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "advance_figure_workflow", "arguments": {
-                "project_dir": str(tmp_path), "run_dir": str(run_dir),
-                "base_dir": str(ROOT), "operation_id": completed["operation_id"],
-                "wait_timeout": 0.1,
-            }},
-        })[0]
-        completed = json.loads(response["result"]["content"][0]["text"])
-    assert completed["status"] == "completed"
+    completed = _await_operation(
+        monkeypatch,
+        {
+            "project_dir": str(tmp_path), "run_dir": str(run_dir),
+            "base_dir": str(ROOT), "operation_id": completed["operation_id"],
+            "wait_timeout": 0.1,
+        },
+        completed,
+    )
+    assert completed["status"] == "completed", completed
     assert RunState.load(run_dir / "run_state.json").calls_used("generation") == 3
 
 

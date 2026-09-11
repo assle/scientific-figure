@@ -30,7 +30,6 @@ from figure_tools.run_invalidator import RunInvalidator
 from figure_tools.run_store import RunStore
 
 
-PHASES = ("intake", "planning", "execution", "review_and_repair", "export")
 STRING_ACTIONS = frozenset({"start", "resume", "approve_plan", "approve_style_anchor"})
 OBJECT_ACTIONS = frozenset({"submit_clarifications", "apply_repair", "force_export", "revise_generation_intent"})
 
@@ -565,8 +564,7 @@ class FigureOrchestrator:
             "vectors": self.store.reference("vectors"),
             "assembly": self.store.reference("assembly"),
             "layout_manifests": [
-                self.store.reference(str(path.relative_to(self.run_dir)))
-                for path in sorted(self.run_dir.rglob("layout_manifest.json"))
+                self.store.reference(manifest) for manifest in self.store.layout_manifests()
             ],
             "call_provenance": {
                 "counts": dict(self.state.to_dict()["calls"]["counts"]),
@@ -586,10 +584,10 @@ class FigureOrchestrator:
         assert self.request is not None
         manifest = self.store.load_optional_json("asset_manifest.json")
         final = self.store.load_optional_json("validation/final.json")
-        if manifest is not None and final is not None and not (self.run_dir / "assembly" / "figure.png").is_file():
+        if manifest is not None and final is not None and not self.store.composed_figure_path().is_file():
             return self._paused("execution", "repair_required",
                                 error="Required assets must be repaired before assembly and export.")
-        if manifest is None or final is None or not (self.run_dir / "assembly").exists():
+        if manifest is None or final is None or not self.store.path("assembly").exists():
             raise ValueError("cannot force export without an existing execution result")
         from figure_tools.execution import FigureExecution
         published = FigureExecution(
@@ -702,7 +700,7 @@ class FigureOrchestrator:
         for reference in execution.get("layout_manifests", []):
             path = Path(str(reference.get("path", "")))
             try:
-                relative = path.relative_to(self.run_dir)
+                relative = self.store.relative(path)
             except ValueError:
                 return False
             if not self.store.reference_matches(reference, relative):
@@ -949,9 +947,8 @@ class FigureOrchestrator:
                     prompt = repair_item.get("action")
                 if not isinstance(prompt, str) or not prompt:
                     raise ValueError("image_edit repair requires prompt")
-                edit_path = (
-                    self.run_dir / "assets" / "edits"
-                    / f"{asset_id}-v{int(plan.get('revision', 1)) + 1}.png"
+                edit_path = self.store.asset_path(
+                    "edits", f"{asset_id}-v{int(plan.get('revision', 1)) + 1}.png",
                 )
                 edit_path.parent.mkdir(parents=True, exist_ok=True)
                 raw_mask_path = item.get("mask_path")
@@ -1020,9 +1017,8 @@ class FigureOrchestrator:
                 outcome["target_after"] = edited_status
                 if outcome["accepted"]:
                     original_meta = dict(pre_rendered.get(asset_id) or {})
-                    backup_path = (
-                        self.run_dir / "assets" / "edit_backups"
-                        / f"{asset_id}-v{int(plan.get('revision', 1))}.png"
+                    backup_path = self.store.asset_path(
+                        "edit_backups", f"{asset_id}-v{int(plan.get('revision', 1))}.png",
                     )
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(parent_path, backup_path)
@@ -1118,7 +1114,9 @@ class FigureOrchestrator:
         planner = FigurePlanningArtifacts(self.request or {}, self.config, self.run_dir, self.provider, base_dir=self.base_dir)
         conditions = planner.refresh_generation_conditions(candidate, persist=False)
         condition = next(item for item in conditions["conditions"] if item["asset_id"] == asset_id)
-        destination = self.run_dir / "assets" / "edits" / f"{asset_id}-regenerated-{int(plan.get('revision', 1)) + 1}.png"
+        destination = self.store.asset_path(
+            "edits", f"{asset_id}-regenerated-{int(plan.get('revision', 1)) + 1}.png",
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         executor = FigureExecution(self.request or {}, self.config, self.run_dir, self.provider, self.state,
                                    base_dir=self.base_dir, compose_dpi=self.compose_dpi)
@@ -1127,7 +1125,7 @@ class FigureOrchestrator:
                                                     physical_size_mm=tuple(original_asset["physical_size"]))
         if report.get("summary", {}).get("blocking"):
             raise ValueError(f"Regenerated unit {asset_id} failed validation; retained the candidate without replacing the original")
-        parent = self.run_dir / "assets" / f"{asset_id}.png"
+        parent = self.store.asset_path(f"{asset_id}.png")
         accepted = None
         if parent.is_file() and pre_rendered.get(asset_id):
             backup = destination.with_name(destination.stem + "-original.png")
@@ -1259,9 +1257,8 @@ class FigureOrchestrator:
         return request if isinstance(request, dict) else None
 
     def _plan_snapshot(self, content_hash: str) -> dict[str, Any] | None:
-        for path in sorted((self.run_dir / "plans").glob("figure_plan.v*.json")):
-            relative = path.relative_to(self.run_dir)
-            candidate = self.store.load_optional_json(relative)
+        for snapshot in self.store.plan_snapshots():
+            candidate = self.store.load_optional_json(snapshot)
             if candidate is not None and self.store.hash_json(candidate) == content_hash:
                 return candidate
         return None
