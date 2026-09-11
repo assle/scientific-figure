@@ -20,6 +20,12 @@ FIXTURES = ROOT / "tests" / "fixtures"
 
 
 def _rpc(monkeypatch, *messages, continue_summaries=True):
+    """在进程内跑一轮 stdio JSON-RPC，并返回解析后的响应列表。
+
+    把 messages 拼成按行分隔的 JSON 写入伪 stdin，再调用 server.serve_stdio()，
+    最后从伪 stdout 里逐行解析出响应。continue_summaries 为真时，会在返回
+    "resume" 的规划响应后自动补一次恢复调用，让测试拿到收尾后的结果。
+    """
     incoming = io.StringIO("".join(json.dumps(message) + "\n" for message in messages))
     outgoing = io.StringIO()
     monkeypatch.setattr(server.sys, "stdin", incoming)
@@ -38,21 +44,23 @@ def _rpc(monkeypatch, *messages, continue_summaries=True):
     return [json.loads(line) for line in outgoing.getvalue().splitlines()]
 
 
-def _await_operation(monkeypatch, arguments, first_payload, timeout=60.0):
-    """Poll one background Lifecycle operation until it stops being in progress.
+def _await_operation(monkeypatch, arguments, first_payload, timeout=120.0):
+    """轮询一次后台 Lifecycle 操作，直到它不再处于进行中状态。
 
-    The operation runs on a worker thread, so a loaded runner can take far
-    longer than a fixed sleep budget. Wait on the operation state itself, and
-    report the last observed payload when the wait really does run out.
+    该操作运行在工作线程上，因此负载高时可能远超固定的等待预算。这里直接
+    等待操作状态本身，并在真正超时后报告最后一次观察到的 payload。
     """
     payload = first_payload
     deadline = time.monotonic() + timeout
+    interval = 0.02
     while payload["status"] == "in_progress":
         if time.monotonic() >= deadline:
             raise AssertionError(
                 f"Lifecycle operation did not finish within {timeout}s: {payload}"
             )
-        time.sleep(0.02)
+        time.sleep(interval)
+        # Back off so polling stops competing with the operation it waits for.
+        interval = min(interval * 1.5, 0.25)
         response = _rpc(monkeypatch, {
             "jsonrpc": "2.0", "id": 99, "method": "tools/call",
             "params": {"name": "advance_figure_workflow", "arguments": arguments},
