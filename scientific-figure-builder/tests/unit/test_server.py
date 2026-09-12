@@ -18,6 +18,12 @@ from figure_tools.run_store import RunStore
 ROOT = Path(__file__).parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 
+# 需要拿到终态的调用都用这个等待上限，而不是让服务端用 2 秒的默认预算。
+# 渲染和导出跑在后台线程上，默认预算在空闲机器上够用，但 2 核 CI runner 负载高时
+# 操作还没跑完，调用就会返回 in_progress，断言随之失败。该值是上限而非延迟：
+# thread.join 在操作结束时立即返回，所以机器快时不会多花时间。
+OPERATION_WAIT_TIMEOUT = 60.0
+
 
 def _rpc(monkeypatch, *messages, continue_summaries=True):
     """在进程内跑一轮 stdio JSON-RPC，并返回解析后的响应列表。
@@ -469,6 +475,7 @@ def test_advance_call_delegates_through_runtime_context_and_orchestrator(
                     "run_dir": str(tmp_path / "run"),
                     "base_dir": str(ROOT),
                     "request": _request(),
+                    "wait_timeout": OPERATION_WAIT_TIMEOUT,
                 },
             },
         },
@@ -500,6 +507,7 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(clarification_run), "request": clarification_request,
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         },
         {
@@ -507,6 +515,7 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(clarification_run),
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
                 "action": {"action": "submit_clarifications", "answers": {
                     "export_target": "general", "figure_width_cm": 14.0,
                     "language": "en", "style": "default",
@@ -518,6 +527,7 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(approval_run), "request": approval_request,
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         },
         {
@@ -525,6 +535,7 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(approval_run), "action": "approve_plan",
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         },
         {
@@ -532,6 +543,7 @@ def test_json_rpc_covers_clarification_and_plan_approval(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(approval_run), "action": "resume",
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         },
     )
@@ -573,6 +585,7 @@ def test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "run_dir": str(run_dir),
                 "base_dir": str(ROOT), "request": request,
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         },
         {
@@ -617,6 +630,7 @@ def test_json_rpc_covers_repair_and_force_export(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(run_dir), "request": broken,
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         })
         action = (
@@ -632,6 +646,7 @@ def test_json_rpc_covers_repair_and_force_export(monkeypatch, tmp_path):
             "params": {"name": "advance_figure_workflow", "arguments": {
                 "project_dir": str(tmp_path), "base_dir": str(ROOT),
                 "run_dir": str(run_dir), "action": action,
+                "wait_timeout": OPERATION_WAIT_TIMEOUT,
             }},
         })
     responses = _rpc(monkeypatch, *messages)
@@ -730,7 +745,8 @@ def test_invalid_repair_response_is_schema_valid_pause_and_can_resume(monkeypatc
         "jsonrpc": "2.0", "id": i, "method": "tools/call",
         "params": {"name": "advance_figure_workflow", "arguments": {
             "project_dir": str(tmp_path), "base_dir": str(ROOT),
-            "run_dir": str(run_dir), **args,
+            "run_dir": str(run_dir), "wait_timeout": OPERATION_WAIT_TIMEOUT,
+            **args,
         }},
     } for i, args in enumerate([{"request": _request()}, {"action": "resume"}], 1)])
     assert all("result" in item for item in responses), responses
