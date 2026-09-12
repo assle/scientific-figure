@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -112,3 +115,72 @@ def test_cache_distinct_keys_for_different_inputs(tmp_path: Path) -> None:
     k1 = Cache.make_key("m", "p1", {}, [])
     k2 = Cache.make_key("m", "p2", {}, [])
     assert k1 != k2
+
+
+def test_cache_readers_never_observe_a_partial_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reader sharing the cache with a writer must not see a half-written value.
+
+    Two concurrent mock assets can request the same key, so one thread can be
+    reading while another is storing. Callers parse what they read back, and a
+    zero-byte read is not a cache miss.
+    """
+    cache = Cache(cache_dir=tmp_path / "cache")
+    key = "sha256:" + "ab" * 32
+    destination = cache._path(key)
+    real_write_bytes = Path.write_bytes
+
+    def truncate_then_delay(path: Path, data: bytes) -> int:
+        if path.parent != cache.cache_dir:
+            return real_write_bytes(path, data)
+        # Emulate the observable half-state: the file exists at zero length
+        # while its content is still being produced.
+        with path.open("wb"):
+            pass
+        time.sleep(0.2)
+        return real_write_bytes(path, data)
+
+    observed: set[bytes | None] = set()
+    stop = threading.Event()
+
+    def read_until_published() -> None:
+        while not stop.is_set():
+            observed.add(cache.get_bytes(key))
+
+    monkeypatch.setattr(Path, "write_bytes", truncate_then_delay)
+    reader = threading.Thread(target=read_until_published)
+    reader.start()
+    try:
+        cache.put_bytes(key, b"complete")
+    finally:
+        stop.set()
+        reader.join()
+
+    assert destination.read_bytes() == b"complete"
+    assert observed <= {None, b"complete"}, observed
+    assert sorted(cache.cache_dir.iterdir()) == [destination]
+
+
+def test_cache_write_retries_a_transient_windows_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows rejects the publishing move while another handle reads the file."""
+    cache = Cache(cache_dir=tmp_path / "cache")
+    key = "sha256:" + "cd" * 32
+    destination = cache._path(key)
+    real_replace = os.replace
+    attempts: list[str] = []
+
+    def reject_once(source, target) -> None:
+        attempts.append(str(source))
+        if len(attempts) == 1:
+            raise PermissionError("destination is open for reading")
+        real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", reject_once)
+    cache.put_bytes(key, b"complete")
+
+    assert len(attempts) == 2
+    assert cache.get_bytes(key) == b"complete"
+    assert sorted(cache.cache_dir.iterdir()) == [destination]

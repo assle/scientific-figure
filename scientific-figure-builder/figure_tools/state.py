@@ -7,12 +7,37 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
+import time
+import uuid
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from figure_tools.provenance import hash_json
+
+
+_REPLACE_ATTEMPTS = 5
+_REPLACE_DELAY_SECONDS = 0.01
+
+
+def _replace_file(source: Path, destination: Path) -> None:
+    """Move ``source`` onto ``destination``, tolerating a transient Windows lock.
+
+    The move is atomic on POSIX and on Windows, but Windows refuses to replace a
+    destination that another handle holds open without delete sharing. A
+    concurrent cache read is exactly that, so a single attempt can be rejected
+    for a reason that disappears immediately.
+    """
+    for remaining in range(_REPLACE_ATTEMPTS, 0, -1):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if remaining == 1:
+                raise
+            time.sleep(_REPLACE_DELAY_SECONDS)
 
 
 class BudgetExceeded(Exception):
@@ -212,7 +237,13 @@ class RunState:
 
 
 class Cache:
-    """Content-addressed cache for paid model outputs (plan section 12)."""
+    """Content-addressed cache for paid model outputs (plan section 12).
+
+    A value is published in one step, so a reader that shares this cache with a
+    concurrent writer observes either the previous value or the complete new
+    one, never a partially written file. That matters because callers store
+    JSON here and parse whatever they read back.
+    """
 
     def __init__(self, cache_dir: str | Path) -> None:
         self.cache_dir = Path(cache_dir)
@@ -241,7 +272,12 @@ class Cache:
 
     def put(self, key: str, src_path: str | Path) -> Path:
         dst = self._path(key)
-        shutil.copyfile(src_path, dst)
+        temporary = dst.with_name(f".{dst.name}.tmp-{uuid.uuid4().hex}")
+        try:
+            shutil.copyfile(src_path, temporary)
+            _replace_file(temporary, dst)
+        finally:
+            temporary.unlink(missing_ok=True)
         return dst
 
     def get_bytes(self, key: str) -> bytes | None:
@@ -250,7 +286,12 @@ class Cache:
 
     def put_bytes(self, key: str, data: bytes) -> Path:
         dst = self._path(key)
-        dst.write_bytes(data)
+        temporary = dst.with_name(f".{dst.name}.tmp-{uuid.uuid4().hex}")
+        try:
+            temporary.write_bytes(data)
+            _replace_file(temporary, dst)
+        finally:
+            temporary.unlink(missing_ok=True)
         return dst
 
 
