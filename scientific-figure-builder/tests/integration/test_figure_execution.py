@@ -484,3 +484,64 @@ def test_planning_rejects_stale_reference_hash_before_provider_work(tmp_path):
         planning.prepare(plan)
 
     assert transport.requests == []
+def _data_plot_checks(result):
+    return [
+        check
+        for report in result["validation_reports"]
+        for check in report.get("checks", [])
+        if check.get("check_id") == "rendered_data_mapping"
+    ]
+
+
+def test_reused_data_plot_is_revalidated_against_its_source(tmp_path):
+    """A plot reused from an earlier pass is still checked against its source.
+
+    Correcting the Plot spec after a render leaves the persisted plot data
+    stale; the next Execution pass must surface that instead of trusting the
+    files already on disk.
+    """
+    spec_path = tmp_path / "plot_spec_line.json"
+    spec_path.write_text(
+        (FIXTURES / "plot_spec_line.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    run_dir = RunDirectory(tmp_path).create("reuse-figure")
+    state = RunState("reuse-run", budget={})
+    client = ProviderClient(
+        {
+            "image_generate": {"model": "mock"},
+            "vision_validate": {"model": "mock"},
+        },
+        MockProviderTransport(),
+        state=state,
+        cache=Cache(tmp_path / "cache"),
+        output_dir=run_dir,
+    )
+    request = _request()
+    request["panels"][0]["elements"][0]["plot_spec"] = str(spec_path)
+    plan = create_figure_plan(request)
+    execution_module = FigureExecution(
+        request,
+        config={},
+        run_dir=run_dir,
+        provider_client=client,
+        state=state,
+        base_dir=ROOT,
+    )
+    layout = FigurePlanningArtifacts(
+        request, {}, run_dir, client, base_dir=ROOT,
+    ).prepare(plan)
+
+    first = execution_module.execute_plan(plan, layout_report=layout)
+    assert [check["status"] for check in _data_plot_checks(first)] == ["pass"]
+
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    spec["filters"] = [{"column": "offset_um", "op": ">=", "value": 0}]
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    reused = execution_module.execute_plan(plan, layout_report=layout)
+
+    checks = _data_plot_checks(reused)
+    assert checks, "a reused plot must still be checked against its source"
+    assert checks[0]["status"] == "fail"
+    assert checks[0]["level"] == "error"
