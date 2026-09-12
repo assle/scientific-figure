@@ -3,7 +3,7 @@ name: scientific-figure-builder
 description: Route scientific-figure requests through the Scientific Figure Builder lifecycle. Use it to plan, generate, validate, repair, resume, or export figures with deterministic, image, or multimodal providers.
 license: MIT
 metadata:
-  version: "0.6.2"
+  version: "0.6.3"
   provider: configurable
   scope: product-component
 ---
