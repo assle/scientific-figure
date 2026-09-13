@@ -129,11 +129,71 @@ opening or saving configuration.
   </tr>
 </table>
 
-- Create Providers first, then bind the Model roles you need.
-- API keys saved by the app go to the operating-system credential store, not YAML.
-- Headless environments can configure provider `key_env` fields and supply
-  credentials as environment variables.
-- Initialize project-local overrides with `scientific-figure init /path/to/project`.
+For first-time setup, use Providers → Model routes → Credentials and connection → Save configuration.
+The app edits global configuration; changes remain in the window draft until saved.
+
+### Model routes: choose a model for each task
+
+- **Provider / Model ID**: select an existing endpoint and enter a model ID, Endpoint ID, or gateway alias accepted by that endpoint, rather than a display name.
+- **Phase reasoning**: run separate structured reasoning for intake, planning, and review and repair; it does not draw measured-data curves.
+- **Reference analysis**: extract layout, structure, and semantics from reference images.
+- **Image generation**: produce non-quantitative assets or Generation units; measured-data plots still use Python/SVG.
+- **Image editing / Inherit generation**: revise assets using reference images. Inheritance reuses the image-generation route rather than adding another model.
+- **Visual validation**: inspect generated assets and the final assembled figure.
+
+### Providers: endpoints, protocols, and image capabilities
+
+- **Add / Delete**: manage Provider IDs referenced by Model routes. This local identifier is neither an API key nor a model ID.
+- **Type**: choose `openai`, `anthropic`, or `dashscope` by the service's actual protocol, not its vendor name. DashScope Native only serves image-generation and editing roles.
+- **Base URL**: the API base address, matching the selected protocol.
+- **Authentication**: send the key in an `x-api-key` header or as a Bearer Token, as required by the endpoint.
+- **Messages Path / Anthropic Version**: the request path and version header for Anthropic Compatible endpoints. Keep the displayed defaults unless the service documents another value.
+- **Reference-image editing**: declare that the endpoint can edit an existing image.
+- **Generation reference images**: allow reference images as input when generating a new image; this does not create references automatically.
+- **Multiple references**: allow several reference images in one request.
+- **Mask editing**: allow a mask to constrain the edited region.
+- **Structure control**: allow structural control information in the request.
+- **Native alpha**: declare that the model can directly return an image with transparency.
+- **Fixed seed**: allow a random seed parameter; identical output across service versions or environments is not guaranteed.
+- **Candidate batches**: declare support for batch candidate output. Enabling the switch does not generate images immediately.
+
+These switches declare existing service capabilities; they do not add unsupported features.
+Available switches depend on Provider type. DashScope does not display mask editing,
+structure control, or native-alpha switches.
+
+### Waiting and retries: control how a model call waits
+
+Provider settings supply defaults for its Model routes; each role can override them.
+Leave a field empty to inherit. Durations use seconds; attempt counts use positive integers.
+
+- **Connection timeout**: the time allowed to establish a network connection.
+- **Status interval**: how often request status is checked; a status check does not resubmit the model request.
+- **Inactivity timeout**: the longest interval without a new message; receiving a message resets this timer.
+- **Total timeout**: the overall time budget for the call; incoming messages do not reset it.
+- **Maximum transient-error attempts**: the maximum number of attempts, including the initial request, for retryable transient errors.
+- **Backoff base / cap**: the starting delay and upper limit for waits before retrying, avoiding immediate repeated submissions.
+
+### Phase output allowances: budget structured reasoning output
+
+- **Intake / Planning / Review and repair initial allowance**: set the initial token allowance independently for each phase. Empty fields inherit configuration; the built-in default is 8192 per phase.
+- **Maximum output tokens**: cap the allowance requested for one output. An empty field uses inherited settings or a recognized model limit.
+- Allowances cover model reasoning and final output, not a fixed actual consumption. Resuming the same phase retains the allowance already issued. Token allowances and timeouts are separate limits.
+
+### Credentials and connection: store keys and explicitly test endpoints
+
+- **Select Provider**: manage credentials independently for each endpoint.
+- **API Key**: written to the operating-system Keyring when configuration is saved, never to YAML. Leaving the field empty preserves an existing credential.
+- **Credential ID**: the identifier used to reference a system credential, not the secret itself.
+- **Environment fallback**: enter a variable name such as `PROVIDER_API_KEY`. Provider `key_env` fields support credentials supplied to headless environments.
+- **Test connection**: actively contact the service using the current unsaved draft, preferring a vision role. If only image generation is available, the app first asks about the potentially billable test.
+- **Cancel / Remove credential**: cancel the connection test or remove the selected Provider's system credential. Existing keys are not displayed back in the input field.
+
+### Saving and configuration scope
+
+- **Save configuration**: commit the window draft and credential changes. Ordinary saves do not make network requests.
+- **Discard changes**: discard unsaved edits.
+- **About**: describe the app's purpose; the sidebar shows the current global configuration path.
+- **Project overrides**: run `scientific-figure init /path/to/project` and edit the project configuration; this global configuration window does not switch projects.
 
 Configuration precedence is: packaged defaults → global configuration → project
 configuration → per-run overrides. See the [user guide](docs/user-guide.md) for
