@@ -109,6 +109,47 @@ def test_commit_handles_windows_destination_lock(tmp_path, monkeypatch, kind, pe
     assert list(tmp_path.iterdir()) == [path]
 
 
+@pytest.mark.parametrize("reader", ["load_json", "reference", "directory_reference"])
+def test_json_read_retries_a_transient_windows_lock(tmp_path, monkeypatch, reader):
+    store = RunStore(tmp_path)
+    store.commit_json("plans/value.json", {"revision": 1})
+
+    def read():
+        if reader == "directory_reference":
+            return store.reference("plans")
+        return getattr(store, reader)("plans/value.json")
+
+    expected = read()
+    original_read = Path.read_text
+    attempts = []
+
+    def read_while_locked(path, *args, **kwargs):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise PermissionError("file replacement in progress")
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_while_locked)
+    assert read() == expected
+    assert len(attempts) > 1
+
+
+def test_json_read_preserves_persistent_permission_error(tmp_path, monkeypatch):
+    store = RunStore(tmp_path)
+    store.commit_json("value.json", {"revision": 1})
+    attempts = []
+
+    def read_while_locked(path, *args, **kwargs):
+        attempts.append(path)
+        raise PermissionError("persistent access denial")
+
+    monkeypatch.setattr(Path, "read_text", read_while_locked)
+    with pytest.raises(ArtifactCorruptError) as caught:
+        store.load_json("value.json")
+    assert isinstance(caught.value.__cause__, PermissionError)
+    assert len(attempts) > 1
+
+
 def test_safe_load_distinguishes_missing_and_corrupt_artifacts(tmp_path):
     store = RunStore(tmp_path)
     with pytest.raises(ArtifactMissingError):
