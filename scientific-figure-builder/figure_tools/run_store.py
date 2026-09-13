@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 import uuid
 from collections.abc import Mapping
 from functools import lru_cache
@@ -16,6 +17,28 @@ from referencing import Registry, Resource
 
 from figure_tools._resources import schema_path
 from figure_tools.provenance import hash_file, hash_json
+
+
+_REPLACE_ATTEMPTS = 5
+_REPLACE_DELAY_SECONDS = 0.01
+
+
+def replace_file(source: Path, destination: Path) -> None:
+    """Move ``source`` onto ``destination``, tolerating a transient Windows lock.
+
+    The move is atomic on POSIX and on Windows, but Windows refuses to replace a
+    destination that another handle holds open without delete sharing. A
+    concurrent state or cache read is exactly that, so a single attempt can be
+    rejected for a reason that disappears immediately.
+    """
+    for remaining in range(_REPLACE_ATTEMPTS, 0, -1):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if remaining == 1:
+                raise
+            time.sleep(_REPLACE_DELAY_SECONDS)
 
 
 RUN_SUBDIRECTORIES = (
@@ -151,7 +174,7 @@ class RunStore:
                 json.dumps(data, indent=2, ensure_ascii=False, default=str) + "\n",
                 encoding="utf-8",
             )
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
         return self.reference(relative_path)
@@ -162,7 +185,7 @@ class RunStore:
         temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
         try:
             temporary.write_text(value, encoding="utf-8")
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
         return self.reference(relative_path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,45 @@ def test_atomic_replace_failure_preserves_existing_artifact_and_cleans_temporary
 
     assert (tmp_path / "plans" / "value.json").read_bytes() == original
     assert list(tmp_path.rglob("*.tmp-*")) == []
+
+
+@pytest.mark.parametrize("kind", ["json", "text"])
+@pytest.mark.parametrize("persistent_lock", [False, True])
+def test_commit_handles_windows_destination_lock(tmp_path, monkeypatch, kind, persistent_lock):
+    store = RunStore(tmp_path)
+    path = tmp_path / f"value.{kind}"
+
+    def commit(revision):
+        if kind == "json":
+            return store.commit_json(path.name, {"revision": revision})
+        return store.commit_text(path.name, f"revision {revision}")
+
+    commit(1)
+    original = path.read_bytes()
+    real_replace = os.replace
+    attempts = []
+
+    def replace_while_locked(source, destination):
+        attempts.append(source)
+        if persistent_lock or len(attempts) == 1:
+            assert path.read_bytes() == original
+            raise PermissionError("destination is open for reading")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace_while_locked)
+    if persistent_lock:
+        with pytest.raises(PermissionError, match="open for reading"):
+            commit(2)
+        assert path.read_bytes() == original
+    else:
+        reference = commit(2)
+        assert reference == store.reference(path.name)
+        if kind == "json":
+            assert store.load_json(path.name) == {"revision": 2}
+        else:
+            assert path.read_text(encoding="utf-8") == "revision 2"
+    assert len(attempts) > 1
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_safe_load_distinguishes_missing_and_corrupt_artifacts(tmp_path):
