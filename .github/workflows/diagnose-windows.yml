@@ -1,0 +1,32 @@
+name: Diagnose Windows test instability
+on:
+  push:
+    branches: [codex/diagnose-windows-ci]
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          python-version: "3.13"
+          working-directory: scientific-figure-builder
+      - name: Repeat original test and retain evidence
+        working-directory: scientific-figure-builder
+        shell: pwsh
+        run: |
+          1..40 | ForEach-Object {
+            Write-Output "Reproduction attempt $_"
+            uv run --frozen pytest tests/unit/test_server.py::test_json_rpc_covers_style_anchor_approval_without_repeating_paid_generation -q --tb=long --basetemp=".ci-repro/$_"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-reproduction
+          path: scientific-figure-builder/.ci-repro
+          include-hidden-files: true
