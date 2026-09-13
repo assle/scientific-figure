@@ -238,6 +238,8 @@ def serve_stdio() -> int:
                 _write_error(message_id, -32601, f"unknown tool {name!r}")
                 continue
             except Exception as exc:  # messages are redacted by _advance
+                import traceback
+                traceback.print_exc(file=sys.__stderr__)
                 _write_error(message_id, -32603, str(exc))
                 continue
             finally:
