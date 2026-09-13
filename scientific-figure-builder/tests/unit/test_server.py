@@ -71,6 +71,7 @@ def _await_operation(monkeypatch, arguments, first_payload, timeout=60.0):
             "jsonrpc": "2.0", "id": 99, "method": "tools/call",
             "params": {"name": "advance_figure_workflow", "arguments": arguments},
         })[0]
+        assert "result" in response, response
         payload = json.loads(response["result"]["content"][0]["text"])
     return payload
 
