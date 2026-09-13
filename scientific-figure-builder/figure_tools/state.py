@@ -7,37 +7,14 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 import shutil
-import time
 import uuid
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from figure_tools.provenance import hash_json
-
-
-_REPLACE_ATTEMPTS = 5
-_REPLACE_DELAY_SECONDS = 0.01
-
-
-def _replace_file(source: Path, destination: Path) -> None:
-    """Move ``source`` onto ``destination``, tolerating a transient Windows lock.
-
-    The move is atomic on POSIX and on Windows, but Windows refuses to replace a
-    destination that another handle holds open without delete sharing. A
-    concurrent cache read is exactly that, so a single attempt can be rejected
-    for a reason that disappears immediately.
-    """
-    for remaining in range(_REPLACE_ATTEMPTS, 0, -1):
-        try:
-            os.replace(source, destination)
-            return
-        except PermissionError:
-            if remaining == 1:
-                raise
-            time.sleep(_REPLACE_DELAY_SECONDS)
+from figure_tools.run_store import replace_file
 
 
 class BudgetExceeded(Exception):
@@ -275,7 +252,7 @@ class Cache:
         temporary = dst.with_name(f".{dst.name}.tmp-{uuid.uuid4().hex}")
         try:
             shutil.copyfile(src_path, temporary)
-            _replace_file(temporary, dst)
+            replace_file(temporary, dst)
         finally:
             temporary.unlink(missing_ok=True)
         return dst
@@ -289,7 +266,7 @@ class Cache:
         temporary = dst.with_name(f".{dst.name}.tmp-{uuid.uuid4().hex}")
         try:
             temporary.write_bytes(data)
-            _replace_file(temporary, dst)
+            replace_file(temporary, dst)
         finally:
             temporary.unlink(missing_ok=True)
         return dst

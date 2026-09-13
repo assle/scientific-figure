@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,86 @@ def test_atomic_replace_failure_preserves_existing_artifact_and_cleans_temporary
 
     assert (tmp_path / "plans" / "value.json").read_bytes() == original
     assert list(tmp_path.rglob("*.tmp-*")) == []
+
+
+@pytest.mark.parametrize("kind", ["json", "text"])
+@pytest.mark.parametrize("persistent_lock", [False, True])
+def test_commit_handles_windows_destination_lock(tmp_path, monkeypatch, kind, persistent_lock):
+    store = RunStore(tmp_path)
+    path = tmp_path / f"value.{kind}"
+
+    def commit(revision):
+        if kind == "json":
+            return store.commit_json(path.name, {"revision": revision})
+        return store.commit_text(path.name, f"revision {revision}")
+
+    commit(1)
+    original = path.read_bytes()
+    real_replace = os.replace
+    attempts = []
+
+    def replace_while_locked(source, destination):
+        attempts.append(source)
+        if persistent_lock or len(attempts) == 1:
+            assert path.read_bytes() == original
+            raise PermissionError("destination is open for reading")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", replace_while_locked)
+    if persistent_lock:
+        with pytest.raises(PermissionError, match="open for reading"):
+            commit(2)
+        assert path.read_bytes() == original
+    else:
+        reference = commit(2)
+        assert reference == store.reference(path.name)
+        if kind == "json":
+            assert store.load_json(path.name) == {"revision": 2}
+        else:
+            assert path.read_text(encoding="utf-8") == "revision 2"
+    assert len(attempts) > 1
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("reader", ["load_json", "reference", "directory_reference"])
+def test_json_read_retries_a_transient_windows_lock(tmp_path, monkeypatch, reader):
+    store = RunStore(tmp_path)
+    store.commit_json("plans/value.json", {"revision": 1})
+
+    def read():
+        if reader == "directory_reference":
+            return store.reference("plans")
+        return getattr(store, reader)("plans/value.json")
+
+    expected = read()
+    original_read = Path.read_text
+    attempts = []
+
+    def read_while_locked(path, *args, **kwargs):
+        attempts.append(path)
+        if len(attempts) == 1:
+            raise PermissionError("file replacement in progress")
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", read_while_locked)
+    assert read() == expected
+    assert len(attempts) > 1
+
+
+def test_json_read_preserves_persistent_permission_error(tmp_path, monkeypatch):
+    store = RunStore(tmp_path)
+    store.commit_json("value.json", {"revision": 1})
+    attempts = []
+
+    def read_while_locked(path, *args, **kwargs):
+        attempts.append(path)
+        raise PermissionError("persistent access denial")
+
+    monkeypatch.setattr(Path, "read_text", read_while_locked)
+    with pytest.raises(ArtifactCorruptError) as caught:
+        store.load_json("value.json")
+    assert isinstance(caught.value.__cause__, PermissionError)
+    assert len(attempts) > 1
 
 
 def test_safe_load_distinguishes_missing_and_corrupt_artifacts(tmp_path):

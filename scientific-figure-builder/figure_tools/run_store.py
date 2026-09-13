@@ -5,17 +5,48 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from figure_tools._resources import schema_path
 from figure_tools.provenance import hash_file, hash_json
+
+
+_FILE_ACCESS_ATTEMPTS = 5
+_FILE_ACCESS_DELAY_SECONDS = 0.01
+_T = TypeVar("_T")
+
+
+def _retry_file_access(operation: Callable[[], _T]) -> _T:
+    """Retry a short Windows sharing violation without hiding persistent errors."""
+    for _ in range(_FILE_ACCESS_ATTEMPTS - 1):
+        try:
+            return operation()
+        except PermissionError:
+            time.sleep(_FILE_ACCESS_DELAY_SECONDS)
+    return operation()
+
+
+def _read_text(path: Path) -> str:
+    return _retry_file_access(lambda: path.read_text(encoding="utf-8"))
+
+
+def replace_file(source: Path, destination: Path) -> None:
+    """Move ``source`` onto ``destination``, tolerating a transient Windows lock.
+
+    The move is atomic on POSIX and on Windows, but Windows refuses to replace a
+    destination that another handle holds open without delete sharing. A
+    concurrent state or cache read is exactly that, so a single attempt can be
+    rejected for a reason that disappears immediately.
+    """
+    _retry_file_access(lambda: os.replace(source, destination))
 
 
 RUN_SUBDIRECTORIES = (
@@ -151,7 +182,7 @@ class RunStore:
                 json.dumps(data, indent=2, ensure_ascii=False, default=str) + "\n",
                 encoding="utf-8",
             )
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
         return self.reference(relative_path)
@@ -162,7 +193,7 @@ class RunStore:
         temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
         try:
             temporary.write_text(value, encoding="utf-8")
-            os.replace(temporary, path)
+            replace_file(temporary, path)
         finally:
             temporary.unlink(missing_ok=True)
         return self.reference(relative_path)
@@ -214,7 +245,7 @@ class RunStore:
         if not path.is_file():
             raise ArtifactMissingError(f"run artifact is missing: {relative_path}")
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            value = json.loads(_read_text(path))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise ArtifactCorruptError(
                 f"run artifact is corrupt: {relative_path}"
@@ -249,7 +280,7 @@ class RunStore:
             if path.suffix == ".json":
                 try:
                     content_hash = hash_json(
-                        json.loads(path.read_text(encoding="utf-8"))
+                        json.loads(_read_text(path))
                     )
                 except (OSError, UnicodeError, json.JSONDecodeError):
                     content_hash = hash_file(path)
@@ -286,7 +317,7 @@ class RunStore:
     def _path_hash(path: Path) -> str:
         if path.suffix == ".json":
             try:
-                return hash_json(json.loads(path.read_text(encoding="utf-8")))
+                return hash_json(json.loads(_read_text(path)))
             except (OSError, UnicodeError, json.JSONDecodeError):
                 pass
         return hash_file(path)
